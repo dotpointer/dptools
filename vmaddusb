@@ -1,0 +1,3 @@
+#!/bin/bash
+VBoxManage usbfilter add 1 --target $1 --name usbdevice --vendorid 0x$2 --productid 0x$3
+

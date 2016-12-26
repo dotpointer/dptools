@@ -1,0 +1,29 @@
+#!/bin/bash
+# to generate a certificate
+
+# changelog
+# 2014-11-02 14:48:43
+# 2015-09-02 19:12:44 - cleanup
+
+KEYFILE="/etc/nginx/certs/server.key";
+CERTFILE="/etc/nginx/certs/server.crt";
+
+if [[ $1 == "--help" ]]; then
+	echo "Usage: $(basename $0) keyfile certfile"
+	echo "If not specified, keyfile=$KEYFILE, certfile=$CERTFILE";
+	exit;
+fi
+
+if [[ -n $1 ]]; then
+	KEYFILE=$1;
+fi
+
+if [[ -n $2 ]]; then
+	CERTFILE=$2;
+fi
+
+
+echo "KEY will be in : $KEYFILE";
+echo "CERT will be in: $CERTFILE";
+echo 'Reminder: Do not fill in anything! JUST PUSH ENTER !';
+sudo openssl req -x509 -sha256 -nodes -days 3650 -newkey rsa:2048 -keyout $KEYFILE -out $CERTFILE

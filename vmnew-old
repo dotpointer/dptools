@@ -1,0 +1,153 @@
+#!/bin/sh
+# 2011-10-30 - VirtualBox VM creation script, by Robert Klebe
+
+# ask for name
+echo "--- Name of the new machine"
+echo -ne "- Name: "
+read NAME
+
+# make sure it is entered
+if [ -z "$NAME" ]; then 
+   echo "Must be given, quitting."
+   exit 1
+fi
+
+# list and scan for VM:s
+VMS=$(VBoxManage list vms)
+if [[ $VMS == *"$NAME"* ]]; then
+   echo "VM $NAME already exists, quitting.";
+   exit 1
+fi
+
+# ask for OS type
+echo "--- OS type for the new machine"
+DEFAULT_OSTYPE="Other";
+echo -ne "Must be one of these: "
+VBoxManage list ostypes|grep ID|tr -d 'ID:          '| tr '\n' ", "; 
+echo
+echo -ne "- OS type ($DEFAULT_OSTYPE): "
+read OSTYPE
+
+# make sure it is entered
+if [ -z "$OSTYPE" ]; then 
+   OSTYPE=$DEFAULT_OSTYPE
+fi
+
+
+# ask for hardware setup
+echo "--- Hardware"
+
+# RAM
+DEFAULT_MEMORY=256;
+echo -ne "- RAM in MB ($DEFAULT_MEMORY): "
+read MEMORY
+if [ -z "$MEMORY" ]; then 
+   MEMORY=$DEFAULT_MEMORY
+fi
+
+# VRAM
+DEFAULT_VRAM=128;
+echo -ne "- VRAM in MB ($DEFAULT_VRAM): "
+read VRAM
+if [ -z "$VRAM" ]; then 
+   VRAM=$DEFAULT_VRAM
+fi
+
+# RAM
+DEFAULT_CPUCAP=50;
+echo -ne "- Max CPU% usage ($DEFAULT_CPUCAP): "
+read CPUCAP
+if [ -z "$CPUCAP" ]; then 
+   CPUCAP=$DEFAULT_CPUCAP
+fi
+
+# Disk
+echo -ne "- Disk size in MB (leave empty to not create one): "
+read DISKSIZE
+
+# VRDEPORT
+DEFAULT_VRDEPORT=3390;
+echo -ne "- VRDE port in MB ($DEFAULT_VRDEPORT): "
+read VRDEPORT
+if [ -z "$VRDEPORT" ]; then 
+   VRDEPORT=$DEFAULT_VRDEPORT
+fi
+
+echo "--- Ready to create new VM"
+echo "- Name:      $NAME";
+echo "- RAM:       $MEMORY MB";
+echo "- VRAM:      $VRAM MB";
+echo "- CPU-cap:   $CPUCAP%";   
+echo "- OS type:   $OSTYPE";
+echo "- VRDE port: $VRDEPORT";
+if [ -n "$DISKSIZE" ]; then
+echo "- Disk:      $DISKSIZE MB (will be named $NAME.vdi)";
+fi
+read -p "- Press enter to create " -n 1
+
+# try to make machine
+echo "-- Trying to create VM: $NAME..."; 
+VBoxManage createvm --name "$NAME" --ostype $OSTYPE --register
+if [ ! $? -eq 0 ] ; then
+    echo 'Failed';
+    exit 1
+fi
+
+# try to setup machine hardware specs, accelerate 3d = off since 4.2
+echo "-- Trying to set hardware specifications...";
+VBoxManage modifyvm "$NAME" --memory $MEMORY --acpi on --boot1 dvd --nic1 bridged --bridgeadapter1 eth0 --vrde on --vrdeauthtype null --vrdemulticon on --vram $VRAM --accelerate3d off --cpuexecutioncap $CPUCAP --vrdeport $VRDEPORT --pae on
+if [ ! $? -eq 0 ] ; then
+    echo 'Failed';
+    exit 1
+fi
+
+# try to add storage controller
+echo "-- Trying to add storage controller...";
+VBoxManage storagectl "$NAME" --name "IDE Controller" --add ide --controller PIIX4
+if [ ! $? -eq 0 ] ; then
+   echo 'Failed';
+   exit 1
+fi
+
+echo "-- Trying to add DVD drive...";
+VBoxManage storageattach "$NAME" --storagectl "IDE Controller" --port 1 --device 0 --type dvddrive --medium emptydrive
+if [ ! $? -eq 0 ] ; then
+   echo 'Failed';
+   exit 1
+fi
+
+# if disk is requested
+if [ -n "$DISKSIZE" ]; then
+    # try to create disk
+    echo "-- Trying to create disk...";
+    VBoxManage createhd --filename "/virtualbox/disks/$NAME/$NAME.vdi" --size $DISKSIZE
+    if [ ! $? -eq 0 ] ; then
+        echo "Failed";
+        exit 1
+    fi
+
+    # try to attach disk
+    echo "-- Trying to attach disk...";
+    VBoxManage storageattach "$NAME" --storagectl "IDE Controller" --port 0 --device 0 --type hdd --medium "/virtualbox/disks/$NAME/$NAME.vdi"
+    if [ ! $? -eq 0 ] ; then
+        echo "Failed";
+        exit 1
+    fi
+fi
+
+echo "-- Trying to add audio ALSA / AC97";
+VBoxManage modifyvm "$NAME" --audio alsa --audiocontroller ac97
+if [ ! $? -eq 0 ] ; then
+   echo "Failed";
+   exit 1
+fi
+
+echo "-- Trying to enable USB controller";
+VBoxManage modifyvm "$NAME" --usb on
+if [ ! $? -eq 0 ] ; then
+   echo "Failed";
+   exit 1
+fi
+
+
+echo "--- Creation of $NAME is complete.";

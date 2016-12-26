@@ -1,0 +1,18 @@
+#!/usr/bin/php
+<?php
+	$data = file_get_contents($argv[1]);
+
+	# fix < ?=
+	$data = preg_replace("/<\?=/i", "<?php echo ", $data);
+
+	# fix < ?newline
+	$data = preg_replace("/<\?(\s*\n)/i", "<?php$1", $data);
+
+	# fix < ?space	
+	$data = preg_replace("/<\?(\s+)/i", "<?php$1", $data);
+
+
+	# file_put_contents($argv[1], $data);
+
+	echo $data;
+?>

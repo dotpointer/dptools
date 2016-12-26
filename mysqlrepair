@@ -1,0 +1,2 @@
+#!/bin/bash
+mysqlcheck --all-databases --auto-repair --check -u root -p

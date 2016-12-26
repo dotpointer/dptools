@@ -1,0 +1,2 @@
+#!/bin/bash
+VBoxManage storageattach "$1" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium host:/dev/hdb --passthrough on

@@ -1,0 +1,164 @@
+#!/bin/bash
+
+# dptools update script
+# by robert klebe
+
+# 2014-07-14 - initial version
+# 2014-09-29 - adding profile reload
+# 2014-11-01 - adding chmod correction on target dir
+
+# where to put the cache file with the current timestamp
+cachefile="/var/cache/dptools.cache"
+
+# target to put files into
+targetdir="/var/scripts/dptools"
+
+# config dir
+configdir="/etc/dptools"
+
+# url to download files from
+downloadurl="http://s.dotpointer.com/?a=dptools"
+
+# url to check timestamp from
+timeurl="http://s.dotpointer.com/?a=dptools_time"
+
+# temporary file to store compressed file
+tmpfile="/tmp/dptools.tar.gz"
+
+# default localtime
+localtime=0
+
+# make sure we are root
+
+if [ ! $(whoami) == "root" ]; then
+    echo "Root user is required to update the dptools"
+    exit
+fi
+
+# is there a cachefile and it is readable?
+if test -r "$cachefile" -a -f "$cachefile"
+then
+        echo "Reading current server version timestamp"
+        # get server time
+	servertime=$(wget "$timeurl" -q -O -)
+	
+	
+	if [ ! $? -eq 0 ] ; then
+	       echo "Failed retrieving current server version timestamp from $timeurl, no internet connection?";
+	       exit 1
+	fi
+
+        echo "Reading current local version timestamp"
+        # get local time from cachefile
+	localtime=$(cat $cachefile)
+	if [ ! $? -eq 0 ] ; then
+	      echo "Failed reading current local version timestamp from $cachefile, maybe it is not readable?";	      
+	      exit 1
+	fi
+
+        # output some info
+	# echo "Local version timestamp : $localtime"
+	# echo "Server version timestamp: $servertime"
+	
+	# is localtime >= servertime?
+	if [ "$localtime" -ge "$servertime" ]
+	then
+	     # then happily get out
+	     echo 'Update not required, local version is up to date';
+	     exit 0;
+	fi
+fi
+
+# update seems to be needed
+echo "Update required, downloading new version" # from $downloaddir"
+
+# download the new version to temp directory
+wget "$downloadurl" -q -O "$tmpfile"
+if [ ! $? -eq 0 ] ; then
+      echo "Failed downloading file from $downloadurl";
+      exit 1
+fi
+
+
+# make sure it exists
+if [ ! -f "$tmpfile" ]; then
+    echo "Downloaded temporary file $tmpfile not found"
+    exit
+fi
+
+# check target dir
+if [ ! -d "$targetdir" ]; then
+    echo "Creating directory $targetdir"
+    # make a directory
+    mkdir -p "$targetdir"
+    if [ ! $? -eq 0 ] ; then
+       echo "Failed creating directory $targetdir";
+       exit 1
+    fi
+fi
+
+# check configuration dir
+if [ ! -d "$configdir" ]; then
+    echo "Creating configuration directory $configdir"
+    # make a directory
+    mkdir -p "$configdir"
+    if [ ! $? -eq 0 ] ; then
+        echo "Failed creating directory $configdir";
+        exit 1
+    fi
+fi
+
+# extract contents
+echo "Extracting contents of $tmpfile to $targetdir"
+tar -xf $tmpfile -C $targetdir
+if [ ! $? -eq 0 ] ; then
+   echo "Failed creating directory $targetdir";
+      exit 1
+fi
+
+# remove the temp file
+echo "Removing temporary file $tmpfile"
+rm $tmpfile
+if [ ! $? -eq 0 ] ; then
+   echo "Failed removing temporary file $tmpfile";
+      exit 1
+fi
+
+
+echo "Storing current timestamp"
+# store current time to file
+echo $servertime > $cachefile
+if [ ! $? -eq 0 ] ; then
+   echo "Failed storing current timestamp to $cachefile";
+      exit 1
+fi
+
+echo "Setting 755 on dptools directory recursively"
+chmod 755 -R "$targetdir"
+
+# is targetdir not in path?
+if [[ ! $PATH == *$targetdir* ]]
+then
+  echo ""
+  echo "Installation notice!";
+  echo ""
+  echo "$targetdir was not found in your PATH variable."
+  echo ""
+  
+  echo "This means that you cannot use the powers of dptools in this console."
+  echo ""  
+  echo "You need to add dp_console_setup.sh to your ~/.bashrc and ~/.profile files."
+  echo ""
+  echo "Open the files in an editor and add the following line at the end of them:"
+  echo ". $targetdir/dp_console_setup.sh"
+  echo ""
+  echo "Then reload: source ~/.profile"
+# or is it in the path
+else
+  # then reload the profile
+  echo "Reloading profile...";
+  source ~/.profile
+fi
+
+# end message
+echo "Update completed, thank you for using dptools"

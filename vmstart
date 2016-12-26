@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# if machine is specified, start that
+if [ -n "$1" ]; then
+    nice -n 10 VBoxHeadless --startvm "$1" &
+# otherwise end here
+else
+   echo 'Machine name must be specified';
+   exit 1;
+fi
+

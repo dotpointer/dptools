@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# backup-sync
+# by robert klebe
+
+# Make sure only root can run our script
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+      
+CONFIG_FILE="/etc/dptools/backuptools"
+
+# defaults
+DIR_IMAGE="/mnt/backupimage"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+   echo "Missing configuration file: $CONFIG_FILE";
+   exit 1;
+fi
+
+source $CONFIG_FILE
+
+
+echo "Checking if $DIR_IMAGE is mounted"
+mountpoint $DIR_IMAGE
+if [[ $? != 0 ]]; then
+	echo "$DIR_IMAGE is not mounted, something is wrong.";
+	exit 1;
+fi
+
+# correct slash
+DIR_IMAGE="$DIR_IMAGE/";
+
+echo "Running rsyncs";
+
+if [ -n "$SYNC_CMD1" ]; then
+   echo "Running sync: $SYNC_CMD1";
+   $SYNC_CMD1
+   if [[ $? != 0 ]]; then
+	echo "Sync failed will not continue";
+	exit 1;
+   fi      
+fi
+
+if [ -n "$SYNC_CMD2" ]; then
+   echo "Running sync: $SYNC_CMD2";
+   $SYNC_CMD2
+   if [[ $? != 0 ]]; then
+	echo "Sync failed will not continue";
+	exit 1;
+   fi      
+fi
+
+if [ -n "$SYNC_CMD3" ]; then
+   echo "Running sync: $SYNC_CMD3";
+   $SYNC_CMD3
+   if [[ $? != 0 ]]; then
+	echo "Sync failed will not continue";
+	exit 1;
+   fi   
+fi
+
+
+if [ -n "$SYNC_CMD4" ]; then
+   echo "Running sync: $SYNC_CMD4";
+   $SYNC_CMD4
+   if [[ $? != 0 ]]; then
+	echo "Sync failed will not continue";
+	exit 1;
+   fi      
+fi
+
+
+if [ -n "$SYNC_CMD5" ]; then
+   echo "Running sync: $SYNC_CMD5";
+   $SYNC_CMD5
+   if [[ $? != 0 ]]; then
+	echo "Sync failed will not continue";
+	exit 1;
+   fi      
+fi
+

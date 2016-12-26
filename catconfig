@@ -1,0 +1,47 @@
+#!/usr/bin/php
+<?php
+
+	# to dump the contents of a config without # lines and empty lines
+	# by robert klebe, dotpointer
+	
+	# changelog
+	# 2015-06-01 13:19:50
+	# 2015-06-01 13:21:44
+	# 2015-08-24 16:19:31
+
+	# make sure argv is set
+	if (!isset($argv[1])) {
+		echo "No file specified\n";
+		die(1);
+	}
+	
+	if ($argv[1] === '-h' || $argv[1] === '--help') {
+?>
+	Usage: <?php echo $_SERVER['SCRIPT_FILENAME']?> <filename>
+<?php	
+	}
+
+	$file = $argv[1];
+	
+	if (!file_exists($file) || !$f = fopen($file, 'r')) {
+		echo "Failed opening file: ".$file."\n";
+		die(1);
+	}
+
+	# walk the file
+	while (!feof($f)) {
+		# get the line
+		$line = fgets($f);
+
+		# begin by removing the comments, everything with # after is a comment
+		$line = strpos($line, '#') !== false ? substr($line, 0, strpos($line, '#')) : $line;
+		
+		$line = trim($line);
+		
+		if (!$line) continue;
+		
+		echo $line."\n";
+	}
+
+	fclose($f);
+?>

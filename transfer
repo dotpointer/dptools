@@ -1,0 +1,1725 @@
+#!/usr/bin/php
+<?php
+#	  ______	dotpointers	   ____
+#	 /_  __/________ _____  _____/ __/__  _____
+#	  / / / ___/ __ `/ __ \/ ___/ /_/ _ \/ ___/
+#	 / / / /  / /_/ / / / (__  ) __/  __/ /
+#	/_/ /_/   \__,_/_/ /_/____/_/  \___/_/
+#
+#	===============================================
+#
+#	Purpose:
+#	------
+#
+#		A service that can:
+#
+#		- check in a directory
+#			- if there are files there, try to transfer them to a remote location and delete them from  the local place
+#		- can make the same files exist on two location, one local and one remote
+#
+#	Result:
+#	---------
+#		This command works like a wrapper around other commands.
+#		It takes care of how often the transfer should be done, checking that
+#		remote systems are online, that files exists and so on.
+#
+#	Files:
+#	-----
+#		Config:	/etc/transfer.conf
+#		Cache:	/var/cache/transfer.cache
+#		Log:	/var/log/transfer.log
+#
+#	Parameters:
+#	----------
+#		-v(vv)	Verbosity, error, info, debug
+#		-d 		Dry-run mode
+#
+#	Changelog:
+#	----------
+#	2011-11-11 00:00:00 - t, beginning, freely based on a friends idea
+#	2012-11-12 00:00:00 - t, base development
+#	2012-11-13 00:00:00 - t, replacing source-target-paths with an urls array, checks for min-max-items, argument handling, dryrun mode
+#	2012-11-16 00:00:00 - t, cleanup, adding pinglist, putting into production
+#	2013-12-17 00:00:00 - t, adding -r parameter to reset timeouts
+#	2014-09-03 11:08:51 - t
+#	2015-08-24 16:04:21 - t, replacing short open tags
+#	2016-11-21 20:49:36 - t
+#	2013-12-17 00:00:00 - p-t/t-p, first version in bash
+#	2013-12-18 00:00:00 - p-t/t-p, initial php version, remake of bash
+#	2013-12-22 00:00:00 - p-t/t-p, adding move of renamed folders in target dir to photos dir
+#	2013-12-23 00:00:00 - p-t/t-p, debugging, seems like FTP server in android does not work when AP changes
+#	2014-01-03 00:00:00 - p-t/t-p, adding config file
+#	2014-05-06 00:00:00 - p-t/t-p, adding dir cleanup
+#	2014-06-12 00:00:00 - p-t/t-p, trying to fix the bug where photos stay in Camera folder after transfer, seems like lftp does its job
+#	2014-09-08 00:00:00 - p-t/t-p, fixing for web-runs
+#	2014-10-22 00:00:00 - p-t/t-p, adding pid file
+#	2015-05-08 15:39:33 - p-t/t-p, adding gps coordinate reading and moving matching photos to package folder
+#	2015-07-22 16:24:00 - p-t/t-p, disabling time limit
+#	2015-07-29 01:48:00 - p-t/t-p, adding log file output from transfer
+#	2015-09-06 13:00:55 - p-t/t-p, rebuilding to fit needs for direct transfer and resize
+#	2015-12-13 20:09:00 - p-t/t-p, adding multiple folder transfers
+#	2016-11-15 10:44:32 - p-t/t-p, cleanup
+#	2016-11-15 22:28:36 - p-t/t-p, combining photo-transfer and transfer-rckphone1
+#	2016-11-20 16:42:51 - p-t/t-p
+#	2016-11-21 01:56:34 - p-t/t-p
+#	2016-11-21 03:48:50 - p-t/t-p
+#	2016-11-23 21:23:49 - merge of t and p-t/t-p
+#	2016-11-23 23:26:25
+#	2016-11-25 23:42:30
+#	2016-11-26 18:01:02
+#	2016-11-26 19:08:23
+#	2016-12-26 16:25:00 - adding action parameter and escheck.tmp detection and removal
+#
+# legend p-t/t-p = photo-transfer/transfer-phone1, t = transfer
+#
+#	   rsync -avu $SYNC_RSYNC_DELETE --progress --stats $SYNC_SOURCE_WORKPATH $SYNC_TARGET_WORKPATH && $SYNC_COMPLETED_COMMAND
+#	   rsync -avun $SYNC_RSYNC_DELETE --progress --stats $SYNC_SOURCE_WORKPATH $SYNC_TARGET_WORKPATH
+#
+# file paths
+# define('FILE_CACHE', '/var/cache/transfer.cache');
+# define('FILE_CONFIG', '/etc/dptools/transfer.conf');
+# define('FILE_LOG', '/var/log/transfer');
+
+# --- constants ---------------------------------------------------------
+
+# verbosity
+define('VERBOSE_OFF', 0);		# no info at all
+define('VERBOSE_ERROR', 1);		# only errors
+define('VERBOSE_INFO', 2);		# above and things that changes
+define('VERBOSE_DEBUG', 3);		# above and verbose info
+define('VERBOSE_DEBUG_DEEP', 4);		# above and exec outputs
+
+define('ROUTE_SUCCESS', 2);
+define('ROUTE_NOTHING_DONE_WRITE_CACHE', 1);
+define('ROUTE_NOTHING_DONE', 0);
+define('ROUTE_ERROR', -1);
+
+# an array of hosts and whether they responded or not
+$pingresults = array();
+
+# --- functions ---------------------------------------------------------
+
+/**
+ * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
+ * keys to arrays rather than overwriting the value in the first array with the duplicate
+ * value in the second array, as array_merge does. I.e., with array_merge_recursive,
+ * this happens (documented behavior):
+ *
+ * array_merge_recursive(array('key' => 'org value'), array('key' => 'new value'));
+ *	 => array('key' => array('org value', 'new value'));
+ *
+ * array_merge_recursive_distinct does not change the datatypes of the values in the arrays.
+ * Matching keys' values in the second array overwrite those in the first array, as is the
+ * case with array_merge, i.e.:
+ *
+ * array_merge_recursive_distinct(array('key' => 'org value'), array('key' => 'new value'));
+ *	 => array('key' => 'new value');
+ *
+ * Parameters are passed by reference, though only for performance reasons. They're not
+ * altered by this function.
+ *
+ * @param array $array1
+ * @param mixed $array2
+ * @author daniel@danielsmedegaardbuus.dk
+ * @return array
+ */
+function &array_merge_recursive_distinct(array &$array1, &$array2 = null) {
+	$merged = $array1;
+
+	if (is_array($array2)) {
+		foreach ($array2 as $key => $val) {
+			if (is_array($array2[$key])) {
+				$merged[$key] = isset($merged[$key]) && is_array($merged[$key]) ? array_merge_recursive_distinct($merged[$key], $array2[$key]) : $array2[$key];
+			} else {
+				$merged[$key] = $val;
+			}
+		}
+	}
+	return $merged;
+}
+
+# to clear a directory from empty directories
+function action_clean_dir($jobname, $parameters /* dir, match_date_format */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['dir'],
+		$parameters['match_date_format']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	cl($jobname, 'Cleaning up empty directories in: '.$parameters['dir'], VERBOSE_DEBUG);
+
+	# get dirs in target dir
+	unset($c, $o, $r);
+	$c = 'find '.escapeshellarg($parameters['dir']).' -type d';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	if ($r !== 0) {
+		cl($jobname, __LINE__.': Failed finding directories in incoming dir, output was: '.implode("\n", $o), VERBOSE_ERROR);
+		return false;
+	}
+
+	$dirs = $o;
+
+	# walk dirs
+	foreach ($dirs as $fullpath) {
+
+		# not a file, then go next
+		if (!file_exists($fullpath) || !is_dir($fullpath)) {
+			continue;
+		}
+
+		# make sure it is matching yyyy-mm-dd - Label, bla bla
+		if ($parameters['match_date_format'] && !preg_match('/(\d{3}\d+)\-\d{2}-\d{2} \- (.*)/', basename($fullpath), $m)) {
+			continue;
+		}
+
+		cl($jobname, 'Working on: '.$fullpath, VERBOSE_DEBUG);
+
+		# check if escheck tmp file removal is enabled
+		if (isset($parameters['remove_escheck']) && $parameters['remove_escheck']) {
+			$files_in_dir = scandir($fullpath);
+			
+			foreach ($files_in_dir as $file_in_dir) {
+				if ($file_in_dir === '.escheck.tmp') {
+					cl($jobname, 'Removing: '.$fullpath .'/.escheck.tmp', VERBOSE_DEBUG);
+					if (!$config['main']['dryrun']) {
+						unlink($fullpath .'/.escheck.tmp');
+					}
+				}
+			}
+		}
+
+		$files_in_dir = scandir($fullpath);
+
+		if ($files_in_dir === false) {
+			cl($jobname, __LINE__.': Failed scanning dir for files: '.$fullpath, VERBOSE_ERROR);
+			continue;
+		}
+
+		if (count($files_in_dir) < 3 && $files_in_dir[0] === '.' && $files_in_dir[1] === '..') {
+			cl($jobname, 'No files in dir, removing it: '.$fullpath, VERBOSE_INFO);
+			if (!$config['main']['dryrun']) {
+				rmdir($fullpath);
+			}
+		}
+	} # foreach-dirs
+
+	return true;
+}
+
+# action - to connect to and fetch some folders from ftp
+function action_ftpfetcher($jobname, $parameters  /* ftp_host, ftp_port, ftp_username, ftp_password, folders */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['folders'],
+		$parameters['ftp_host'],
+		$parameters['ftp_password'],
+		$parameters['ftp_port'],
+		$parameters['ftp_username']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	# host is not up or server is not up on host
+	cl($jobname, 'Checking if '.$parameters['ftp_host'].':'.$parameters['ftp_port'].' is open...', VERBOSE_DEBUG);
+
+	if (porttest($jobname, $parameters['ftp_host'], $parameters['ftp_port'])) {
+		cl($jobname, $parameters['ftp_host'].':'.$parameters['ftp_port'].' is open, running lftp on it to fetch files', VERBOSE_DEBUG);
+
+		# walk folders
+		foreach ($parameters['folders'] as $k => $v) {
+
+			cl($jobname, 'Working on: '.$parameters['ftp_host'].':'.$parameters['ftp_port'].$parameters['folders'][$k]['dir_source'].' to '.$parameters['folders'][$k]['dir_target'], VERBOSE_DEBUG);
+
+			# is this folder not enabled - go next?
+			if (isset($parameters['folders'][$k]['enabled']) && !$parameters['folders'][$k]['enabled']) {
+				continue;
+			}
+
+			# determine if source files should bre removed, by default off
+			$removesourcefiles = isset($parameters['folders'][$k]['remove_source_files']) && $parameters['folders'][$k]['remove_source_files'] ? '--Remove-source-files ' : '';
+
+			# count files before in target
+			unset($c, $o, $r);
+			$c = 'find '.escapeshellarg($parameters['folders'][$k]['dir_target']).' -type f';
+			cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+			exec($c, $o, $r);
+			if (count($o)) {
+				foreach ($o as $oline) {
+					cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+				}
+			}
+			cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+			$files_before = count($o);
+
+			# try to download files using lftp
+			unset($c, $o, $r);
+			$c = '/bin/bash -c \'lftp ftp://'.$parameters['ftp_username'].'@'.$parameters['ftp_host'].' -p '.$parameters['ftp_port'].' -u '.$parameters['ftp_username'].','.$parameters['ftp_password'].' -e "mirror '.$removesourcefiles.'--verbose -c "'.$parameters['folders'][$k]['dir_source'].'" "'.$parameters['folders'][$k]['dir_target'].'"; bye"\'';
+			cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+			if (!$config['main']['dryrun']) {
+				exec($c, $o, $r);
+				if (count($o)) {
+					foreach ($o as $oline) {
+						cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+					}
+				}
+				cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+				if ($r !== 0) {
+					cl($jobname, __LINE__.': LFTP command failed, output was: '.implode("\n", $o), VERBOSE_ERROR);
+					continue;
+				}
+			}
+
+			# count files before in target
+			unset($c, $o, $r);
+			$c = 'find '.escapeshellarg($parameters['folders'][$k]['dir_target']).' -type f';
+			cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+			exec($c, $o, $r);
+			if (count($o)) {
+				foreach ($o as $oline) {
+					cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+				}
+			}
+			cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+			$files_after = count($o);
+
+			if ($files_before !== $files_after) {
+				cl($jobname, 'Files downloaded from '.$parameters['ftp_host'].':'.$parameters['ftp_port'].': '.($files_after - $files_before), VERBOSE_INFO);
+			}
+		}
+		return true;
+	} else {
+		cl($jobname, $parameters['ftp_host'].':'.$parameters['ftp_port'].' is not open', VERBOSE_DEBUG);
+		return false;
+	}
+}
+
+# to set rights, ownership and group
+function action_chmod_chown_chgrp($jobname, $parameters /* files_or_folders_target, chmod_code, chown_user, chown_group */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['files_or_folders_target'],
+		$parameters['chmod_code'],
+		$parameters['chown_user'],
+		$parameters['chown_group']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	if ($parameters['chmod_code'] !== false && $parameters['chown_user'] !== false && $parameters['chown_group'] !== false) {
+
+		foreach ($parameters['files_or_folders_target'] as $dir_target) {
+
+			cl($jobname, 'Setting rights and owner on '.$dir_target, VERBOSE_INFO);
+
+			# do chmod on this file or folder
+			unset($c, $o, $r);
+			$c = 'chmod '.$parameters['chmod_code'].' -R '.escapeshellarg($dir_target);
+			cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+			if (!$config['main']['dryrun']) {
+			 	exec($c, $o, $r);
+				if (count($o)) {
+					foreach ($o as $oline) {
+						cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+					}
+				}
+				cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+			 	if ($r !== 0) {
+			 		cl($jobname, 'Failed chmod '.$parameters['chmod_code'].' on '.$dir_target, VERBOSE_ERROR);
+			 		return false;
+			 	}
+			 }
+
+		 	# do chown on this file or folder
+			unset($c, $o, $r);
+			$c = 'chown '.$parameters['chown_user'].':'.$parameters['chown_group'].' -R '.escapeshellarg($dir_target);
+			cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+			if (!$config['main']['dryrun']) {
+				exec($c, $o, $r);
+				if (count($o)) {
+					foreach ($o as $oline) {
+						cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+					}
+				}
+				cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+			 	if ($r !== 0) {
+			 		cl($jobname, 'Failed chown '.$parameters['chown_user'].':'.$parameters['chown_group'].' on '.$dir_target, VERBOSE_ERROR);
+			 		return false;
+			 	}
+			 }
+		}
+	}
+
+	return true;
+}
+
+# to move images from one folder into date folders
+function action_datefolders($jobname, $parameters /* dir_incoming, label_dir_target, read_gps=false, dir_target_gps=false, lat_packages_min=false, lat_packages_max=false, lng_packages_min=false, lng_packages_max=false */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['dir_incoming'],
+		$parameters['dir_target'],
+		$parameters['dir_target_gps'],
+		$parameters['label_dir_target'],
+		$parameters['lat_packages_max'],
+		$parameters['lat_packages_min'],
+		$parameters['lng_packages_max'],
+		$parameters['lng_packages_min'],
+		$parameters['read_gps']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	cl($jobname, 'Finding files in incoming dir: '.$parameters['dir_incoming'], VERBOSE_DEBUG);
+	# get files in target dir
+	unset($c, $o, $r);
+	$c = 'find '.escapeshellarg($parameters['dir_incoming']).' -type f';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	if ($r !== 0) {
+		cl($jobname, __LINE__.': Failed finding files in incoming dir, output was: '.implode("\n", $o), VERBOSE_ERROR);
+		return false;
+	}
+
+	$files = $o;
+	$files_touched = 0;
+	# walk files found
+	if (count($files)) {
+		cl($jobname, 'Walking '.count($files).' files', VERBOSE_DEBUG);
+		foreach ($files as $fullpath) {
+
+			$new_fullpath = false;
+
+			cl($jobname, 'Working on file: '.$fullpath, VERBOSE_DEBUG);
+
+				# not a file, then go next
+			if (!file_exists($fullpath) || !is_file($fullpath) || is_dir($fullpath)) {
+				cl($jobname, 'Skipping, nonexistant, not a file or a dir: '.$fullpath, VERBOSE_DEBUG);
+				continue;
+			}
+
+			# try to read gps
+			if ($parameters['read_gps']) {
+
+				# read gps coords
+				$gps = read_gps_location($fullpath);
+				if (is_array($gps)) {
+					cl($jobname, 'Lat: '.$gps['lat'].', long: '.$gps['lng'].' for '.$fullpath, VERBOSE_DEBUG);
+					if (
+						$gps['lat'] >= $parameters['lat_packages_min'] &&
+						$gps['lat'] <= $parameters['lat_packages_max'] &&
+						$gps['lng'] >= $parameters['lng_packages_min'] &&
+						$gps['lng'] <= $parameters['lng_packages_max']
+					) {
+						cl($jobname, 'Within lat-long range for gps photo: '.$fullpath, VERBOSE_INFO);
+						$new_fullpath = $parameters['dir_target_gps'];
+					}
+
+				} else {
+					cl($jobname, 'Failed reading GPS coordinates for: '.$fullpath, VERBOSE_DEBUG);
+				}
+			}
+
+			# still no planned fullpath?
+			if (!$new_fullpath) {
+				# get modify time of file
+				$d = filemtime($fullpath);
+				if ($d === false) {
+					cl($jobname, 'Skipping, failed getting modify time: '.$fullpath, VERBOSE_DEBUG);
+					continue;
+				}
+
+				# construct new fullpath consisting of yyyy-mm-dd - label
+				$new_fullpath = $parameters['dir_target'].date('Y-m-d', $d).' - '.$parameters['label_dir_target'].'/';
+			}
+
+	   		cl($jobname, 'New planned location: '.$new_fullpath.basename($fullpath), VERBOSE_DEBUG);
+
+			# make sure folder exists
+			if (make_dir($jobname, $new_fullpath)) {
+				$fullpath_without_filename = substr($fullpath, 0, strrpos($fullpath, '/')+1);
+				# make sure the rights are the same
+				if (!replicate_owner_group_perms($jobname, $fullpath_without_filename, $new_fullpath)) {
+					continue;
+				}
+			# failed making dir
+			} else {
+				# go next file
+				continue;
+			}
+
+			# still no target folder?
+			if (!$config['main']['dryrun'] && (!file_exists($new_fullpath) || !is_dir($new_fullpath))) {
+				cl($jobname, __LINE__.': Error, still no target folder, going next file', VERBOSE_ERROR);
+				continue;
+			}
+
+			# complete fullpath with filename
+			$new_fullpath = $new_fullpath.basename($fullpath);
+
+			# make sure target does not exist
+			if (file_exists($new_fullpath)) {
+				cl($jobname, __LINE__.': Error, target file does exist, going next: '.$new_fullpath, VERBOSE_ERROR);
+				continue;
+			}
+
+			cl($jobname, 'Moving '.$fullpath.' to '.$new_fullpath, VERBOSE_INFO);
+
+			# try to move file into position
+			if (!$config['main']['dryrun']) {
+				if (!rename($fullpath, $new_fullpath)) {
+					cl($jobname, __LINE__.': Failed moving '.$fullpath.' to '.$new_fullpath, VERBOSE_ERROR);
+					continue;
+				}
+			}
+			$files_touched += 1;
+		} # for-files-in-download-dir
+	} # if-files
+
+	# return $files_touched;
+	return true;
+}
+
+# to move date renamed folders with a specific label to a target directory
+# matching dir format: yyyy-mm-dd - Label, bla bla
+#
+# param_dir_target = where to move from
+# param_label_dir_taret = Label
+# param_dir_archive = where to move files to
+
+# to move xxxx-xx-xx - blah blah to /target/location/xxxx/xxxx-xx-xx - blah blah
+function action_datefolders_archive($jobname, $parameters /* dir_source, label_dir_source, dir_archive */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['dir_archive'],
+		$parameters['dir_source'],
+		$parameters['label_dir_source']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	# get dirs in target dir
+	unset($c, $o, $r);
+	$c = 'find '.escapeshellarg($parameters['dir_source']).' -type d';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	if ($r !== 0) {
+		cl($jobname, __LINE__.': Error, failed finding directories in move-from-here dir ('.$parameters['dir_source'].'), output was: '.implode("\n", $o)."\n", VERBOSE_ERROR);
+		return false;
+	}
+	$dirs = $o;
+
+	# walk folders in dir
+	foreach ($dirs as $v) {
+		$fullpath = $v;
+		$v = basename($v);
+
+		# avoid . and .. dirs
+		if (in_array($v, array('.', '..'))) {
+			continue;
+		}
+
+		cl($jobname, 'Working on folder: '.$v, VERBOSE_DEBUG);
+
+		# make sure it is matching yyyy-mm-dd - Label, bla bla
+		if (!preg_match('/(\d{3}\d+)\-\d{2}-\d{2} \- '.preg_quote($parameters['label_dir_source']).', (.*)/', $v, $m)) {
+			cl($jobname, 'Skipping, not matching relevant pattern.', VERBOSE_DEBUG);
+			continue;
+		}
+
+		# no year or label or year is not numeric - then go next
+		if (!isset($m[1],$m[2])||!is_numeric($m[1])) {
+			cl($jobname, 'Skipping, no year or label or year is not numeric.', VERBOSE_DEBUG);
+			continue;
+		}
+
+			# /photos/yyyy
+		$archivetargetdir = $parameters['dir_archive'].$m[1];
+		cl($jobname, 'Archive target base dir: '.$archivetargetdir, VERBOSE_DEBUG);
+
+		# try to make it - /photos/yyyy
+		if (!make_dir($jobname, $archivetargetdir)) {
+			return false;
+		}
+
+		# set better rights on the source
+		unset($c, $o, $r);
+		$c = 'chmod 555 -R '.escapeshellarg($fullpath);
+		cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+		if (!$config['main']['dryrun']) {
+			exec($c, $o, $r);
+						if (count($o)) {
+								foreach ($o as $oline) {
+										cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+								}
+						}
+						cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+
+		}
+
+		$targetdir = $archivetargetdir.'/'.$v;
+
+		cl($jobname, 'Archive target full dir: '.$targetdir, VERBOSE_DEBUG);
+
+		unset($c, $o, $r);
+
+		# does the target dir already exists?
+		if (file_exists($targetdir)) {
+			cl($jobname, 'Target dir exists', VERBOSE_DEBUG);
+			# targetdir is not a dir?
+			if (!is_dir($targetdir)) {
+				cl($jobname, __LINE__.': Error, target dir is not a dir, fatal, going next', VERBOSE_ERROR);
+				continue;
+			}
+			cl($jobname, 'Moving '.$fullpath.'/* to '.$targetdir.' and removing '.$fullpath, VERBOSE_INFO);
+			$c = 'mv '.escapeshellarg($fullpath.'/').'* '.escapeshellarg($targetdir).' && rmdir '.escapeshellarg($fullpath);
+		} else {
+			cl($jobname, 'Target dir does not exist, moving '.$fullpath.' to '.$archivetargetdir.'/', VERBOSE_INFO);
+			$c = 'mv '.escapeshellarg($fullpath).' '.escapeshellarg($archivetargetdir.'/');
+		}
+
+		cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+		if (!$config['main']['dryrun']) {
+			exec($c, $o, $r);
+			if (count($o)) {
+				foreach ($o as $oline) {
+					cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+				}
+			}
+			cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+		}
+	}
+
+	return true;
+}
+
+# to move and group images into auction sets
+# source = where to find photos, target = where to make subdirectories, archive = where to move originals
+function action_auctionsets($jobname, $parameters /* $parameters['dir_source'], $parameters['dir_target'], $parameters['dir_archive'], folder_file_prefix */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['dir_archive'],
+		$parameters['dir_source'],
+		$parameters['dir_target'],
+		$parameters['folder_file_prefix'],
+		$parameters['show_message']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	# get files in target dir
+	unset($c, $o, $r);
+	cl($jobname, 'Finding files in source dir: '.$parameters['dir_source'], VERBOSE_DEBUG);
+	$c = 'find '.escapeshellarg($parameters['dir_source']).' -type f';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	if ($r !== 0) {
+		cl($jobname, __LINE__.': Failed finding files in download dir, output was: '.implode("\n", $o), VERBOSE_ERROR);
+		return false;
+	}
+	$files = $o;
+	$completed = 0;
+
+	# sort files
+	sort($files);
+
+	# count the files - anything to act on?
+	if (count($files)) {
+
+		# path to the target dir + Y-m-d H.i.s
+		$targetdir = $parameters['dir_target'].date('Y-m-d H.i.s').'/';
+
+		# try to make dir
+		if (make_dir($jobname, $targetdir)) {
+			if (!replicate_owner_group_perms($jobname, $parameters['dir_source'], $targetdir)) {
+				return false;
+			}
+		# failed making dir
+		} else {
+			return false;
+		}
+
+		# subfolder nr
+		$subnr = 0;
+
+		# file nr
+		$filenr = 0;
+
+		# set subdir to targetdir just in case
+		$targetsubdir = false;
+
+		$files_touched = 0;
+		cl($jobname, count($files).' files in download directory', VERBOSE_INFO);
+
+		# walk the files in source dir
+		foreach ($files as $file) {
+
+			cl($jobname, 'Working '.$file, VERBOSE_DEBUG);
+
+			if (!file_exists($file)) {
+				continue;
+			}
+
+			# extract basename, /bla/bla/file.jpg -> file.jpg
+			$name = basename($file);
+
+			$dirtest1 = substr($file, 0, strlen($parameters['dir_source']));
+			$dirtest2 = $parameters['dir_source'];
+			# maker sure we are in src dir
+			if ($dirtest1 !== $dirtest2) {
+				cl($jobname, 'Folders do not match:'.$dirtest1. ' !== '.$dirtest2, VERBOSE_ERROR);
+				continue;
+			}
+
+			$ext = strtolower(substr($name, strrpos($name, '.') + 1, strlen($name)));
+
+			# make sure it is .jpg/.jpeg in filename
+			if (!in_array($ext, array('jpg', 'jpeg'))) {
+				cl($jobname, 'Bad file extension: '.$ext, VERBOSE_DEBUG);
+		  		continue;
+			}
+
+			# is this file no 1, 6, 12, 18, 24...
+			if ($filenr === 0 || $filenr % 5 === 0) {
+
+				$subnr += 1;
+				$targetsubdir = $targetdir . $parameters['folder_file_prefix'].'-'.$subnr . '/';
+
+				if (make_dir($jobname, $targetsubdir)) {
+					if (!replicate_owner_group_perms($jobname, $parameters['dir_source'], $targetsubdir)) {
+						return false;
+					}
+				} else {
+					return false;
+				}
+			}
+
+			# increment file nr
+			$filenr += 1;
+
+			$name = $parameters['folder_file_prefix'].'-'.$filenr;
+			$targetfile = $targetsubdir.$name.'.jpg';
+			cl($jobname, 'Making converted image of '.$file.' at '.$targetfile, VERBOSE_INFO);
+
+			# run convert on it the fastest way
+			# 30 is too low
+			# 50 ?
+			# 100 gives 2,7 MB files
+			# 95 gives 1 MB files
+			# 90 gives 700 kB files
+			unset($c, $o, $r);
+			$c = $config['main']['file_convert'].' '.escapeshellarg($file).' -quality 90 -auto-orient -strip -sample 2048x1536 '.escapeshellarg($targetfile);
+			cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+			if (!$config['main']['dryrun']) {
+				exec($c, $o, $r);
+				if (count($o)) {
+					foreach ($o as $oline) {
+						cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+					}
+				}
+				cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+			}
+
+			# only if dryrunning or results were good
+			if ($config['main']['dryrun'] || ($r === 0 && file_exists($targetfile))) {
+
+				if (!replicate_owner_group_perms($jobname, $file, $targetfile)) {
+					return false;
+				}
+
+				# check if folder does not exist
+				if (!make_dir($parameters['dir_archive'])) {
+					return false;
+				}
+
+
+				$new_fullpath_archive = $parameters['dir_archive'].basename($file);
+				# archive old file
+				cl($jobname, 'Archive-moving '.$file.' to '.$new_fullpath_archive, VERBOSE_INFO);
+
+				# if not dryrun
+				if (!$config['main']['dryrun']) {
+					if (!rename($file, $new_fullpath_archive)) {
+						cl($jobname, __LINE__.': Failed moving '.$file.' to '.$new_fullpath_archive, VERBOSE_ERROR);
+						return false;
+					}
+				}
+
+				$completed++;
+
+			} else {
+				cl($jobname, 'Failed making resize: '.$cmd, VERBOSE_ERROR);
+			}
+		}
+	} # if-files
+
+	if ($parameters['show_message']) {
+		msg($jobname, 'Done with '.$completed.' photos.');
+	}
+}
+
+# debug printing
+function cl($prefix, $s, $level=1) {
+
+	global $config;
+
+	$prefix = $prefix ? str_pad(substr($prefix, 0, 15), 15, ' ') : str_repeat(' ', 15);
+
+	# transfer - do not log passwords from mountcifs
+	$s = preg_replace('/password=\".*\" \"\/\//', 'password="*****" "//', $s);
+
+	# photo-transfer - do not log passwords from lftpd
+	$s = preg_replace('/\-u .* \-e/', '-u *****,***** -e', $s);
+
+	# find out level of verbosity
+	switch ($level) {
+		case VERBOSE_ERROR:
+			$l = 'E';
+			break;
+		case VERBOSE_INFO:
+			$l = 'I';
+			break;
+		case VERBOSE_DEBUG:
+		case VERBOSE_DEBUG_DEEP:
+			$l = 'D';
+			break;
+
+	}
+	$s = ''.date('Y-m-d H:i:s').($prefix ? ' '.$prefix : '').' '.$l.' '.$s."\n";
+
+	# is verbosity on and level is enough?
+	if ($config['main']['verbose'] && $config['main']['verbose'] >= $level) {
+		echo $s;
+	}
+
+	# is loglevel on and level is enough - the try to append to log
+	if ($config['main']['loglevel'] && $config['main']['loglevel'] >= $level && $f = fopen($config['main']['file_log'], 'a')) {
+		fwrite($f, $s);
+		fclose($f);
+	}
+
+	return true;
+}
+
+# to correct paths so they have a slash at the end
+function correct_path($path) {
+	# correct paths?
+	# warning - in photo-transfer this ran on config->dir_*
+	#if (substr($k, 0, 4) === 'dir_') {
+	return strlen($path) <= 1 || substr($path, -1) === '/' ? $path : $path.'/';
+	#}
+}
+
+# list dir without . and ..
+function dirlist($dir) {
+
+	$dirlist = scandir($dir);
+	if (!$dirlist) {
+		return false;
+	}
+
+	$tmp = array();
+	# remove . and ..
+	foreach ($dirlist as $k => $v) {
+		if ($v === '.' || $v === '..') {
+			continue;
+		}
+		$tmp[] = $v;
+	}
+
+	return $tmp;
+}
+
+# check if a dir is mountpoint ready
+function is_mountpoint($jobname, $path) {
+	unset($c, $o, $r);
+	$c = 'mountpoint -q '.escapeshellarg($path);
+	cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	return  ($retval == 0);
+}
+
+# to make a dir
+function make_dir($jobname, $path) {
+
+	# check if dir already exists
+	if (file_exists($path)) {
+		# is it a dir?
+		if (is_dir($path)) {
+			return true;
+		# or is it something else in its place
+		} else {
+			cl($jobname, 'Error, cannot create dir, file with same name already exists: '.$path, VERBOSE_ERROR);
+			return false;
+		}
+	}
+
+	cl($jobname, 'Creating dir: '.$path, VERBOSE_INFO);
+	if (!mkdir($path)) {
+		cl($jobname, 'Failed creating dir: '.$path, VERBOSE_ERROR);
+		return false;
+	}
+
+	return true;
+}
+
+# samba-mount something
+function mountcifs($jobname, $parsed_url, $mountpath, $options=array()) {
+
+	# make sure options is an array
+	$options = is_array($options) ? $options : array($options);
+
+	# job sourcepath
+	if (!make_dir($jobname, $mountpath)) {
+		return false;
+	}
+
+	if (is_mountpoint($jobname, $mountpath) && !umount($jobname, $mountpath)) {
+		cl($jobname, 'Path '.$mountpath.' has something mounted, and could not unmount it.', VERBOSE_ERROR);
+		return false;
+	}
+
+	# command: mount -t cifs -o username=$SYNC_TARGET_USERNAME,password=$SYNC_TARGET_PASSWORD,uid=$SYNC_TARGET_UID,gid=$SYNC_TARGET_GID,iocharset=$SYNC_TARGET_IOCHARSET,codepage=$SYNC_TARGET_CODEPAGE,dir_mode=$SYNC_TARGET_DIR_MODE,file_mode=$SYNC_TARGET_FILE_MODE //$SYNC_TARGET_HOST/$SYNC_TARGET_SHARE $SYNC_TARGET_TEMP_MOUNT
+	$options['username'] = $parsed_url['user'];
+	$options['password'] = $parsed_url['pass'];
+
+	# walk options and prepare them
+	foreach ($options as $k => $v) {
+		$options[$k] = $k.'="'.$v.'"';
+	}
+
+#	$options = array(
+#		'username'	=> $source['user'],
+#		'password'	=> $source['pass']
+#		'uid'		=> '',
+#		'gid'		=> '',
+#		'iocharset'	=> '',
+#		'codepage'	=> '',
+#		'dir_mode'	=> '',
+#		'file_mode'	=> ''
+#	);
+#
+
+	# split path by slashes
+	$tmp = explode("/", $parsed_url['path']);
+	array_shift($tmp); # remove first item in path - the rootpath of the share
+	$share = array_shift($tmp);
+	# put the dir path back again
+	$sharepath = implode("/", $tmp);
+	unset($c, $o, $r);
+	# run mount
+	$c = 'mount -t cifs -o '.implode(',', $options).' "//'.$parsed_url['host'].'/'.$share.'" "'.$mountpath.'"';
+	cl($jobname, $c."\n", VERBOSE_DEBUG);
+
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	# if it failed, get out
+	if ($r !== 0) {
+		cl($jobname, 'Mount failed: '.implode("\n", $output), VERBOSE_ERROR);
+		return false;
+	}
+
+	# is there a share path?
+	if (strlen($sharepath)) {
+
+		$fullpath = $mountpath.(substr($sharepath, -1) !== '/' ? $sharepath.'/' : $sharepath);
+		# does the path not exist?
+		if (!is_dir($fullpath)) {
+			cl($jobname, 'Path '.$sharepath.' on mounted share does not exist.', VERBOSE_ERROR);
+			# then unmount this share
+			umount($jobname, $mountpath);
+			# and get out
+			return false;
+		}
+
+		# return the full path instead
+		return $fullpath;
+	}
+
+	# return the path to the data
+	return $mountpath;
+}
+
+# check if host responds to ping
+function pingtest($jobname, $host) {
+	global $pingresults;
+
+	if (isset($pingresults[$host])) {
+		cl($jobname, 'Pinged '.$host.' before, reusing that', VERBOSE_DEBUG);
+		return $pingresults[$host];
+	}
+
+	cl($jobname, 'Pinging '.$host, VERBOSE_DEBUG);
+	# do it quiet, send only 1 packet, wait 3 sec for it to return
+	unset($c, $o, $r);
+	$c = 'ping -w3 -qc1 '.$host.' 2>&- 1>&-';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	# remember the response to next time this is run
+	$pingresults[$host] = ($r === 0);
+
+	return  ($r === 0);
+}
+
+# test if host has an open port - also checks if host is up
+function porttest($jobname, $host, $port) {
+	# try to write to the (ftp) port
+	unset($c, $o, $r);
+	$c = '/bin/bash -c "(echo >/dev/tcp/'.$host.'/'.$port.') &>/dev/null"';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	# if Return is 0, then all is ok, if 1 then error
+	return ($r === 0);
+}
+
+# to check if a directory path meet requirements, like maxitems, minitems
+function requirements_met($jobname, $path, $requirements) {
+
+	# get list of files in this folder, excluding . and ..
+	$dirlist = dirlist($path);
+
+	# did file list fail?
+	if ($dirlist === false) {
+		cl($jobname, 'Path '.$path.' is not readable.', VERBOSE_ERROR);
+		return false;
+	}
+
+	$items = count($dirlist);
+	# minimum items check
+	if (isset($requirements['minitems']) && $requirements['minitems'] > $items) {
+		cl($jobname, 'Too few items ('.$items.') in '.$path, VERBOSE_DEBUG);
+		return false;
+	# maximum items check
+	} else if (isset($requirements['maxitems']) && $requirements['maxitems'] < $items) {
+		cl($jobname, 'Too many items ('.$items.') in '.$path, VERBOSE_DEBUG);
+		return false;
+	}
+
+	return true;
+}
+
+# to run an array-based action
+function run_action($jobname, $action) {
+
+	global $config;
+
+	# by default set that the action returned false
+	$return_action = false;
+
+	# make sure method and parameters are set for this action
+	if (!isset($action['method'], $action['parameters'])) {
+		cl($jobname, 'Invalid action - action and method not specified', VERBOSE_ERROR);
+		return false;
+	}
+
+	cl($jobname, 'Running job action method: '.$action['method'], VERBOSE_DEBUG);
+	$return_action = $action['method']($jobname, $action['parameters']);
+
+	return $return_action;
+}
+
+# run a job
+function route($jobname, $job, $runactionname=false) {
+
+	global $config;
+
+	$jobroot = false;
+
+	if (isset($job['urls'])) {
+		# preparations - as we don't want to do any unneccessary things we first check for basic availability here first
+		foreach ($job['urls'] as $destination_name => $params) {
+
+			# parse the URL
+			if (!($job['urls'][$destination_name]['url'] = parse_url($job['urls'][$destination_name]['url']))) {
+				cl($jobname, 'Malformed URL format of destination '.$destination_name, VERBOSE_ERROR);
+				return ROUTE_ERROR;
+			}
+
+			# find out what type of url this is
+			switch ($job['urls'][$destination_name]['url']['scheme']) {
+				case 'file': # local file
+
+					# make sure local path is there - if not, get out
+					if (!is_dir($job['urls'][$destination_name]['url']['path'])) {
+						cl($jobname, 'Local path '.$job['urls'][$destination_name]['url']['path'].' does not exist.', VERBOSE_ERROR);
+						return ROUTE_ERROR;
+					}
+
+					# is there a requirement of files set here?
+					if (isset($job['urls'][$destination_name]['requirements']) && !requirements_met($jobname, $job['urls'][$destination_name]['url']['path'], $job['urls'][$destination_name]['requirements'])) {
+						return ROUTE_NOTHING_DONE;
+					}
+
+					break;
+				case 'smb':
+
+					# pingtest hosts here, if any of them does not respond - go next
+					if (!pingtest($jobname, $job['urls'][$destination_name]['url']['host'])) {
+						cl($jobname, 'Host '.$job['urls'][$destination_name]['url']['host'].' does not respond to ping.', VERBOSE_DEBUG);
+						return ROUTE_NOTHING_DONE;
+					}
+
+					break;
+			}
+
+		} # walk job-urls
+
+		# preparations - walk the paths and try to transform them into paths on the disk
+		foreach ($job['urls'] as $destination_name => $params) {
+			switch (strtolower($params['url']['scheme'])) {
+				# samba connection
+				case 'smb':
+
+					# job rootpath - eg /mnt/transfer/jobname
+					if (!make_dir($jobname, $config['main']['mount_rootpath'].$jobname)) {
+						return ROUTE_ERROR;
+					}
+
+					$jobroot = $config['main']['mount_rootpath'].$jobname;
+
+					# are there options for this supplied?
+					$options = isset($job['urls'][$destination_name]['mountoptions']) ? $job['urls'][$destination_name]['mountoptions'] : array();
+
+					# try to mount
+					if (!($job['urls'][$destination_name]['fullpath'] = mountcifs($jobname, $params['url'], $jobroot.$destination_name, $options))) {
+						cl($jobname, 'Could not mount '.$destination_name, VERBOSE_ERROR);
+						return ROUTE_ERROR;
+					}
+
+					# mark this as mounted so we may unmount it later on
+					$job['urls'][$destination_name]['mountpath'] = $jobroot.$destination_name.'/'; # this is the base mountpath
+					$job['urls'][$destination_name]['mounted'] = true;
+
+					# is there a requirement of files set here?
+					if (isset($job['urls'][$destination_name]['requirements']) && !requirements_met($jobname, $job['urls'][$destination_name]['fullpath'], $job['urls'][$destination_name]['requirements'])) {
+						if (umount($jobname, $job['urls'][$destination_name]['mountpath']) && isset($job['removedirs']) && $job['removedirs']) {
+							cl($jobname, 'Removing '.$job['urls'][$destination_name]['mountpath'], VERBOSE_DEBUG);
+							rmdir($job['urls'][$destination_name]['mountpath']);
+						}
+						return ROUTE_NOTHING_DONE_WRITE_CACHE;
+					}
+					break;
+				# local path
+				case 'file':
+					$job['urls'][$destination_name]['fullpath'] = substr($params['url']['path'], -1) !== '/' ? $params['url']['path'].'/' : $params['url']['path'];
+					if (!is_dir($job['urls'][$destination_name]['fullpath'])) {
+						cl($jobname, 'Local path '.$params['url']['fullpath'].' not found.', VERBOSE_ERROR);
+						return ROUTE_ERROR;
+					}
+					break;
+			}
+		} # walk job-urls
+	} # if-job-urls
+
+	# walk the actions
+	$all_actions_ok = true;
+
+	if (isset($job['actions'])) {
+		foreach ($job['actions'] as $actionname => $action) {
+
+			if ($runactionname !== false && $actionname !== $runactionname) {
+				cl($jobname, 'Skipping non-matching action: '.$actionname, VERBOSE_DEBUG);
+				continue;
+			}
+
+			if (isset($job['urls'])) {
+				# preparation - walk the jobs again and replace placeholders in the action
+				foreach ($job['urls'] as $destination_name => $params) {
+					$action = str_replace('###'.strtoupper($destination_name).'###', $job['urls'][$destination_name]['fullpath'], $action);
+				}
+			}
+
+
+			cl($jobname, 'Running action: '.$actionname, VERBOSE_DEBUG);
+
+			# check if this is an array-action
+			if (is_array($action)) {
+
+				# feed the action runner
+				if (!run_action($jobname, $action)) {
+					$all_actions_ok = false;
+					break;
+				}
+
+			# or is this a plaintext action - a command to run
+			} else {
+				unset($o, $r);
+				cl($jobname, 'Run: '.$action, VERBOSE_DEBUG);
+
+				if (!$config['main']['dryrun']) {
+					# run the command
+					exec($action, $o, $r);
+					if (count($o)) {
+						foreach ($o as $oline) { cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP); }
+					}
+					cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+					# cl($jobname, "\n\n".implode("\n", $output), VERBOSE_INFO);
+					# did it fail?
+					if ($r !== 0) {
+						cl($jobname, 'Action ended with code '.$r.', halting actions.', VERBOSE_DEBUG);
+						$all_actions_ok = false;
+						break;
+					}
+				}
+			}
+		} # for-actions
+	} # if-actions
+
+	# do we have paths to unmount?
+	if (isset($config['main']['unmount'], $job['urls']) && $config['main']['unmount']) {
+		# walk the paths and unmount what need to be unmounted
+		foreach ($job['urls'] as $destination_name => $params) {
+			if (isset($params['mounted'], $params['mountpath']) && is_mountpoint($jobname, $params['mountpath'])) {
+				# try to unmount it
+				if (umount($jobname, $params['mountpath']) && isset($job['removedirs']) && $job['removedirs']) {
+					# can we remove it too?
+					cl($jobname, 'Removing '.$params['mountpath'], VERBOSE_DEBUG);
+					rmdir($params['mountpath']);
+				}
+			}
+		} # for-urls
+
+		# is the job root a dir?
+		if (is_dir($jobroot) && isset($job['removedirs']) && $job['removedirs']) {
+			# then try to remove it
+			cl($jobname, 'Removing '.$jobroot, VERBOSE_DEBUG);
+			rmdir($jobroot);
+		}
+	} # if-umount
+
+	# did any action fail, and we should skip on fail?
+	if (!$all_actions_ok && isset($job['actionfailretry']) && $job['actionfailretry']) {
+		return ROUTE_NOTHING_DONE;
+	}
+
+	return ROUTE_SUCCESS;
+}
+
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+	$s = explode("\n", $s);
+
+	foreach ($s as $k => $v) {
+		$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+	}
+
+	return implode("\n", $s);
+}
+
+# to replicate owner, group and permissions from one source to one target
+function replicate_owner_group_perms($jobname, $source, $target) {
+
+	global $config;
+
+	cl($jobname, 'Replicating owner, group and perms from '.$source.' to '.$target, VERBOSE_DEBUG);
+
+	$group = filegroup($source);
+	$owner = fileowner($source);
+	$perms = decoct(fileperms($source) & 0777);
+
+	unset($c, $o, $r);
+	$c = 'chown '.$owner.':'.$group.' '.escapeshellarg($target).' && ';
+	$c .= 'chmod '.$perms.' '.escapeshellarg($target);
+	cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+
+	if (!$config['main']['dryrun']) {
+		exec($c, $o, $r);
+		if (count($o)) {
+			foreach ($o as $oline) { cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP); }
+		}
+		cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+		if ($r !== 0) {
+	   		cl($jobname, 'Replicating owner, group and perms from '.$source.' to '.$target, VERBOSE_ERROR);
+			return false;
+		}
+	}
+	return true;
+}
+
+# to unmount directory
+function umount($jobname, $mountpath) {
+	# command: umount $SYNC_SOURCE_TEMP_MOUNT  2>&- 1>&-;
+	cl($jobname, 'Unmounting '.$mountpath, VERBOSE_DEBUG);
+	unset ($c, $o, $r);
+	$c = 'umount "'.$mountpath.'"';
+	cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+	if (!$config['main']['dryrun']) {
+		exec($c, $o, $r);
+		if (count($o)) {
+			foreach ($o as $oline) { cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP); }
+		}
+		cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+		if ($r !== 0) {
+			cl($jobname, 'Failed umount on "'.$mountpath.'"', VERBOSE_ERROR);
+		}
+	}
+
+	return true;
+}
+
+# output a graphic message dialog box
+function msg($jobname, $s) {
+	$c = 'zenity --info --text='.escapeshellarg($s).' --display=:0.0';
+	cl($jobname, 'Running '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) { cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP); }
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	return ($r === 0);
+}
+
+# --- main ------------------------------------------------------------
+
+$config = array(
+	# the main config
+	'main' => array(
+			'dryrun' => false,
+			'file_config' => array(
+				# 'file_config' => '/etc/dptools/'.basename(__FILE__),
+				# 'file_config' => 'transfer-rckphone1',
+				'/etc/dptools/'.basename(__FILE__).'.conf',
+				'./'.basename(__FILE__).'.conf'
+			),
+			'file_cache' => '/var/cache/'.basename(__FILE__).'.cache',
+			'file_convert' => '/usr/bin/convert',
+			'file_lftp' => '/usr/bin/lftp',
+			# 'file_log' => '/var/log/'.basename(__FILE__),
+			'file_log' => '/var/log/'.basename(__FILE__).'',
+			# 'file_pid' => '/var/run/'.basename(__FILE__).'.pid',
+			'force' => false,
+			'list_jobs' => false,
+			'loglevel' => VERBOSE_ERROR,
+			'mount_rootpath' => '/mnt/'.basename(__FILE__).'/', # where to mount samba shares - ends with a slash
+			'run_this_jobname' => false,
+			'run_this_actionname' => false,
+			'timezone' => 'Europe/Stockholm', # php whine about timezone if we don't set it
+			'unmount' => true,
+			'verbose' => VERBOSE_ERROR,
+	),
+	'jobs' => array()
+);
+
+
+# get arguments
+$arguments = getopt(
+	"a:r:c:v::dj:lufhkpw::"
+	,
+	array(
+		'action:',
+		# 'clear-pid',
+		'dryrun',
+		'force',
+		'help',
+		#'ignore-rights',
+		'job:',
+		'keep-source-files',
+		'list-jobs',
+		'print-config',
+		# 'skip-pid',
+		'verbose::',
+		# 'verbose::',
+		'write-config::'
+	)
+);
+
+# handle options
+$config_opt = array();
+foreach ($arguments as $k => $v) {
+	switch ($k) {
+		case 'a':
+		case 'action':
+			$config_opt['main']['run_this_actionname'] = $v;
+			cl(false, 'Only running action "'.$config_opt['main']['run_this_actionname'].'"', VERBOSE_DEBUG);
+			break;
+		case 'c': #clear cache from errors
+			# make sure the job exists in the cace
+			if (!isset($cache[$v])) {
+				cl($v, 'Job '.$v.' does not exist in cache.', VERBOSE_ERROR);
+				break;
+			}
+			cl($v, 'Clearing errors for  job '.$v, VERBOSE_DEBUG);
+			$cache[$v]['errors'] = 0;
+			$cache_changed = true;
+			break;
+
+		case 'd': # only dry-run (do not run command)
+		case 'dryrun':
+			$config_opt['main']['dryrun'] = true;
+			cl(false, 'Dryrun mode activated', VERBOSE_DEBUG);
+			break;
+
+		case 'f': # force - do not care about intervals and such
+		case 'force':
+			$config_opt['main']['force'] = true;
+			cl(false, 'Force mode activated', VERBOSE_DEBUG);
+			break;
+
+
+		case 'h':
+		case 'help':
+?>
+Usage: <?php echo basename(__FILE__)?> [commands below]
+<?php echo basename(__FILE__)?> manages file synchronizations driven by other applications, such as rsync.
+  -a <name>, --action=<name>		Run specific action only.
+  -c <jobname>						Clear job name from errors.
+  -d, --dryrun						Dry-run job (only affects actions which will
+  									only be printed).
+  -f, --force						Force job to run, do not care about
+  									intervals or errors.
+  -j <name>, --job <name>			Run specific job only.
+  -k, --keep-source-files 			LFTP, Keep source files after transfer
+  -l								List jobs
+  -r <jobname>						Clear timeout for job.
+  -u								Do not umount after job is done.
+  -v[vvv], --verbose				Be verbose in actions.
+  -w=<name>, --write-config=<name>	Write config to location in configuration
+  -p, --print-config				Print out config on screen
+
+  Configuration:	<?php echo $config_opt['main']['file_config']?>
+
+  Log:				<?php echo $config_opt['main']['file_log']?>
+
+  Cache:			<?php echo $config_opt['main']['file_cache']?>
+
+Made by dotpointer, 2012-2016.
+<?php
+			die();
+
+		case 'j': # run a specific job
+		case 'job':
+			$config_opt['main']['run_this_jobname'] = $v;
+			cl($config_opt['main']['run_this_jobname'], 'Only running job "'.$config_opt['main']['run_this_jobname'].'"', VERBOSE_DEBUG);
+			break;
+
+		case 'k':
+		case 'keep-source-files':
+			cl(false, 'Keeping source files.', VERBOSE_INFO);
+			$config_opt['main']['keepsourcefiles'] = true;
+			break;
+
+		case 'l':
+		case 'list-jobs':
+			cl(false, 'List jobs.', VERBOSE_INFO);
+			$config_opt['main']['list_jobs'] = true;
+			break;
+
+		case 'p':
+		case 'print-config':
+			# print config in json format
+			echo json_encode($config_opt, JSON_PRETTY_PRINT);
+			die(0);
+
+		case 'r': # reset timeouts
+			# make sure the job exists in the cace
+			if (!isset($cache[$v])) {
+				cl(false, 'Job '.$v.' does not exist in cache.', VERBOSE_ERROR);
+				break;
+			}
+			cl(false, 'Clearing timeout for  job '.$v, VERBOSE_DEBUG);
+			$cache[$v]['lastrun'] = 0;
+			$cache_changed = true;
+			break;
+
+		case 'u': # avoid unmounting
+			$config_opt['main']['unmount'] = false;
+			break;
+
+		case 'v': # be verbose
+		case 'verbose':
+			# determine and set level of verbosity
+			switch ($v) {
+				default: # error
+					$config_opt['main']['verbose'] = VERBOSE_ERROR;
+					break;
+				case 'v': # error, info
+					$config_opt['main']['verbose'] = VERBOSE_INFO;
+					break;
+				case 'vv': # error, info, debug
+					$config_opt['main']['verbose'] = VERBOSE_DEBUG;
+					break;
+				case 'vvv': # error, info, debug, debug deep
+					$config_opt['main']['verbose'] = VERBOSE_DEBUG_DEEP;
+					break;
+			}
+
+			break;
+
+		# to write out the config
+		case 'w':
+		case 'write-config':
+
+			if (!strlen($v)) {
+				cl(false, 'Configuration file must be specified.', VERBOSE_ERROR);
+				die(1);
+			}
+
+			if (file_exists($v)) {
+				cl(false, 'Configuration file already exists: '.$v, VERBOSE_ERROR);
+				die(1);
+			}
+
+			# write config to file
+			file_put_contents($v, json_encode($config_opt, JSON_PRETTY_PRINT));
+			die(0);
+	}
+	
+	# make sure the config from parameters override all
+	$config = array_merge_recursive_distinct($config, $config_opt);
+}
+
+$configfiles = $config['main']['file_config'];
+
+do {
+
+	# shift one config file of the list of config files
+	$configfile = array_shift($configfiles);
+
+	# if this config file exists
+	if (file_exists($configfile)) {
+
+		cl(false, 'Reading config file: '.$configfile, VERBOSE_DEBUG);
+
+		# failed reading config
+		if (!$configtmp = file_get_contents($configfile)) {
+			cl(false, 'Failed reading configuration file, check rights: '.$configfile, VERBOSE_ERROR);
+			continue;
+		}
+		# try to read json
+		$configtmp = json_decode(remove_comments($configtmp), true);
+		if ($configtmp === NULL) {
+			cl(false, 'Invalid configuration file, check JSON syntax: '.$configfile, VERBOSE_ERROR);
+			continue;
+		}
+
+		#if (
+		#	isset($configtmp['main'], $configtmp['main']['file_config']) &&
+		#	!in_array($configtmp['main']['file_config'])
+		#) {
+		#	cl(false, 'Invalid configuration file, check JSON syntax: '.$configfile, VERBOSE_ERROR);
+		#	continue;
+		#}
+
+		# remove default profile
+		$config = array_merge_recursive_distinct($config, $configtmp);
+	# or config file does not exit
+	} else {
+			cl(false, 'Skipping nonexistant config file: '.$configfile, VERBOSE_DEBUG_DEEP);
+	}
+
+} while (count($configfiles)); # do-while-configfiles
+
+# make sure the config from parameters override all
+$config = array_merge_recursive_distinct($config, $config_opt);
+
+# --- requirement checks ---------------------------------------
+
+if (!file_exists($config['main']['file_convert'])) {
+	cl(false, $config['main']['file_convert'].' was not found. Please install imagemagick: sudo apt-get install imagemagick', VERBOSE_ERROR);
+	die(1);
+}
+
+if (!file_exists($config['main']['file_lftp'])) {
+	cl(false, $config['main']['file_lftp'].' was not found. Please install LFTP: sudo apt-get install lftp', VERBOSE_ERROR);
+	die(1);
+}
+
+# make sure the mounting root path exists - here we mount all samba shares and so on
+if (!file_exists($config['main']['mount_rootpath']) || !is_dir($config['main']['mount_rootpath'])) {
+	cl(false, 'Mounting root path ('.$config['main']['mount_rootpath'].') does not exist.', VERBOSE_ERROR);
+	die(1);
+}
+
+# php whine about timezone if we don't set it
+cl(false, 'Setting timezone: '.$config['main']['timezone'], VERBOSE_DEBUG_DEEP);
+date_default_timezone_set($config['main']['timezone']);
+
+# echo json_encode($config, JSON_PRETTY_PRINT);
+
+# get cache data
+$cache = file_exists($config['main']['file_cache']) ? json_decode(file_get_contents($config['main']['file_cache']), true) : array();
+$cache = is_array($cache) ? $cache : array();
+$cache_changed = false;
+
+# check if this is running, if process id
+unset($c, $o, $r);
+$c = 'ps a|grep -v grep|grep "'.basename(__FILE__).'\n"|grep -v \'^ *'.getmypid().'\'';
+cl(false, 'Run: '.$c, VERBOSE_DEBUG);
+exec($c, $o, $r);
+if (count($o)) {
+	cl(false, 'Output: '.implode("\n", $o), VERBOSE_DEBUG);
+}
+cl(false, 'Return: '.$r.' ('.($r !== 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+if (count($o)) {
+	cl(false, 'Already running: '.var_export($o, true), VERBOSE_DEBUG);
+	die(2);
+}
+
+# walk the jobs
+foreach ($config['jobs'] as $jobname => $job) {
+
+	if (!isset($job['active'], $job['actions'])) {
+		cl($jobname, 'Invalid job missing essential parts '.$jobname, VERBOSE_ERROR);
+		continue;
+	}
+
+	# should we run only one job?
+	if ($config['main']['run_this_jobname'] !== false && $config['main']['run_this_jobname'] !== $jobname) {
+		continue;
+	}
+
+	# is this job inactive
+	if (!$job['active']) {
+		cl($jobname, 'Skipping inactive job', VERBOSE_DEBUG_DEEP);
+		continue;
+	}
+
+	# is this job manual run only and it is not this job to run, then go next
+	if (isset($job['manual']) && $job['manual'] && $config['main']['run_this_jobname'] !== $jobname) {
+		cl($jobname, 'Skipping manual-run-only job', VERBOSE_DEBUG_DEEP);
+		continue;
+	}
+
+	if ($config['main']['list_jobs']) {
+		cl($jobname, 'Job: '.$jobname, VERBOSE_INFO);
+		continue;
+	}
+
+	# find out the error limit of this job
+	$job['errorlimit'] = isset($job['errorlimit']) ? (int)$job['errorlimit'] : 3;
+
+	# do we have an error limit and it has been passed?
+	if (!$config['main']['force'] &&
+		$job['errorlimit'] &&
+		isset($cache[$jobname], $cache[$jobname]['errors']) &&
+		$cache[$jobname]['errors'] > $job['errorlimit']
+	) {
+		cl($jobname, 'Skipping job '.$jobname.' as it has reached error limit of '.$job['errorlimit'], VERBOSE_DEBUG);
+		continue;
+	}
+
+	# is last run defined in cache, is this not zero and is this in scope of timeout - then skip this job
+	if (!$config['main']['force'] &&
+		isset($cache[$jobname], $cache[$jobname]['lastrun'], $job['interval']) &&
+		$cache[$jobname]['lastrun'] !== 0 &&
+		(int)$cache[$jobname]['lastrun'] + (int)$job['interval'] > time()
+	) {
+		cl($jobname, 'Skipping job '.$jobname.', interval of '.$job['interval'].'s not passed, '.( ((int)$cache[$jobname]['lastrun'] + (int)$job['interval'] ) - time()).'s left.', VERBOSE_DEBUG);
+		continue;
+	}
+
+	cl($jobname, 'Beginning job ', VERBOSE_DEBUG);
+
+	$time_start = microtime(true);
+
+	# make sure there is a cache for the job
+	$cache[$jobname] = isset($cache[$jobname]) && is_array($cache[$jobname]) ? $cache[$jobname] : array();
+
+	# run the job
+	$result = route($jobname, $job, $config['main']['run_this_actionname']);
+	$update_lastrun = false;
+
+	# find out how it went
+	switch ($result) {
+		case ROUTE_ERROR:
+			# increment the number of errors
+			$cache[$jobname]['errors'] = isset($cache[$jobname]['errors']) && is_numeric($cache[$jobname]['errors']) ? (int)$cache[$jobname]['errors'] + 1 : 1;
+			$cache_changed = true;
+	   		$update_lastrun = true;
+			break;
+		case ROUTE_SUCCESS:
+		case ROUTE_NOTHING_DONE_WRITE_CACHE:
+			$cache_changed = true;
+	   		$update_lastrun = true;
+	   		$cache[$jobname]['errors'] = 0;
+	   		break;
+		case ROUTE_NOTHING_DONE:
+			# then clear the error container
+			$cache[$jobname]['errors'] = 0;
+			break;
+	}
+
+	if ($update_lastrun) {
+		# then update/add it to the cache
+		$cache[$jobname]['lastrun'] = time();
+	}
+
+	cl($jobname, 'Finished job, consumed '.round(microtime(true) - $time_start, 3).' seconds', VERBOSE_DEBUG);
+}
+
+# write cache only if needed
+if ($cache_changed) {
+	cl(false, 'Writing cachefile', VERBOSE_DEBUG);
+	file_put_contents($config['main']['file_cache'], json_encode($cache));
+}
+
+die(0);
+
+?>

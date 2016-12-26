@@ -1,0 +1,15 @@
+#!/bin/bash
+# show virtual machine info
+
+# if machine is specified, use that
+if [ -n "$1" ]; then
+    vboxmanage showvminfo "$1"
+# otherwise
+else
+    echo "Machines:"
+    echo ""
+    vboxmanage list vms
+    echo ""
+    echo "Add machine name to the command to show machine info"
+fi
+

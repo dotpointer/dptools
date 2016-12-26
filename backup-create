@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Make sure only root can run our script
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+
+echo "Creating image file imagefile.img...";
+# create a x GB image file - do this locally
+dd if=/dev/urandom of=imagefile.img bs=1M count=16384
+
+echo "Creating loop device...";
+# make loop device - do this locally
+losetup /dev/loop0 imagefile.img
+
+echo "Wiping header of loop device...";
+# if we don't do this we get
+# "Cannot wipe header on device /dev/loop0."
+dd if=/dev/zero count=2048 of=/dev/loop0
+
+echo "Inializing LUKS format on the loop device...";
+# initialize img file - do this locally - NOTE, write YES in uppercase
+cryptsetup luksFormat /dev/loop0
+
+echo "Opening LUKS device..."
+# create a device in /dev/mapper/name - do this locally
+cryptsetup luksOpen /dev/loop0 backuploop
+
+echo "Formatting LUKS device...";
+# format the device - do this locally
+mkfs.ext4 /dev/mapper/backuploop
+
+echo "Done";

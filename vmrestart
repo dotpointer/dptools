@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# if machine is specified, stop that
+if [ -n "$1" ]; then
+    vmstop "$1"
+    vmstart "$1"
+    # otherwise stop them all
+else
+   echo 'VM name must be specified';
+   exit 1;
+fi

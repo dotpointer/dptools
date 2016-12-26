@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [ -z "$1" ] || [ -z "$2" ]; then
+   echo "VM name and path to device (/dev/blahblah or 'none') must be given.";
+   exit 1
+fi
+
+VBoxManage storageattach "$1" --storagectl "IDE Controller" --port 1 --device 0 --type dvddrive --medium $2

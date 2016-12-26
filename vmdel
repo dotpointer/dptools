@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+    echo "Name of VM must be given";
+    exit 1
+fi
+
+# list and scan for VM:s
+VMS=$(VBoxManage list vms)
+if [[ ! $VMS == *"$1"* ]]; then
+	echo "VM $1 not found.";
+	exit 1
+fi
+
+echo "This will delete VM $1, press enter to continue..."
+read
+if [ -n "$1" ]; then
+    VBoxManage unregistervm $1 --delete
+fi
+

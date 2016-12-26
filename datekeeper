@@ -1,0 +1,96 @@
+#!/usr/bin/php
+<?php
+
+	# changelog
+	# 2010-02-22 00:13:12
+	# 2016-11-30 22:38:00 - adding last modified date display when not found
+	# 2016-12-05 23:42:00 - adding clearstatcache between reading and resetting phases
+
+	# phase 1 - read the dates and files
+	
+	$files = array();
+
+	define('FILE_NAME', 1);
+	define('FILE_STATUS', 2);
+	define('FILE_PERMS', 3);
+	define('FILE_DATE_MODIFIED', 4);
+	
+	define('FILE_STATUS_UNCHANGED', 0);
+	define('FILE_STATUS_DATE_SET_OK', 1);
+	define('FILE_STATUS_DATE_SET_FAILED', -1);
+	define('FILE_STATUS_UNCHANGED_NO_NEED_TO', -2);
+	
+	$path = '.';
+	
+	clearstatcache();
+	
+	echo "Reading and remembering dates:\n";
+	
+	# try open dir
+	if ($handle = opendir($path)) {
+		# walk dir contents
+		while (false !== ($file = readdir($handle))) {
+			# if no file, go next
+			
+			# echo $file;
+			if ($file == "." || $file == ".." || !is_file($file)) continue;
+			
+			$mdate = filemtime($file);
+
+			echo  date('Y-m-d H:i:s', $mdate).' - '.$file."\n";
+						
+			# do file array
+			$this_file = array(FILE_NAME=>$file, FILE_STATUS=>FILE_STATUS_UNCHANGED, FILE_DATE_MODIFIED=>$mdate);
+						
+			# add file to array
+			$files[] = $this_file;
+			
+		}
+		closedir($handle);
+	}
+
+	echo 'Ready, press any key to reset dates...';
+	fgets(STDIN); 
+
+	echo 'Clearing stat cache...'."\n";
+	clearstatcache();
+	
+	echo 'Resetting the dates, if needed:'."\n";
+	
+	# walk files
+	foreach ($files as $file) {
+	
+			# does file exist
+			if (file_exists($file[FILE_NAME])) {
+				$date_modified_now = filemtime($file[FILE_NAME]);
+			
+				# is date unchanged
+				if ($date_modified_now == $file[FILE_DATE_MODIFIED]) {
+					$status='NO CHANGE';
+				# or has it changed
+				} else {
+				
+					#try touching/setting date
+					if (touch($file[FILE_NAME], $file[FILE_DATE_MODIFIED])) {
+						$status='DATE SET';
+					# if touching failed
+					} else {
+						$status='DATE FAILED';
+					}
+				}
+				
+			
+			} else {
+				$status='NOT FOUND ('.$file[FILE_DATE_MODIFIED].')';
+			}
+			
+			
+			$status=str_pad($status, 16, ' '); 
+			echo $status.$file[FILE_NAME];
+			if (strpos($status, 'DATE SET')!==false) {
+				echo ' ('.date('Y-m-d H:i:s', $date_modified_now).' -> '.date('Y-m-d H:i:s', $file[FILE_DATE_MODIFIED]).')';
+			}
+			echo "\n";
+	
+	}
+?>

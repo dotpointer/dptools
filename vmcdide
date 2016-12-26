@@ -1,0 +1,22 @@
+#!/bin/bash
+# to insert and eject cd:s of a VM
+
+NAME=$1
+MEDIUM=$2
+if [ -z "$NAME" ]; then
+    echo "Name of VM must be given, path to disk can be given.";
+    exit 1
+fi
+
+if [ -z "$MEDIUM" ]; then
+    MEDIUM='emptydrive'
+fi
+
+# list and scan for VM:s
+VMS=$(VBoxManage list vms)
+if [[ ! $VMS == *"$1"* ]]; then
+echo "VM $1 not found.";
+fi
+
+
+VBoxManage storageattach "$NAME" --storagectl "IDE Controller" --port 1 --device 0 --type dvddrive --medium $MEDIUM

@@ -1,0 +1,106 @@
+#!/usr/bin/php
+<?php
+
+# phpdircheck - to php lint check a directory recursively
+# and stop if any errors occour
+# by robert klebe	
+
+# example bash file which checks php files before publishing data to a webroot:
+#
+# phpdircheck $SOURCE  
+# if [ $? -eq 0 ]; then
+#	echo "Publishing data: $SOURCE -> $TARGET";
+#        # sync the source with the target, */=recursive, note that we must specify folder excludes first for some reason
+#	 rsync -av --exclude='subdomains' --include='*/' --include='*.map' --include='*.po' --include='*.mo' --include='*.png' --include='*.html' --include='*.ttf' --include='*.eot' --include='*.svg' --include='*.woff' --include='*.jpg' --include='*.gif' --include='*.ico' --include='*.swf' --include='*.php' --include='*.css' --include='*.js' --include='robots.txt' --exclude='*' $SOURCE $TARGET
+# fi
+
+# changelog
+# 2013-11-02 14:34 - initial version
+# 2014-10-22 22:39 - cleanup
+# 2014-10-22 22:46:33
+# 2015-09-02 18:29:02 - cleanup and bugfix
+# 2016-09-21 20:38:18 - adding progressbar
+# 2016-09-21 21:31:02 - updated progressbar
+
+function progressbar($part, $total) {
+
+	# character length for progress bar
+	$pb_length = 10;
+	
+	# calculate the part
+	$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
+	# calculate the total
+	$pb_total = $pb_length;
+
+	return 
+		'['.
+		str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
+		
+		($part < $total && $pb_part > 0 ? '>' : '').
+		
+		str_repeat('.', $pb_total - $pb_part).
+		'] '.			
+		# the first number is the actual amount of characters in the 
+		# resulting string, and we want 000.000, so that's 7
+		sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
+		'% '.
+		str_pad($part, strlen($total), '0', STR_PAD_LEFT).
+		'/'.
+		$total.
+		' '		
+		;			
+}
+
+# check path
+if (!isset($argv[1]) || !file_exists($argv[1]) || !is_dir($argv[1])) {
+	echo 'Path must be specified'."\n";
+	exit(1);
+}
+
+# set working dir
+chdir($argv[1]);
+
+# do a find on the dir
+$cmd = 'find '.escapeshellarg($argv[1]).' -iname "*.php"';
+$files = shell_exec($cmd);
+if (!$files) {
+	echo 'No files found.';
+	exit(2);
+}
+
+# split the lines by newline
+$files = explode("\n", trim($files));
+$total = count($files);
+$l = strlen((string)$total);
+echo 'PHP Lint-checking '.$total.' files in '.$argv[1]."\n";
+
+# walk files
+$prevfile = '';
+foreach ($files as $nr => $file) {
+	if (!file_exists($file)) {
+		# echo 'File does not exist: '.$file."\n";
+		continue;
+	}
+
+	unset($o, $r);
+	$cmd = 'php -l '.escapeshellarg($file);
+	exec($cmd, $o, $r);
+
+	if ($r) {
+		echo 'Fail: '.$file."\n";
+		echo (is_array($o) ? trim(implode("\n", $o)) : $o)."\n";   
+		exit(3);
+	}
+	// echo sprintf('%0'.$l.'d',  ($nr + 1)).'/'.$total.' ('.( sprintf('%03d', round(( ($nr + 1)/$total)*100) )).'%) ok, checked: '.$file."\r";
+	
+	# blank previous line	
+	echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+
+	# write status
+	echo progressbar($nr + 1, $total).' checked: '.$file."\r";
+
+	$prevfile = $file;
+}
+echo "\n";
+exit(0);
+?>

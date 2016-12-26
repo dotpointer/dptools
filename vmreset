@@ -1,0 +1,11 @@
+#!/bin/bash
+
+
+# if machine is specified, stop that
+if [ -n "$1" ]; then
+    vboxmanage controlvm "$1" reset
+    # otherwise stop them all
+else
+    echo "VM name must be specified";
+fi
+

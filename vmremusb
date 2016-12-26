@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [ -z "$1" ] || [ -z "$2" ]; then
+   echo "VM name and USB UUID must be given.";
+   exit 1
+fi
+
+VBoxManage controlvm "$1" usbdetach "$2"

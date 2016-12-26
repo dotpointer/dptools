@@ -1,0 +1,2 @@
+#!/bin/bash
+VBoxManage usbfilter remove 0 --target $1

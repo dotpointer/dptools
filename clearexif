@@ -1,0 +1,22 @@
+#!/usr/bin/php
+<?php
+
+	# get all files from here
+	exec('find . -type f -iname "*.jpg"', $o, $r);	
+	if ($r !== 0) die('Failed searching');
+
+	if (!isset($argv[1]) || $argv[1] !== '-y') die('Please specify -y to clear.');
+
+	$files = $o;
+	
+	# walk files	
+	foreach ($files as $file) {
+		# run exiftool
+		unset($c, $o, $r);
+		$c = 'exiftool -all= -overwrite_original '.escapeshellarg($file);
+		echo 'Running: '.$c."\n";;
+		exec($c, $o, $r);
+		if ($r !== 0) echo '--- FAILED updating exif for this file. ---'."\n";
+	}
+
+?>

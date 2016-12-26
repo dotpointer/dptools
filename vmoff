@@ -1,0 +1,12 @@
+#!/bin/bash
+# to stop virtual machines
+
+# if machine is specified, stop that
+if [ -n "$1" ]; then
+    VBoxManage controlvm "$1" acpipowerbutton
+# otherwise stop them all
+else
+    echo "Machine name must be specified.";
+    exit 1;
+fi
+
