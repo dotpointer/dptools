@@ -3,9 +3,10 @@
 # dptools update script
 # by robert klebe
 
-# 2014-07-14 - initial version
-# 2014-09-29 - adding profile reload
-# 2014-11-01 - adding chmod correction on target dir
+# 2014-07-14 00:00:00 - initial version
+# 2014-09-29 00:00:00 - adding profile reload
+# 2014-11-01 00:00:00 - adding chmod correction on target dir
+# 2016-12-27 20:09:00 - adding removal of unnecessary files
 
 # where to put the cache file with the current timestamp
 cachefile="/var/cache/dptools.cache"
@@ -122,6 +123,18 @@ rm $tmpfile
 if [ ! $? -eq 0 ] ; then
    echo "Failed removing temporary file $tmpfile";
       exit 1
+fi
+
+# remove unnecessary files
+
+removefile="$targetdir/backup_databases"
+if [ -f "$removefile" ] ; then
+	echo "Removing unnecessary file: $removefile";
+	rm $removefile
+	if [ ! $? -eq 0 ] ; then
+		echo "Failed removing file $removefile";
+		exit 1
+	fi
 fi
 
 
