@@ -14,7 +14,7 @@ fi
 
 echo "Creating image file imagefile.img...";
 # create a x GB image file - do this locally
-dd if=/dev/urandom of=imagefile.img bs=1M count=16384
+dd if=/dev/urandom of=imagefile.img bs=1M count=20480
 
 echo "Creating loop device...";
 # make loop device - do this locally

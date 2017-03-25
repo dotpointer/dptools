@@ -1,2 +1,2 @@
 #!/bin/bash
-grep -rn "$1" --color=always ./
+grep -rn "$1" --color=auto ./

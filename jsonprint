@@ -1,0 +1,75 @@
+#!/usr/bin/php
+<?php
+	# json simple printer
+	# by robert klebe, dotpointer
+
+	# changelog
+	# 2017-02-07 11:50:00 - initial version
+
+	$filename = isset($argv[1]) ? $argv[1] : false;
+	$string = isset($argv[2]) ? $argv[2] : false;
+	if ($filename === '--help') {
+?>
+Usage:
+	<?php echo basename(__FILE__); ?> <filename> [optional/tree/path]
+<?php
+		die(0);
+	}
+
+	if ($filename === false) {
+		echo 'No filename specified.'."\n";
+		die(1);
+	}
+
+
+	if (!file_exists($filename)) {
+		echo 'File not found: '.$filename."\n";
+		die(1);
+	}
+
+	$data = file_get_contents($filename);
+
+	if (!$data) {
+		echo 'No data could be read from file.'."\n";
+		die(1);
+	}
+
+	$data = json_decode($data, true);
+	if ($data === null) {
+		echo 'Failed decoding JSON.'."\n";
+		die(1);
+	}
+
+	if ($string) {
+
+
+		$keys = explode('/', $string);
+
+		$reached = array();
+
+		do {
+			$key = array_shift($keys);
+
+			if ($key !== NULL) {
+				$reached[] = $key;
+				if (!isset($data[$key])) {
+					echo 'No key '.$key.' found, path: '.implode('/', $reached)."\n";
+					die(1);
+				}
+				$data = $data[$key];
+			}
+		} while($key !== NULL);
+
+	}
+
+	$data = json_encode($data, JSON_PRETTY_PRINT);
+        if ($data === null) {
+                echo 'Failed re-encoding JSON.'."\n";
+                die(1);
+        }
+
+	echo $data."\n";
+
+	die(0);
+
+?>

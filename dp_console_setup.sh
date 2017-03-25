@@ -46,6 +46,7 @@ alias dirsizemore='du -h --max-depth=1';
 alias diskinfo='df -h';
 alias dmesg='dmesg --time-format=ctime';
 alias dmesŋ='dmesg';
+alias dos2unix='dos2unix -k'
 alias edt='edit';
 alias edit='jed';
 alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
@@ -86,7 +87,7 @@ alias tracert='traceroute';
 alias type='cat';
 alias unamsg='cat /var/log/unattended-upgrades/unattended-upgrades-dpkg.log';
 alias unmount='umount';
-alias updatedcs="if [ -e /tmp/tmp-dcs ]; then rm /tmp/tmp-dcs; fi; wget -O /tmp/tmp-dcs http://s.dotpointer.com/?a=dcs && mv /tmp/tmp-dcs /var/scripts/dp_console_setup.sh && chmod 775 /var/scripts/dp_console_setup.sh && chown root:users /var/scripts/dp_console_setup.sh && reprofile"
+alias updatedcs="if [ -e /tmp/tmp-dcs ]; then rm /tmp/tmp-dcs; fi; wget -O /tmp/tmp-dcs http://www.dotpointer.tk/service/?a=dcs && mv /tmp/tmp-dcs /var/scripts/dp_console_setup.sh && chmod 775 /var/scripts/dp_console_setup.sh && chown root:users /var/scripts/dp_console_setup.sh && reprofile"
 alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vwdial="wvdial";

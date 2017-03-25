@@ -1,2 +1,61 @@
 #!/bin/bash
-gs -sOutputFile="$2" -sDEVICE=pdfwrite -sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray -dCompatibilityLevel=1.4 -dNOPAUSE -dBATCH "$1"
+
+# make pdf files greyscale
+# by robert klebe, dotpointer
+
+# changelog
+# 2015-10-15 11:23:18
+# 2017-02-05 14:25:00 - updating with checks and optional output name
+# 2017-02-05 15:52:00 - updating meta data with creation date set to original file
+
+# check locales
+
+# check locale availability
+LOCALECHECK=$(locale -a|grep -i en_US.utf8)
+if [ ! $? -eq 0 ]; then
+	echo 'Locale en_US.utf8 is not installed, please run dpkg-reconfigure locales if in Debian and add it as a second locale.';
+	exit 1;
+fi
+
+# no parameters
+if [ $# -eq 0 ]; then
+	# show help
+	echo "Usage: $0 input.pdf [output.pdf - defaults to input.greyscale.pdf]"
+	exit 1
+fi
+
+# only 1 parameter
+if [ $# -eq 1 ]; then
+	# set output
+	OUTNAME="$1.greyscale.pdf";
+# or more than 1
+else
+	# use second for output
+	OUTNAME="$2";
+fi
+
+export LC_ALL=en_US.utf8;
+
+TMPPDF="/tmp/pdf_temp_file"
+
+# store metadata
+pdftk "$1" dump_data_utf8 > "$OUTNAME.metadata"
+
+# get and format creation date
+CREATIONDATE=$(/bin/date +'%a %b %Oe %T %Y' -r "$1")
+# put this info to the metadata file
+echo "InfoBegin" >> $OUTNAME.metadata
+echo "InfoKey: CreationDate" >> $OUTNAME.metadata
+echo "InfoValue: $CREATIONDATE" >> $OUTNAME.metadata
+
+# run ghostscript
+gs -sOutputFile="$OUTNAME.temp" -sDEVICE=pdfwrite -sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray -dCompatibilityLevel=1.4 -dNOPAUSE -dBATCH "$1"
+
+# restore metadata
+pdftk "$OUTNAME.temp" update_info_utf8 "$OUTNAME.metadata" output "$OUTNAME"
+
+# set output file date to input file date
+touch --reference="$1" "$OUTNAME"
+
+# remove temporary files
+rm -f "$OUTNAME.temp" "$OUTNAME.metadata"
