@@ -1,3 +1,4 @@
+#!/usr/bin/php
 <?php
 
 	# rename file using EXIF data artist and title
@@ -141,11 +142,14 @@ Options:
 	echo 'Input       : "'.$input.'"'."\n";
 	echo 'Output      : "'.$output.'"'."\n";
 
-	$question = 'Do you want to continue';
-	$line = strtolower(trim(readline($question.'? [Y/n]')));
-	if(!$line || $line !== 'y') {
-		echo 'Aborting'."\n";
-		die(0);
+	# ask user if not bypassed
+	if (!$confirmed) {
+		$question = 'Do you want to continue';
+		$line = strtolower(trim(readline($question.'? [Y/n]')));
+		if(!$line || $line !== 'y') {
+			echo 'Aborting'."\n";
+			die(0);
+		}
 	}
 
 	# make sure output file does not exist
