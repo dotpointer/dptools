@@ -4,6 +4,7 @@
 	# by robert klebe, dotpointer
 	# changelog
 	# 2017-03-25 16:39:37 - initial version
+	# 2017-03-25 16:58:00 - minor fixes
 
 	# defaults
 	$exiftool = '/usr/bin/exiftool';
@@ -34,7 +35,7 @@ Usage: <?php echo basename(__FILE__); ?> <options>
 Options:
 -i <filename>, --input <filename>
 	Input file to rename
--y
+-y, --yes
 	Answer yes to confirm question.
 -h, --help
 <?php
