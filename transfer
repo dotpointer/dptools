@@ -69,6 +69,7 @@
 #	2016-11-26 18:01:02
 #	2016-11-26 19:08:23
 #	2016-12-26 16:25:00 - adding action parameter and escheck.tmp detection and removal
+#	2017-05-24 20:43:58 - adding action action_remove_older_than
 #
 # legend p-t/t-p = photo-transfer/transfer-phone1, t = transfer
 #
@@ -800,6 +801,70 @@ function action_auctionsets($jobname, $parameters /* $parameters['dir_source'], 
 	if ($parameters['show_message']) {
 		msg($jobname, 'Done with '.$completed.' photos.');
 	}
+}
+
+# to remove files in dir older than timeout in seconds
+function action_remove_older_than($jobname, $parameters /* dir, timeout */) {
+
+	global $config;
+
+	if (!isset(
+		$parameters['dir'],
+		$parameters['timeout']
+	)) {
+		cl($jobname, 'Missing parameters on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+	}
+
+	$parameters['timeout'] = (int)$parameters['timeout'];
+
+	if (strlen($parameters['dir']) < 2 || !is_dir($parameters['dir'])) {
+		cl($jobname, 'Invalid dir parameter on action: '.__FUNCTION__, VERBOSE_ERROR);
+		return false; # skip whole group
+
+	}
+
+	cl($jobname, 'Remove-older-than dir: '.$parameters['dir'], VERBOSE_DEBUG);
+	cl($jobname, 'Remove-older-than timeout: '.$parameters['timeout'].'s', VERBOSE_DEBUG);
+
+	# get files in target dir
+	unset($c, $o, $r);
+	$c = 'find '.escapeshellarg($parameters['dir']).' -type f';
+	cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
+	exec($c, $o, $r);
+	if (count($o)) {
+		foreach ($o as $oline) {
+			cl($jobname, 'Output: '.$oline, VERBOSE_DEBUG_DEEP);
+		}
+	}
+	cl($jobname, 'Return: '.$r.' ('.($r === 0 ? 'OK' : 'Error').')', VERBOSE_DEBUG);
+	if ($r !== 0) {
+		cl($jobname, __LINE__.': Error, failed finding files in remove-older-than dir ('.$parameters['dir'].'), output was: '.implode("\n", $o)."\n", VERBOSE_ERROR);
+		return false;
+	}
+	$dirs = $o;
+
+	# walk folders in dir
+	foreach ($dirs as $fullpath) {
+
+		cl($jobname, 'Working on file: '.$fullpath, VERBOSE_DEBUG);
+
+		$filemtime = filemtime($fullpath);
+		if ($filemtime === false) {
+			cl($jobname, __LINE__.': Error, failed reading modify time on '.$fullpath.', going next', VERBOSE_ERROR);
+			continue;
+		}
+
+		if ($filemtime < time()-$parameters['timeout']) {
+			cl($jobname, 'Removing file older than '.$parameters['timeout'].'s ('.date('Y-m-d H:i:s', $filemtime).'): '.$fullpath, VERBOSE_DEBUG);
+			if (!unlink($fullpath)) {
+				cl($jobname, __LINE__.': Error, failed removing '.$fullpath.', going next', VERBOSE_ERROR);
+				continue;
+			}
+		}
+	}
+
+	return true;
 }
 
 # debug printing

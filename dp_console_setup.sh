@@ -7,6 +7,8 @@
 #	2012-12-20	cleaning up
 #	2014-04-26     	adding automatic coloring based on hostname md5sum
 #       2016-03-04	adding colors for less
+#	2017-04-12	adding git branches to PS1
+#	2017-07-28 12:56:00	domain edit
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -71,6 +73,7 @@ alias move='mv -i';
 alias out='logout';
 alias phpc='php -l';
 alias phpcheck='php -l';
+alias polymwer='polymer';
 alias putty='ssh';
 alias ppp-up='ppp-on';
 alias ppp-down='ppp-stop';
@@ -87,7 +90,6 @@ alias tracert='traceroute';
 alias type='cat';
 alias unamsg='cat /var/log/unattended-upgrades/unattended-upgrades-dpkg.log';
 alias unmount='umount';
-alias updatedcs="if [ -e /tmp/tmp-dcs ]; then rm /tmp/tmp-dcs; fi; wget -O /tmp/tmp-dcs http://www.dotpointer.tk/service/?a=dcs && mv /tmp/tmp-dcs /var/scripts/dp_console_setup.sh && chmod 775 /var/scripts/dp_console_setup.sh && chown root:users /var/scripts/dp_console_setup.sh && reprofile"
 alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vwdial="wvdial";
@@ -185,9 +187,24 @@ case $COLOR_MARKER_TEMP_NUMBER in
 		;;		
 esac
 
-# setup the prompt with colors
-PS1="$COLOR_MARKER<$COLOR_HWH\t$COLOR_MARKER|$COLOR_HWH\u$COLOR_MARKER@$COLOR_HWH\h$COLOR_MARKER:$COLOR_HWH\w$COLOR_MARKER:$COLOR_HWH\$$COLOR_MARKER>$COLOR_HWH "
+# find out if in a git repo, write out branch if so
+parse_git_branch() {
+	DATA=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/");
+
+	# not empty?
+	if [[ ! -z $DATA ]]; then
+		# write branch
+		# color not working in here, breaks prompt
+		echo " $DATA";
+	fi
+}
+
+# setup the prompt with colors, slash at $() is very important, otherwise
+# it won't run it every time
+PS1="$COLOR_MARKER<$COLOR_HWH\t$COLOR_MARKER|$COLOR_HWH\u$COLOR_MARKER@$COLOR_HWH\h$COLOR_MARKER:$COLOR_HWH\w$COLOR_MARKER:$COLOR_HWH\$$COLOR_MARKER$COLOR_HWH\$(parse_git_branch)$COLOR_MARKER>$COLOR_HWH "
 export PS1=$PS1
+
+
 
 # is there a customization script to run too?
 # -x for executable did not work when /var/scripts is a symlink

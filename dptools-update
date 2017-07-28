@@ -8,6 +8,7 @@
 # 2014-11-01 00:00:00 - adding chmod correction on target dir
 # 2016-12-27 20:09:00 - adding removal of unnecessary files
 # 2017-02-01 19:08:00 - domain edit
+# 2017-07-28 12:53:00 - domain edit
 
 # where to put the cache file with the current timestamp
 cachefile="/var/cache/dptools.cache"
@@ -18,11 +19,13 @@ targetdir="/var/scripts/dptools"
 # config dir
 configdir="/etc/dptools"
 
+basedomain="dotpointer.ga"
+
 # url to download files from
-downloadurl="http://www.dotpointer.tk/service/?a=dptools"
+downloadurl="http://www.$basedomain/service/?a=dptools"
 
 # url to check timestamp from
-timeurl="http://www.dotpointer.tk/service/?a=dptools_time"
+timeurl="http://www.$basedomain/service/?a=dptools_time"
 
 # temporary file to store compressed file
 tmpfile="/tmp/dptools.tar.gz"

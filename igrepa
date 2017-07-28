@@ -1,0 +1,4 @@
+#!/bin/bash
+# changelog
+# 2017-04-06 08:45:00
+grep -rni "$1" --color=auto ./

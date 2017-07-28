@@ -31,7 +31,7 @@ INSTALLATION
 sudo bash
 
 # 1. Download the tar file
-wget http://www.dotpointer.tk/service/?a=dptools -O /tmp/dptools.tar.gz
+wget http://www.<current-dotpointer-domain>/service/?a=dptools -O /tmp/dptools.tar.gz
    
 # 2. Make a directory for the scripts
 mkdir -p /var/scripts/dptools
@@ -56,3 +56,4 @@ CHANGELOG
 2014-09-29 - adding killr
 2014-10-22 - adding phpdircheck
 2017-02-01 - domain edit
+2017-07-28 - domain edit
