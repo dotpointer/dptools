@@ -9,6 +9,7 @@
 #       2016-03-04	adding colors for less
 #	2017-04-12	adding git branches to PS1
 #	2017-07-28 12:56:00	domain edit
+#	2017-08-07	adding desktop command
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -40,6 +41,7 @@ alias cp='cp --preserve';
 alias del='rm -i';
 alias delbackups='rm ./*~ 2> /dev/null; rm ./.*~ 2> /dev/null';
 alias delete='rm -i';
+alias desktop='cd $(xdg-user-dir DOCUMENTS)';
 alias dnsreload='killall dnsmasq -s SIGHUP';
 alias df='df -h';
 alias dir='ls -la';
