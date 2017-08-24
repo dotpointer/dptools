@@ -10,6 +10,7 @@
 #	2017-04-12	adding git branches to PS1
 #	2017-07-28 12:56:00	domain edit
 #	2017-08-07	adding desktop command
+#	2017-08-24	use vi for jed
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -59,6 +60,7 @@ alias iostat='iostat -m';
 alias ipcfg='ifconfig';
 alias ipconfig='ifconfig';
 alias iptraffic='iptraf';
+alias jed='vi';
 alias jsonlint='python -m json.tool <';
 alias k='kill';
 alias killall='killall -9';
