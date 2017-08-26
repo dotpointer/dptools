@@ -12,6 +12,7 @@
 #	2017-08-07	adding desktop command
 #	2017-08-24	use vi for jed
 #	2017-08-26	allow dmesg for all users, like in debian 8
+#	2017-08-26	reverting dmesg fix, not working for non-root users
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -208,9 +209,6 @@ parse_git_branch() {
 # it won't run it every time
 PS1="$COLOR_MARKER<$COLOR_HWH\t$COLOR_MARKER|$COLOR_HWH\u$COLOR_MARKER@$COLOR_HWH\h$COLOR_MARKER:$COLOR_HWH\w$COLOR_MARKER:$COLOR_HWH\$$COLOR_MARKER$COLOR_HWH\$(parse_git_branch)$COLOR_MARKER>$COLOR_HWH "
 export PS1=$PS1
-
-# allow dmesg for all users, behaviour that changed from debian 8 to debian 9
-echo 0 > /proc/sys/kernel/dmesg_restrict
 
 # is there a customization script to run too?
 # -x for executable did not work when /var/scripts is a symlink
