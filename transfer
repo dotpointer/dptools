@@ -70,6 +70,7 @@
 #	2016-11-26 19:08:23
 #	2016-12-26 16:25:00 - adding action parameter and escheck.tmp detection and removal
 #	2017-05-24 20:43:58 - adding action action_remove_older_than
+#	2017-08-28 20:28:00 - switching to passive mode for ftp transfers
 #
 # legend p-t/t-p = photo-transfer/transfer-phone1, t = transfer
 #
@@ -269,7 +270,7 @@ function action_ftpfetcher($jobname, $parameters  /* ftp_host, ftp_port, ftp_use
 
 			# try to download files using lftp
 			unset($c, $o, $r);
-			$c = '/bin/bash -c \'lftp ftp://'.$parameters['ftp_username'].'@'.$parameters['ftp_host'].' -p '.$parameters['ftp_port'].' -u '.$parameters['ftp_username'].','.$parameters['ftp_password'].' -e "mirror '.$removesourcefiles.'--verbose -c "'.$parameters['folders'][$k]['dir_source'].'" "'.$parameters['folders'][$k]['dir_target'].'"; bye"\'';
+			$c = '/bin/bash -c \'lftp ftp://'.$parameters['ftp_username'].'@'.$parameters['ftp_host'].' -p '.$parameters['ftp_port'].' -u '.$parameters['ftp_username'].','.$parameters['ftp_password'].' -e "set ftp:prefer-epsv no; mirror '.$removesourcefiles.'--verbose -c "'.$parameters['folders'][$k]['dir_source'].'" "'.$parameters['folders'][$k]['dir_target'].'"; bye"\'';
 			cl($jobname, 'Run: '.$c, VERBOSE_DEBUG);
 			if (!$config['main']['dryrun']) {
 				exec($c, $o, $r);
