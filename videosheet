@@ -12,6 +12,7 @@
 	# 2016-10-03 18:34:53 - object merge
 	# 2016-10-03 19:34:36 - ffmpeg check
 	# 2017-02-01 19:11:00 - domain name edit
+	# 2017-09-06 20:46:00 - various error checks added, adding fail text, switching to stdout and stderr
 
 	# unfixed: messy file
 
@@ -62,18 +63,25 @@
 			$this->filesize = $this->getFileSize();
 			o(VERBOSE_DEBUG, 'Input filesize: '.round($this->filesize,2).' MB');
 
+			# get the duration
+			$this->duration = $this->getVideoDuration();
+			o(VERBOSE_DEBUG, 'Input duration: '.$this->getTimeString($this->duration));
+			if ($this->duration === 0) {
+				o(VERBOSE_ERROR, 'File has no duration');
+				die(1);
+			}
+
 			# get one frame to get the resolution
-			$example = $this->getFrameAt(0);
+			if (!$example = $this->getFrameAt(0)) {
+				o(VERBOSE_ERROR, 'Failed finding resolution at frame 0');
+				die(1);
+			}
 
 			$this->resolution = array(
 				imagesx($example),
 				imagesy($example)
 			);
 			o(VERBOSE_DEBUG, 'Input resolution: '.$this->resolution[0].'x'.$this->resolution[1].' px');
-
-			# get the duration
-			$this->duration = $this->getVideoDuration();
-			o(VERBOSE_DEBUG, 'Input duration: '.$this->getTimeString($this->duration));
 
 			$this->thumbnails = array();
 			$this->thumbsize = $this->resolution;
@@ -114,9 +122,9 @@
 			);
 
 			# format it
-			$hours = (float)$matches['hours'];
-			$minutes = (float)$matches['minutes'];
-			$seconds = (float)$matches['seconds'];
+			$hours = isset($matches['hours']) ? (float)$matches['hours'] : 0;
+			$minutes = isset($matches['minutes']) ? (float)$matches['minutes'] : 0;
+			$seconds = isset($matches['seconds']) ? (float)$matches['seconds'] : 0;
 			$duration = 3600  *  $hours + 60  *  $minutes + $seconds;
 
 			return $duration;
@@ -172,7 +180,7 @@
 				if (!is_resource($tempthumb)) {
 					o(VERBOSE_INFO, "Warning, invalid frame at: ".$this->getTimeString($seektime).' will skip it');
 				}
-				
+
 				$thumbsList[] = $tempthumb;
 			}
 
@@ -185,13 +193,44 @@
 			return $thumbsList;
 		}
 
+		function makeFailThumbnail($width, $height) {
+			$img = imagecreatetruecolor($width, $height);
+			$bgcolor = imagecolorallocate($img, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
+			$textcolor = imagecolorallocate($img, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
+			$ts = 'Failed';
+			# is a TTF font specified?
+			if ($this->fontname) {
+				imagettftext(
+					$img,
+					$this->fontsize,
+					0,
+					2,
+					$this->fontsize + 5,
+					$textcolor,
+					$this->fontname,
+					$ts
+				);
+			# or should we use plain writing?
+			} else {
+				imagestring(
+					$img,
+					4, # font
+					3,
+					3 - 4,
+					$ts,
+					$textcolor
+				);
+			}
+			return $img;
+		}
+
 		# to make a single thumbnail
 		function makeSingleThumbnail($old_image, $thumbnail_width, $thumbnail_height) {
 
 			# is this frame invalid?
 			if (!is_resource($old_image)) {
-				# then bail out
-				return false;
+				# make dummy image
+				return $this->makeFailThumbnail($thumbnail_width, $thumbnail_height);
 			}
 
 			$original_width = imagesx($old_image);
@@ -250,6 +289,8 @@
 
 			o(VERBOSE_DEBUG, 'Shrinking thumbnails to max dimensions of '.$maxsize[0].'x'.$maxsize[1].' px');
 
+			$thumbsize_found = false;
+
 			# walk the thumbnails
 			foreach (range(0, $this->thumbcount - 1) as $i) {
 
@@ -261,14 +302,30 @@
 					$maxsize[0],
 					$maxsize[1]
 				);
+
+				# is the thumb size 0 x 0 but this thumbnail is a resource?
+				if (!$thumbsize_found && is_resource($this->thumbnails[$i])) {
+					# try to get x and y for this thumbnail
+					$x = imagesx($this->thumbnails[$i]);
+					$y = imagesy($this->thumbnails[$i]);
+					# if it succeeded, use this thumbnail as size reference
+					if ($x && $y) {
+						$this->thumbsize = array(
+							$x,
+							$y
+						);
+						$thumbsize_found = true;
+					}
+				}
+			}
+
+			# still not found thumbsize
+			if (!$thumbsize_found) {
+				# use max size then
+				$this->thumbsize = $maxsize;
 			}
 			# newline
 			o(VERBOSE_INFO, '');
-
-			$this->thumbsize = array(
-				imagesx($this->thumbnails[0]),
-				imagesy($this->thumbnails[0])
-			);
 
 			return $this->thumbnails;
 		}
@@ -363,7 +420,6 @@
 						break;
 					}
 
-
 					# make sure there is an image here
 					if (is_resource($this->thumbnails[$j * $column+$i])) {
 						o(VERBOSE_DEBUGDEEP, 'Pasting thumbnail '.$j.','.$i.' to '.$width * $i.'x'.$height * $j);
@@ -407,7 +463,7 @@
 						} else {
 							imagestring(
 								$grid,
-								4,
+								4, # font
 								($width * $i) + 3,
 								($height * $j) + $height - 15,
 								$ts,
@@ -609,12 +665,6 @@
 
 		public function output() {
 
-			# find out ending
-			$this->format = $this->format !== false && strlen(trim($this->format)) > 0 ? $this->format : 'png';
-
-			# find out output filename, first take defined one, then construct it
-			$this->output = $this->output !== false ? $this->output : $this->filename.'.'.$this->format;
-
 			# make sure file does not exist
 			if (file_exists($this->output)) {
 				o(VERBOSE_ERROR, 'Output file exists already: '.$this->output);
@@ -644,9 +694,7 @@
 					break;
 			}
 
-
 			return true;
-
 		}
 	}
 
@@ -745,7 +793,11 @@
 
 		$newline = $newline ? $newline : "\n";
 
-		echo $s.($newline ? $newline : '');
+		if ($level === VERBOSE_ERROR) {
+			fwrite(STDERR, $s.($newline ? $newline : ''));
+		} else {
+			fwrite(STDOUT, $s.($newline ? $newline : ''));
+		}
 
 		return true;
 	}
@@ -780,7 +832,6 @@
 	}
 
 	# --- main ------------------------------
-
 
 	define('VERBOSE_ERROR', 0);
 	define('VERBOSE_INFO', 1);
@@ -903,7 +954,7 @@
 	
 	if (!file_exists($filename)) {
 		o(VERBOSE_ERROR, 'Input file not found: '.$filename, false);
-		die(1);	
+		die(1);
 	}
 
 	if (!$filename) {
@@ -916,9 +967,20 @@
 		die(1);
 	}
 
-
 	# make new sheet object
 	$sheet = new Sheet($filename);
+
+	# set format
+	$sheet->setProperty('format', $format !== false && strlen(trim($format)) > 0 ? $format : 'png');
+
+	# set output
+	$sheet->setProperty('output', $output !== false ? $output : $sheet->filename.'.'.$sheet->format);
+
+	# make sure file does not exist
+	if (file_exists($sheet->output)) {
+		o(VERBOSE_ERROR, 'Output file exists already: '.$sheet->output);
+		die(1);
+	}
 
 	# set column
 	if ($column != false) {
@@ -962,16 +1024,10 @@
 		$sheet->setProperty('backgroundcolor', $color);
 	}
 
-	# set format
-	if ($format != false) {
-		$sheet->setProperty('format', $format);
-	}
-
-	# set format
+	# set quality
 	if ($quality != false) {
 		$sheet->setProperty('quality', $quality);
 	}
-
 
 	# set fontname
 	if ($fontname != false) {
@@ -987,11 +1043,6 @@
 	if ($compact != false) {
 		$sheet->setProperty('compact',true);
 		$sheet->setProperty('header', $sheet->fontname ? $sheet->fontsize * 2 : 25);
-	}
-
-	# set output
-	if ($output != false) {
-		$sheet->setProperty('output', $output);
 	}
 
 	# find out what mode that was activated
