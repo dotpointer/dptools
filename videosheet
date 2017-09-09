@@ -13,6 +13,7 @@
 	# 2016-10-03 19:34:36 - ffmpeg check
 	# 2017-02-01 19:11:00 - domain name edit
 	# 2017-09-06 20:46:00 - various error checks added, adding fail text, switching to stdout and stderr
+	# 2017-09-09 16:15:00 - adding grid only mode
 
 	# unfixed: messy file
 
@@ -26,6 +27,7 @@
 		public $fontsize;
 		public $format;
 		public $grid;
+		public $gridonly;
 		public $header;
 		public $output;
 		public $quality;
@@ -47,6 +49,7 @@
 			$this->compact = false;
 			$this->fontname = false; # "./Cabin-Regular-TTF.ttf";
 			$this->fontsize = 4;
+			$this->gridonly = false;
 			$this->header = 100;
 			$this->quality = false; # auto
 			$this->textcolor = array(255,255,255,0);
@@ -349,6 +352,7 @@
 				case 'format':
 				case 'fontname':
 				case 'fontsize':
+				case 'gridonly':
 				case 'output':
 				case 'quality':
 				case 'textcolor':
@@ -645,13 +649,18 @@
 			$this->makeThumbnails($interval);
 			$this->shrinkThumbs($this->thumbsize);
 			$this->makeGrid();
-			$this->makeHeader();
 
-			$this->sheet = imagecreatetruecolor(imagesx($this->grid), imagesy($this->grid) + imagesy($this->header));
 
-			$this->paste($this->header, $this->sheet, 0, 0);
-
-			$this->paste($this->grid, $this->sheet, 0, imagesy($this->header));
+			# only output grid - use the whole grid as image
+			if ($this->gridonly) {
+				$this->sheet = $this->grid;
+			# output sheet with borders and header
+			} else {
+				$this->makeHeader();
+				$this->sheet = imagecreatetruecolor(imagesx($this->grid), imagesy($this->grid) + imagesy($this->header));
+				$this->paste($this->header, $this->sheet, 0, 0);
+				$this->paste($this->grid, $this->sheet, 0, imagesy($this->header));
+			}
 
 			return $this->sheet;
 		}
@@ -711,6 +720,7 @@
 		'filename:',
 		'fontname:',
 		'fontsize:',
+		'gridonly',
 		'header:',
 		'help',
 		'interval:',
@@ -748,7 +758,10 @@
 		Specify font size.
 
 	--format=<jpg|png>
-		Specify output format
+		Specify output format.
+
+	--gridonly
+		Only output the grid, skip the frame and header around it.
 
 	--header=<num, default 5>
 		Specify height of description header.
@@ -847,6 +860,7 @@
 	$quality = false;
 	$fontname =  false;
 	$fontsize = false;
+	$gridonly = false;
 	$header = 5;
 	$interval = false;
 	$mode = 'number';
@@ -894,6 +908,10 @@
 
 			case 'fontsize':
 				$fontsize = $argvalue;
+				break;
+
+			case 'gridonly':
+				$gridonly = true;
 				break;
 
 			case 'header':
@@ -1041,8 +1059,13 @@
 
 	# set compact
 	if ($compact != false) {
-		$sheet->setProperty('compact',true);
+		$sheet->setProperty('compact', true);
 		$sheet->setProperty('header', $sheet->fontname ? $sheet->fontsize * 2 : 25);
+	}
+
+	# set gridonly
+	if ($gridonly != false) {
+		$sheet->setProperty('gridonly', true);
 	}
 
 	# find out what mode that was activated
