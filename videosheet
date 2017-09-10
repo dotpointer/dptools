@@ -14,6 +14,7 @@
 	# 2017-02-01 19:11:00 - domain name edit
 	# 2017-09-06 20:46:00 - various error checks added, adding fail text, switching to stdout and stderr
 	# 2017-09-09 16:15:00 - adding grid only mode
+	# 2017-09-11 00:16:00 - adding skip no duration mode
 
 	# unfixed: messy file
 
@@ -32,6 +33,7 @@
 		public $output;
 		public $quality;
 		public $resolution;
+		public $skipnoduration;
 		public $textcolor;
 		public $thumbcount;
 		public $thumbnails;
@@ -40,7 +42,7 @@
 		public $vid_interval;
 
 		# to init the new object
-		public function __construct($filename) {
+		public function __construct($filename, $skipnoduration = false) {
 
 			o(VERBOSE_DEBUGDEEP, 'Constructing new video sheet object');
 
@@ -52,6 +54,7 @@
 			$this->gridonly = false;
 			$this->header = 100;
 			$this->quality = false; # auto
+			$this->skipnoduration = $skipnoduration;
 			$this->textcolor = array(255,255,255,0);
 			$this->thumbsize = array(220,-1);
 			$this->timestamp = true;
@@ -70,8 +73,13 @@
 			$this->duration = $this->getVideoDuration();
 			o(VERBOSE_DEBUG, 'Input duration: '.$this->getTimeString($this->duration));
 			if ($this->duration === 0) {
-				o(VERBOSE_ERROR, 'File has no duration');
-				die(1);
+				if ($this->skipnoduration) {
+					o(VERBOSE_DEBUG, 'File has no duration, skipping silently because skip no duration has been set');
+					die(0);
+				} else {
+					o(VERBOSE_ERROR, 'File has no duration');
+					die(1);
+				}
 			}
 
 			# get one frame to get the resolution
@@ -355,6 +363,7 @@
 				case 'gridonly':
 				case 'output':
 				case 'quality':
+				case 'skipnoduration':
 				case 'textcolor':
 				case 'timestamp':
 				case 'header':
@@ -729,6 +738,7 @@
 		'output:',
 		'preview:',
 		'quality:',
+		'skipnoduration',
 		'textcolor:',
 		'thumbsize:',
 		'verbose::'
@@ -777,6 +787,9 @@
 
 	--output=, -o <output-filename, default input-filename-without-ext.png>
 		Specift output video filename.
+
+	--skipnoduration
+		Do not output error upon input file with no duration, just quit.
 
 	--textcolor=<r, default 255>,<g, default 255>,<b, default 255> (not implemented: ,<a, default 0>)
 		Specify text color of description. color is specify in RGBA format.
@@ -867,6 +880,7 @@
 	$notime = false;
 	$number = false;
 	$output = false;
+	$skipnoduration = false;
 	$textcolor = array(255, 255, 255, 0);
 	$thumbsize = array(160, -1);
 	$verbose = VERBOSE_ERROR;
@@ -946,6 +960,10 @@
 				$output = $argvalue;
 				break;
 
+			case 'skipnoduration':
+				$skipnoduration = true;
+				break;
+
 			case 'textcolor':
 				$textcolor = explode(',', $argvalue);
 				break;
@@ -986,7 +1004,7 @@
 	}
 
 	# make new sheet object
-	$sheet = new Sheet($filename);
+	$sheet = new Sheet($filename, $skipnoduration);
 
 	# set format
 	$sheet->setProperty('format', $format !== false && strlen(trim($format)) > 0 ? $format : 'png');
