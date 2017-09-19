@@ -15,6 +15,7 @@
 	# 2017-09-06 20:46:00 - various error checks added, adding fail text, switching to stdout and stderr
 	# 2017-09-09 16:15:00 - adding grid only mode
 	# 2017-09-11 00:16:00 - adding skip no duration mode
+	# 2017-09-19 21:53:00 - using stderr for diagnostic output
 
 	# unfixed: messy file
 
@@ -819,11 +820,7 @@
 
 		$newline = $newline ? $newline : "\n";
 
-		if ($level === VERBOSE_ERROR) {
-			fwrite(STDERR, $s.($newline ? $newline : ''));
-		} else {
-			fwrite(STDOUT, $s.($newline ? $newline : ''));
-		}
+		fwrite(STDERR, $s.($newline ? $newline : ''));
 
 		return true;
 	}
