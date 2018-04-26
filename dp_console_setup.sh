@@ -13,6 +13,9 @@
 #	2017-08-24	use vi for jed
 #	2017-08-26	allow dmesg for all users, like in debian 8
 #	2017-08-26	reverting dmesg fix, not working for non-root users
+#	2018-03-14	adding wget resume and removing retry limit
+#	2018-03-17	adding batstat
+#	2018-04-26 17:34:00	adding jpegtran preference
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -30,6 +33,7 @@ PATH="$PATH:/var/scripts:/var/scripts/dptools:/usr/sbin:/sbin"
 alias array='cat /proc/scsi/rr172x/0';
 alias addgroup='groupadd';
 alias backupdir='tar -cvzf';
+alias batstat='upower -i /org/freedesktop/UPower/devices/battery_BAT0';
 alias cd..='cd ..';
 alias cd...='cd ...';
 alias chkdsk='dosfsck -v -a -w';
@@ -63,6 +67,7 @@ alias ipcfg='ifconfig';
 alias ipconfig='ifconfig';
 alias iptraffic='iptraf';
 alias jed='vi';
+alias jpegtran='jpegtran -copy all';
 alias jsonlint='python -m json.tool <';
 alias k='kill';
 alias killall='killall -9';
@@ -100,7 +105,7 @@ alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vwdial="wvdial";
 alias watch='watch -n1';
-alias wget="wget --no-check-certificate";
+alias wget="wget --no-check-certificate --continue --tries=0";
 # alias grepa2="grep --color -f ./ -rn";
 # alias funk="function gd() { echo $1; } gd;";
 
