@@ -2,6 +2,7 @@
 # 2011-10-30 - VirtualBox VM creation script, by Robert Klebe
 # 2014-04-06 - improved with SATA, IO APIC, chipset ICH9
 # 2014-10-01 - cleanup
+# 2018-06-09 10:52:00 - replacing network interface eth1 with eth0
 
 # ask for name
 echo "--- Name of the new machine"
@@ -96,7 +97,7 @@ fi
 
 # try to setup machine hardware specs, accelerate 3d = off since 4.2
 echo "-- Trying to set hardware specifications...";
-VBoxManage modifyvm "$NAME" --memory $MEMORY --acpi on --boot1 dvd --nic1 bridged --bridgeadapter1 eth1 --nictype1 "82540EM" --vrde on --vrdeauthtype null --vrdemulticon on --vram $VRAM --accelerate3d off --cpuexecutioncap $CPUCAP --vrdeport $VRDEPORT --pae on --chipset ich9 --ioapic on --firmware bios
+VBoxManage modifyvm "$NAME" --memory $MEMORY --acpi on --boot1 dvd --nic1 bridged --bridgeadapter1 eth0 --nictype1 "82540EM" --vrde on --vrdeauthtype null --vrdemulticon on --vram $VRAM --accelerate3d off --cpuexecutioncap $CPUCAP --vrdeport $VRDEPORT --pae on --chipset ich9 --ioapic on --firmware bios
 if [ ! $? -eq 0 ] ; then
     echo 'Failed';
     exit 1

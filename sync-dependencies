@@ -1,0 +1,68 @@
+#!/usr/bin/php
+<?php
+	# dependency synchronisation, instead of symbolic links
+	# which cannot be used in git repositories
+	
+	# by robert klebe, dotpointer
+
+	# changelog
+	# 2018-06-09 21:34:00 - first version
+
+	# find the following files and sync them
+	$deps = array(
+		# name => source
+		'dependency-file.ext' => array(
+			'path' => '/path/to/dependency-file.ext'
+		)
+	);
+
+	$dirs = array(
+		array(
+			'path' => '/target/path/',
+			'exclude_paths' => array(
+				'path/to/exclude/from/target/path/'
+			)
+		)
+	);
+	
+	# walk dirs to fix
+	foreach ($dirs as $dir) {
+		# walk dependencies
+		foreach ($deps as $depfile => $depdata) {
+
+			unset($c, $o, $r);
+			$c = 'find '.escapeshellarg($dir['path']).' -name '.escapeshellarg($depfile);
+			exec($c, $o, $r);
+			if ($r !== 0) {
+				echo 'FAILED '.$c."\n";
+				die(1);
+			}
+
+			$files = $o;
+			# walk target files
+			foreach ($files as $filetarget) {
+				$filetarget = trim($filetarget);
+				$proceed = true;
+
+				# walk paths to exclude
+				foreach ($dir['exclude_paths'] as $excludepath) {
+					if (strpos($filetarget, $excludepath) !== false) {
+						$proceed = false;
+						break;
+					}
+				}
+				
+				if (!$proceed) continue;
+				
+				unset($c, $o, $r);
+				$c = 'rsync -a '.escapeshellarg($depdata['path']).' '.escapeshellarg($filetarget);
+				echo $c."\n";
+				exec($c, $o, $r);
+				if ($r !== 0) {
+					echo 'FAILED '.$c."\n";
+					echo implode("\n", $o)."\n";
+				}
+			}
+		}
+	}
+?>
