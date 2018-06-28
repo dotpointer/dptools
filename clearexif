@@ -1,22 +1,35 @@
 #!/usr/bin/php
 <?php
 
-	# get all files from here
-	exec('find . -type f -iname "*.jpg"', $o, $r);	
-	if ($r !== 0) die('Failed searching');
+# clearexif
+# clear exif data from jpeg files
+# by robert klebe, dotpointer
 
-	if (!isset($argv[1]) || $argv[1] !== '-y') die('Please specify -y to clear.');
+# changelog
+# 2015-08-12 20:49:13
+# 2018-06-28 16:08:00 - cleanup
 
-	$files = $o;
-	
-	# walk files	
-	foreach ($files as $file) {
-		# run exiftool
-		unset($c, $o, $r);
-		$c = 'exiftool -all= -overwrite_original '.escapeshellarg($file);
-		echo 'Running: '.$c."\n";;
-		exec($c, $o, $r);
-		if ($r !== 0) echo '--- FAILED updating exif for this file. ---'."\n";
-	}
+# get all files from here
+exec('find . -type f -iname "*.jpg"', $o, $r);
+
+if ($r !== 0) {
+	die('Failed searching');
+}
+
+if (!isset($argv[1]) || $argv[1] !== '-y') {
+	die('Please specify -y to clear.');
+}
+
+$files = $o;
+
+# walk files
+foreach ($files as $file) {
+	# run exiftool
+	unset($c, $o, $r);
+	$c = 'exiftool -all= -overwrite_original '.escapeshellarg($file);
+	echo 'Running: '.$c."\n";
+	exec($c, $o, $r);
+	if ($r !== 0) echo '--- FAILED updating exif for this file. ---'."\n";
+}
 
 ?>

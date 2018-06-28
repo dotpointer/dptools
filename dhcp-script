@@ -1,146 +1,153 @@
 #!/usr/bin/php
 <?php
-	# dhcp-script - a script to run actions upon dnsmasq leases
-	# by robert klebe
-	
-	# add dhcp-script=/path/to/this/script to dnsmasq.conf
 
-	# dnsmasq then calls this file with the following arguments:
-	# old aa:bb:cc:dd:ee:ff 192.168.1.1 hostname
+# dhcp-script
+# run actions upon dnsmasq leases
+# by robert klebe, dotpointer
 
-	# 2014-10-20 12:21:18
-	# 2014-10-21 12:15:22
-	# 2014-10-22 14:34:33
-	# 2014-10-22 19:25:00 - putting into use
-	# 2014-10-23 02:00:43 - remake for dnsmasq dhcp-script parameter
+# usage: add dhcp-script=/path/to/this/script to dnsmasq.conf,
+# set configuration in /etc/dptools/dhcp-script
 
-	$config = array();
+# dnsmasq then calls this file with the following arguments:
+# old aa:bb:cc:dd:ee:ff 192.168.1.1 hostname
 
-	# verbosity
-	define('VERBOSE_OFF', 0);
-	define('VERBOSE_ERROR', 1);
-	define('VERBOSE_INFO', 2);
-	define('VERBOSE_DEBUG', 3);
+# 2014-10-20 12:21:18
+# 2014-10-21 12:15:22
+# 2014-10-22 14:34:33
+# 2014-10-22 19:25:00 - putting into use
+# 2014-10-23 02:00:43 - remake for dnsmasq dhcp-script parameter
+# 2015-06-02 17:38:39
+# 2018-06-28 16:21:00 - cleanup
 
-	# debug printing
-	function cl($s, $level=1) {
-	
-		global $config;
-		
-		$loglevel = $config['parameters']['loglevel'];
-		$verbose = $config['parameters']['verbosity'];
+$config = array();
 
-		# find out level of verbosity
-		switch ($level) {
-			case VERBOSE_DEBUG:
-				$l = 'D';
-				break;		
-			case VERBOSE_ERROR:
-				$l = 'E';
-				break;
-			case VERBOSE_INFO:
-				$l = 'I';
-				break;
+# verbosity
+define('VERBOSE_OFF', 0);
+define('VERBOSE_ERROR', 1);
+define('VERBOSE_INFO', 2);
+define('VERBOSE_DEBUG', 3);
 
+# debug printing
+function cl($s, $level=1) {
+
+	global $config;
+
+	$loglevel = $config['parameters']['loglevel'];
+	$verbose = $config['parameters']['verbosity'];
+
+	# find out level of verbosity
+	switch ($level) {
+		case VERBOSE_DEBUG:
+			$l = 'D';
+			break;
+		case VERBOSE_ERROR:
+			$l = 'E';
+			break;
+		case VERBOSE_INFO:
+			$l = 'I';
+			break;
+	}
+
+	$s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
+
+	# is verbosity on and level is enough?
+	if ($verbose && $verbose >= $level) {
+		echo $s;
+	}
+
+	# is loglevel on and level is enough - the try to append to log
+	if (
+		$loglevel &&
+		$loglevel >= $level &&
+		$f = fopen($config['parameters']['file_log'] , 'a')
+	) {
+		fwrite($f, $s);
+		fclose($f);
+	}
+
+	return true;
+}
+
+# to remove bracketed comments
+function remove_comments($s) {
+	$s = explode("\n", $s);
+	foreach ($s as $k => $v) {
+		$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+	}
+	return implode("\n", $s);
+}
+
+# to remove pidfile
+function remove_pidfile() {
+	global $config;
+		if (file_exists($config['parameters']['file_pid'])) {
+			cl('Removing pidfile: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
+			unlink($config['parameters']['file_pid']);
 		}
-	    
-		$s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
+	return true;
+}
+# --- main
 
-		# is verbosity on and level is enough?
-		if ($verbose && $verbose >= $level) echo $s;
+# arguments
+# old aa:bb:cc:dd:ee:ff 192.168.1.1 hostname
 
-		# is loglevel on and level is enough - the try to append to log
-		if (
-			$loglevel && 
-			$loglevel >= $level && 
-			$f = fopen($config['parameters']['file_log'] , 'a')
-		) {
-			fwrite($f, $s);
-			fclose($f);
-		}
+$type = isset($argv[1]) ? $argv[1] : false;
+$mac = isset($argv[2]) ? $argv[2] : false;
+$ip = isset($argv[3]) ? $argv[3] : false;
+$hostname = isset($argv[4]) ? $argv[4] : false;
 
-		return true;
-	}
+# location of config file
+define('FILE_CONFIG', '/etc/dptools/dhcp-script');
 
-	# to remove bracketed comments	
-	function remove_comments($s) {
-		$s = explode("\n", $s);
-		foreach ($s as $k => $v) {
-			$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
-		}
-		return implode("\n", $s);
-	}
+# get config
+$config = file_exists(FILE_CONFIG) ? json_decode(remove_comments(file_get_contents(FILE_CONFIG)), true) : false;
+if ($config === NULL) {
+	die('Configuration file is not valid JSON.'."\n");
+}
 
-	# to remove pidfile
-	function remove_pidfile() {
-	 	global $config;	    
-	    	if (file_exists($config['parameters']['file_pid'])) {
-		    	cl('Removing pidfile: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
-		    	unlink($config['parameters']['file_pid']);
-	        }
-		return true;
-	}
-	# --- main
+# correct configuration
+$config['parameters'] = isset($config['parameters']) ? $config['parameters'] : array();
+$config['parameters']['file_log'] = isset($config['parameters']['file_log']) ? $config['parameters']['file_log'] : '/var/log/dhcp-script';
+$config['parameters']['file_pid'] = isset($config['parameters']['file_pid']) ? $config['parameters']['file_pid'] : '/var/run/dhcp-script.pid';
+$config['parameters']['loglevel'] = isset($config['parameters']['loglevel']) ? $config['parameters']['loglevel'] : VERBOSE_ERROR;
+$config['parameters']['verbosity'] = isset($config['parameters']['verbosity']) ? $config['parameters']['verbosity'] : VERBOSE_ERROR;
+$config['hosts'] = isset($config['hosts']) ? $config['hosts'] : array();
 
-	# arguments
-	# old aa:bb:cc:dd:ee:ff 192.168.1.1 hostname
+# check if this is running by pidfile
+if (file_exists($config['parameters']['file_pid'])) {
+	cl('Already running, found pid file: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
+	die(); # not an exact error but we cannot proceed
+}
 
-	$type = isset($argv[1]) ? $argv[1] : false;
-	$mac = isset($argv[2]) ? $argv[2] : false;
-	$ip = isset($argv[3]) ? $argv[3] : false;
-	$hostname = isset($argv[4]) ? $argv[4] : false;
-	
-	
-	# location of config file
-	define('FILE_CONFIG', '/etc/dptools/dhcp-script');
-		
-	# get config
-	$config = file_exists(FILE_CONFIG) ? json_decode(remove_comments(file_get_contents(FILE_CONFIG)), true) : false;
-	if ($config === NULL) die('Configuration file is not valid JSON.'."\n");
+# make a pidfile
+cl('Writing pid file: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
+file_put_contents($config['parameters']['file_pid'], getmypid());
 
-	# correct configuration
-	$config['parameters'] = isset($config['parameters']) ? $config['parameters'] : array();
-	$config['parameters']['file_log'] = isset($config['parameters']['file_log']) ? $config['parameters']['file_log'] : '/var/log/dhcp-script';
-    $config['parameters']['file_pid'] = isset($config['parameters']['file_pid']) ? $config['parameters']['file_pid'] : '/var/run/dhcp-script.pid';
-	$config['parameters']['loglevel'] = isset($config['parameters']['loglevel']) ? $config['parameters']['loglevel'] : VERBOSE_ERROR;
-	$config['parameters']['verbosity'] = isset($config['parameters']['verbosity']) ? $config['parameters']['verbosity'] : VERBOSE_ERROR;
-	$config['hosts'] = isset($config['hosts']) ? $config['hosts'] : array();
+# missing any arguments?
+if ($type === false || $mac === false || $ip === false) {
+	cl('Called with invalid arguments: '.implode($argv, ' '), VERBOSE_DEBUG);
+	remove_pidfile();
+	die();
+}
 
-	# check if this is running by pidfile
-	if (file_exists($config['parameters']['file_pid'])) {
-		cl('Already running, found pid file: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
-		die(); # not an exact error but we cannot proceed
-	}
-
-	# make a pidfile
-	cl('Writing pid file: '.$config['parameters']['file_pid'], VERBOSE_DEBUG);
-	file_put_contents($config['parameters']['file_pid'], getmypid());
-
-	# missing any arguments?	
-	if ($type === false || $mac === false || $ip === false) {
-		cl('Called with invalid arguments: '.implode($argv, ' '), VERBOSE_DEBUG);
-		remove_pidfile();
-		die();
-	}
-	
-	# is the supplied IP in the hosts list?
-	if (isset($config['hosts'][$ip])) {
-		if (in_array($type, array('old', 'new', 'add'))) {
-			# run action
-			cl($type.' '.$ip.', running: '.$config['hosts'][$ip], VERBOSE_INFO);	
-			unset($o, $r);
-			exec($config['hosts'][$ip], $o, $r);
-			if ($r) {
-				cl('Action returned non-zero return code: '.$r, VERBOSE_ERROR);					    	
-				# die(1);
-			}
-		} else {
-			cl('Called with invalid type: '.$type, VERBOSE_DEBUG);	    
+# is the supplied IP in the hosts list?
+if (isset($config['hosts'][$ip])) {
+	if (in_array($type, array('old', 'new', 'add'))) {
+		# run action
+		cl($type.' '.$ip.', running: '.$config['hosts'][$ip], VERBOSE_INFO);
+		unset($o, $r);
+		exec($config['hosts'][$ip], $o, $r);
+		if ($r) {
+			cl('Action returned non-zero return code: '.$r, VERBOSE_ERROR);
+			# die(1);
 		}
 	} else {
-		cl('Called with IP not in config list: '.$ip, VERBOSE_DEBUG);	    	    
+		cl('Called with invalid type: '.$type, VERBOSE_DEBUG);
 	}
+} else {
+	cl('Called with IP not in config list: '.$ip, VERBOSE_DEBUG);
+}
 
-	# remove the pid file
-    remove_pidfile();
+# remove the pid file
+remove_pidfile();
 ?>

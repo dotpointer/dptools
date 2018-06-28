@@ -1,8 +1,9 @@
 #!/usr/bin/php
 <?php
 
-# backup_databases
-# by robert klebe
+# backup-databases
+# backup mysqli/mariadb databases
+# by robert klebe, dotpointer
 
 # changelog
 # 2009-02-16 02:38:00 - backup databases
@@ -19,49 +20,50 @@
 # 2015-08-24 16:20:07
 # 2016-04-30 21:48:54 - adding config and include option
 # 2016-12-27 19:14:42 - renaming file from backup_databases to backup-databases
+# 2018-06-28 13:20:00 - minor cleanup
+# 2018-06-28 15:43:00 - description edit
 
 # debug printing
 function cl($s, $level = 1) {
-		global $config;
+	global $config;
 
-		# do not log passwords from mountcifs
-		$s = preg_replace('/--password=\".*\"/', 'password="*****"', $s);
+	# do not log passwords from mountcifs
+	$s = preg_replace('/--password=\".*\"/', 'password="*****"', $s);
 
-		# find out level of verbosity
-		switch ($level) {
-			case VERBOSE_ERROR:
-				$l = 'E';
-				break;
-			case VERBOSE_INFO:
-				$l = 'I';
-				break;
-			case VERBOSE_DEBUG:
-				$l = 'D';
-				break;
-		}
-		$s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
+	# find out level of verbosity
+	switch ($level) {
+		case VERBOSE_ERROR:
+			$l = 'E';
+			break;
+		case VERBOSE_INFO:
+			$l = 'I';
+			break;
+		case VERBOSE_DEBUG:
+			$l = 'D';
+			break;
+	}
+	$s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
 
-		# is verbosity on and level is enough?
-		if ($config['verbose'] && $config['verbose'] >= $level) echo $s;
+	# is verbosity on and level is enough?
+	if ($config['verbose'] && $config['verbose'] >= $level) echo $s;
 
-		# is loglevel on and level is enough - the try to append to log
-		if ($config['loglevel'] && $config['loglevel'] >= $level && $f = fopen($config['file_log'], 'a')) {
-			fwrite($f, $s);
-			fclose($f);
-		}
+	# is loglevel on and level is enough - the try to append to log
+	if ($config['loglevel'] && $config['loglevel'] >= $level && $f = fopen($config['file_log'], 'a')) {
+		fwrite($f, $s);
+		fclose($f);
+	}
 
-		return true;
+	return true;
 }
 
 # to remove comments
 function remove_comments($s) {
-        $s = explode("\n", $s);
-        foreach ($s as $k => $v) {
-                $s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
-        }
-        return implode("\n", $s);
+	$s = explode("\n", $s);
+	foreach ($s as $k => $v) {
+			$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+	}
+	return implode("\n", $s);
 }
-
 
 # --- main
 
@@ -148,7 +150,7 @@ $config['dir_temp'] 					= isset($config['dir_temp']) ? $config['dir_temp'] : '/
 $config['timeout_keep_all'] 			= isset($config['timeout_keep_all']) && is_numeric($config['timeout_keep_all']) ? $config['timeout_keep_all'] : 60 * 60 * 24 * 7;
 # remove all backups older than 365 days
 $config['timeout_remove_all'] 			= isset($config['timeout_remove_all']) && is_numeric($config['timeout_remove_all']) ? $config['timeout_remove_all'] : 60 * 60 * 24 * 365;
-$config['timezone']			       		= isset($config['timezone']) ? $config['timezone'] : 'Europe/Stockholm';
+$config['timezone']				   		= isset($config['timezone']) ? $config['timezone'] : 'Europe/Stockholm';
 $config['use_global_config']			= isset($config['use_global_config']) ? $config['use_global_config'] : false;
 $config['verbose'] 						= isset($config['verbose']) && is_numeric($config['verbose']) ? $config['verbose'] : VERBOSE_OFF; # level of verbosity, 0=off, 1=errors, 2=info, 3=debug
 
@@ -207,7 +209,6 @@ To backup databases and remove old backups
 	Stop working after dumping data to temp dir
 <?php
 			die();
-
 		case 'p':
 		case 'printconfig':
 			foreach ($config as $k2 => $v2) {
@@ -222,10 +223,10 @@ To backup databases and remove old backups
 				echo "\n";
 			}
 			die();
-	        case 's':
-	        case 'stopafterdump':
-	            $stopafterdump = true;
-	            break;
+		case 's':
+		case 'stopafterdump':
+			$stopafterdump = true;
+			break;
 		case 'v': # be verbose
 		case 'verbose':
 			# determine and set level of verbosity
@@ -240,9 +241,7 @@ To backup databases and remove old backups
 					$config['verbose'] = VERBOSE_DEBUG;
 					break;
 			}
-
 			break;
-
 
 		case 'w': # write config
 		case 'writeconfig':
@@ -295,10 +294,10 @@ if (!file_exists($config['dir_backup'].$today_filename) || $config['forcedaily']
 
 	$databases = array();
 	# walk result row by row
-    while ($row = mysqli_fetch_assoc($r)) {
-    	# put row in to array
-    	$databases[] = $row;
-    }
+	while ($row = mysqli_fetch_assoc($r)) {
+		# put row in to array
+		$databases[] = $row;
+	}
 
 	# free result
 	mysqli_free_result($r);
@@ -363,7 +362,7 @@ if (!file_exists($config['dir_backup'].$today_filename) || $config['forcedaily']
 			$cmd = 'mysqldump -u "'.escapeshellcmd(DATABASE_USERNAME).'" --password="'.DATABASE_PASSWORD.'" --add-drop-database '.(array_key_exists($database, $config['databases_extra_parameters']) ? $config['databases_extra_parameters'][$database].' ' : '').' --databases '.escapeshellcmd($database).' > '.escapeshellcmd($dumpfile_fullpath);
 			cl('Running: '.$cmd, VERBOSE_DEBUG);
 
-		    if (!$config['dryrun']) {
+			if (!$config['dryrun']) {
 				# strange things happen when these are defined and they hit exec
 				unset($output, $return_var);
 				exec($cmd, $output, $return_var);
@@ -377,26 +376,26 @@ if (!file_exists($config['dir_backup'].$today_filename) || $config['forcedaily']
 					}
 					continue;
 				}
-		    }
+			}
 
 			cl('Setting chmod 700 on dumpfile: '.$dumpfile_fullpath, VERBOSE_DEBUG);
 			if (!$config['dryrun']) {
 				chmod($dumpfile_fullpath, 0700);
-			    cl('Dump file size: '.filesize($dumpfile_fullpath).' b', VERBOSE_DEBUG);
+				cl('Dump file size: '.filesize($dumpfile_fullpath).' b', VERBOSE_DEBUG);
 			}
 
 
 			$dumpfiles[] = $dumpfile;
 		}
 
-	    	if ($stopafterdump) {
-		    	cl('Dump files are now ready at: '.$tempdir, VERBOSE_DEBUG);
-		    	die();
+		if ($stopafterdump) {
+			cl('Dump files are now ready at: '.$tempdir, VERBOSE_DEBUG);
+			die();
 		}
 		# any dumpfiles?
 		if (count($dumpfiles)) {
 			cl(count($dumpfiles).' dumpfiles ready', VERBOSE_DEBUG);
-		        # XZ_OPT="-9e" can be set to maximize compression, but it is very slow, default is -6 and manual does not recommend
+			# XZ_OPT="-9e" can be set to maximize compression, but it is very slow, default is -6 and manual does not recommend
 			# higher than -7 due to high memory usage and the time needed
 			# -q = quiet, do not whine about lowering memory
 			$cmd = 'cd '.escapeshellcmd($tempdir).' && export XZ_OPT="--memlimit-compress=64MiB -q" && /bin/tar cJf '.escapeshellcmd($config['dir_temp'].$today_filename).' *';
@@ -450,9 +449,7 @@ if (!file_exists($config['dir_backup'].$today_filename) || $config['forcedaily']
 
 			cl('Backup file created: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
 		}
-
 	}
-
 } else {
 	cl('Backup for today exists: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
 }
@@ -472,7 +469,6 @@ if ($files === NULL) {
 
 # any files?
 if (count($files)) {
-
 	cl('Sorting files A-Z', VERBOSE_DEBUG);
 	sort($files);
 
@@ -498,11 +494,11 @@ if (count($files)) {
 			continue;
 		}
 
-	        # is this file empty?
+		# is this file empty?
 		if (filesize($file_fullpath) === 0) {
 			cl('Removing file, it is empty: '.$file_fullpath, VERBOSE_DEBUG);
 			unlink($file_fullpath);
-		        continue;
+			continue;
 		}
 
 		# is file within keep-all timeout?

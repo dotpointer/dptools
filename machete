@@ -16,6 +16,8 @@
 	# 2016-03-16 17:29:56 - bugfix
 	# 2016-03-16 18:13:49 - adding audio size filter
 	# 2016-03-16 20:02:09 - adding video size filter
+	# 2016-10-28 23:11:32
+	# 2018-06-28 18:00:00 - cleanup
 
 	# file extensions to delete
 	$ext_remove = array(

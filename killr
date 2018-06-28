@@ -1,53 +1,46 @@
 #!/usr/bin/php
-<?php  
-	# changelog
-	# 2014-09-23 - initial version
-	# 2014-09-29 - bugfixes
+<?php
 
-	# at last, here it is, the process killer that kills by keyword
-	$keyword = isset($argv[1]) ? $argv[1] : false;
-	
-	if ($keyword === false) {
-		die('Keyword must be given.'."\n");
+# killr
+# kills processes matching a keyword. Kill -9 and killall in a combination
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-09-23 - initial version
+# 2014-09-29 - bugfixes
+# 2014-09-29 08:13:02
+# 2018-06-28 17:56:00
+
+# at last, here it is, the process killer that kills by keyword
+$keyword = isset($argv[1]) ? $argv[1] : false;
+
+if ($keyword === false) {
+	die('Keyword must be given.'."\n");
+}
+
+# get matching items
+$c = 'ps ax';
+exec($c, $o, $r);
+
+if ($r) die('Failed finding process.');
+
+$ps = $o;
+
+foreach ($ps as $line) {
+	# echo $keyword."\n\n".$line;
+	if (strpos($line, $keyword) !== false && preg_match('/^\s*(\d+)\s+.*$/', $line, $m)) {
+		$pid = (int)$m[1];
+		if ($pid === getmypid()) continue;
+		echo $line."\n";
+
+		unset($c, $o, $r);
+		$c = 'kill -9 '.$pid;
+		echo $c."\n";
+		exec($c, $o, $r);	
+		if ($r) die('Failed killing process '.$pid."\n");
+		# should be ID
+		# var_dump($m); 
+		# die($m[1]);
 	}
-
-
-	# get matching items
-	$c = 'ps ax';
-	exec($c, $o, $r);
-	
-#	var_dump($o);
-	
-	if ($r) die('Failed finding process.');
-	
-	$ps = $o;
-	
-	foreach ($ps as $line) {
-		
-		# echo $keyword."\n\n".$line;
-		
-		if (strpos($line, $keyword) !== false && preg_match('/^\s*(\d+)\s+.*$/', $line, $m)) {
-			$pid = (int)$m[1];
-			if ($pid === getmypid()) continue;		
-			echo $line."\n";
-		
-			unset($c, $o, $r);
-			$c = 'kill -9 '.$pid;
-			echo $c."\n";
-			exec($c, $o, $r);	
-			if ($r) die('Failed killing process '.$pid."\n");
-			# should be ID
-			
-			# var_dump($m); 
-			# die($m[1]);
-		
-		}
-		
-		
-		
-	}
-	
-	
-	
+}
 ?>
-

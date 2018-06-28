@@ -1,8 +1,13 @@
 #!/bin/bash 
 
+# dotshaper
+# simplified traffic shaping, based on wondershaper
+# by robert klebe, dotpointer
+
 # changelog
-# 2014-04-22 - initial version
-# 2014-05-03 - cleanup
+# 2014-04-22 xx:xx:xx - initial version
+# 2014-05-03 11:34:10 - cleanup
+# 2018-06-28 16:42:00 - description edit
 
 DEV=$2
 

@@ -1,15 +1,28 @@
 #!/bin/bash
 
-# to create a backup image file
+# backup-create
+# create a backup image file
+# by robert klebe, dotpointer
 
 # changelog
 # 2015-06-06 12:45:13
 # 2016-12-27 19:13:29
+# 2017-03-07 08:56:02
+# 2018-06-28 12:28:00 - adding confirmation
+# 2018-06-28 15:43:00 - description edit
 
 # make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root"
    exit 1
+fi
+
+echo "This will create an image file for backup storage named imagefile.img in the current directory.";
+
+read -p "Type y to continue, or anything else to quit: " -n 1 -r
+echo    # (optional) move to a new line
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+	exit 1;
 fi
 
 echo "Creating image file imagefile.img...";

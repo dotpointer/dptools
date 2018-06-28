@@ -1,7 +1,12 @@
 #!/bin/bash
 
+# batterywarning
+# output a warning if laptop charger is not connected
+# by robert klebe, dotpointer
+
 # changelog
-# 2016-10-29 - adding support for multiple batteries
+# 2016-10-29 17:47:55 - adding support for multiple batteries
+# 2018-06-28 16:02:00 - cleanup
 
 # get processes matching zenity
 PID=$(ps ax|grep zenity|grep -v grep);
@@ -12,25 +17,25 @@ if [[ ! "$PID" == "" ]]; then
 fi
 
 if [ -f "/sys/class/power_supply/BAT0/status" ]; then
-        # get battery status
-        BATSTATE=$(cat /sys/class/power_supply/BAT0/status);
+	# get battery status
+	BATSTATE=$(cat /sys/class/power_supply/BAT0/status);
 
-        # check the status
-        if [[ "$BATSTATE" == "Discharging" ]]; then
-                # display dialog
-                zenity --info --text="Sätt i laddaren\!" --display=:0.0
-                exit
-        fi
+	# check the status
+	if [[ "$BATSTATE" == "Discharging" ]]; then
+		# display dialog
+		zenity --info --text="Insert charger\!" --display=:0.0
+		exit
+	fi
 fi
 
 if [ -f "/sys/class/power_supply/BAT1/status" ]; then
-        # get battery status
-        BATSTATE=$(cat /sys/class/power_supply/BAT1/status);
+	# get battery status
+	BATSTATE=$(cat /sys/class/power_supply/BAT1/status);
 
-        # check the status
-        if [[ "$BATSTATE" == "Discharging" ]]; then
-                # display dialog
-                zenity --info --text="Sätt i laddaren\!" --display=:0.0
-                exit
-        fi
+	# check the status
+	if [[ "$BATSTATE" == "Discharging" ]]; then
+		# display dialog
+		zenity --info --text="Insert charger\!" --display=:0.0
+		exit
+	fi
 fi

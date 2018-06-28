@@ -30,7 +30,7 @@ Clear EXIF data in (image) files. Made in PHP.
 
 ### datekeeper
 
-To keep modify dates on files in a directory. Run it, edit the files
+Store and restore modify dates on files in a directory. Run it, edit the files
 while it runs, and when done editing press a key to reset the modify dates.
 Made in PHP.
 
@@ -46,10 +46,6 @@ Simplified traffic shaping, based on wondershaper. Made in Bash.
 ### dp_console_setup.sh
 
 Console formatter with a lot of aliases.
-
-### dpconvert
-
-Run dotpointer conversion from command line. Made in PHP.
 
 ### dptools-update
 
@@ -77,7 +73,7 @@ Update gettext translation PO files in multiple ways. Made in PHP.
 
 Recursively find files containing a case-sensitive text string. Made in Bash.
 
-### grepa
+### igrepa
 
 Recursively find files containing a case-insensitive text string. Made in Bash.
 

@@ -1,13 +1,16 @@
 #!/bin/bash
 
+# gettextrefresh
 # generate a PO-file by scanning source code
-# ***REMOVED***
-# changelog
-#	2010-xx-xx    	first version
-#	2011-xx-xx	initial rebuild
-#	2012-05-21	modifications
-#	2013-09-05	adding support for locale/targets file
+# by robert klebe, dotpointer
 
+# changelog
+# 2010-xx-xx first version
+# 2011-xx-xx initial rebuild
+# 2012-05-21 modifications
+# 2013-09-05 adding support for locale/targets file
+# 2014-10-13 00:34:33
+# 2018-06-28 17:15:00 - cleanup
 #
 # workflow:
 # 1. read plaintexts, write binary
@@ -22,43 +25,40 @@ CHARSET="UTF-8";
 
 # scan a dir for lines to translate
 scan_targetdir() {
-
 	# scan recursively for php files
 	echo "- Scanning $TARGETDIR directory for files to translate"
 	find "$TARGETDIR" -type f -name "*.php" | while read line; do
-
 		# a line found put it in
-	        echo "- Found $line";
-	        xgettext --from-code=$CHARSET -d $DEFAULTDOMAIN -L PHP -j -o $SCRIPTDIR/$DEFAULTDOMAIN.po $line
-	
-        	sed -i -e "s/CHARSET/$CHARSET/g" $SCRIPTDIR/$DEFAULTDOMAIN.po
+		echo "- Found $line";
+		xgettext --from-code=$CHARSET -d $DEFAULTDOMAIN -L PHP -j -o $SCRIPTDIR/$DEFAULTDOMAIN.po $line
+
+		sed -i -e "s/CHARSET/$CHARSET/g" $SCRIPTDIR/$DEFAULTDOMAIN.po
 	done
 }
 
 # update binary MO-files
 update_binaries() {
-       # --- updating the translations, plaintext to binary
-       echo "Updating binary MO-files using plaintext PO files...";
-       for i in $SCRIPTDIR/*; do
-             if [ -f "$i/LC_MESSAGES/$DEFAULTDOMAIN.po" ]; then
-	          echo -n "- Update binary: $i ......... "
-		  msgfmt "$i/LC_MESSAGES/$DEFAULTDOMAIN.po" -o "$i/LC_MESSAGES/$DEFAULTDOMAIN.mo"
-		  echo "done"
-	     fi
-       done
-       return
+	# --- updating the translations, plaintext to binary
+	echo "Updating binary MO-files using plaintext PO files...";
+	for i in $SCRIPTDIR/*; do
+			if [ -f "$i/LC_MESSAGES/$DEFAULTDOMAIN.po" ]; then
+			echo -n "- Update binary: $i ......... "
+		msgfmt "$i/LC_MESSAGES/$DEFAULTDOMAIN.po" -o "$i/LC_MESSAGES/$DEFAULTDOMAIN.mo"
+		echo "done"
+		fi
+	done
+	return
 }
 
 # check that the locale dir is in this dir
 if [ ! -d "$SCRIPTDIR" ]; then
-     echo Í'Missig $SCRIPTDIR folder, this command must be run from the site root directory.'
-     echo 'If this is the webroot, then create $SCRIPTDIR as a storage place for the translations.';
-     exit
+	echo 'Missig $SCRIPTDIR folder, this command must be run from the site root directory.'
+	echo 'If this is the webroot, then create $SCRIPTDIR as a storage place for the translations.';
+	exit
 fi
 
 mkdir -p "./$SCRIPTDIR/en_US/LC_MESSAGES"
 mkdir -p "./$SCRIPTDIR/sv_SE/LC_MESSAGES"
-
 
 # update the binary files
 update_binaries
@@ -69,15 +69,14 @@ echo "Generating new plaintext PO-files from source files";
 
 # remove old po files
 if [ -f "./$SCRIPTDIR/$DEFAULTDOMAIN.po" ]; then
-     # remove old pofile
-     echo "Removing temporary PO-file - $SCRIPTDIR/$DEFAULTDOMAIN.po";
-     rm $SCRIPTDIR/$DEFAULTDOMAIN.po
+	# remove old pofile
+	echo "Removing temporary PO-file - $SCRIPTDIR/$DEFAULTDOMAIN.po";
+	rm $SCRIPTDIR/$DEFAULTDOMAIN.po
 fi
 
 # touch the temp po file
 echo "- Touching temporary PO-file - $SCRIPTDIR/$DEFAULTDOMAIN.po";
 touch $SCRIPTDIR/$DEFAULTDOMAIN.po
-
 
 # is there a file describing target dirs to fetch lines to translate from?
 if [ -f "./$SCRIPTDIR/targets" ]; then
@@ -94,7 +93,6 @@ if [ -f "./$SCRIPTDIR/targets" ]; then
 			echo "- ERROR: dir-path in target file not found: $line";
 		fi
 	done
-
 else
 	echo "- No custom targets file found, using default target dir.";
 	TARGETDIR="./";
@@ -104,15 +102,13 @@ fi
 # walk the language dirs in locale
 echo "- Walking language directories in $SCRIPTDIR...";
 for lang in $SCRIPTDIR/*; do
-	
 	if [ -d $lang ]; then
-	        echo "-- Found language directory $lang";
+		echo "-- Found language directory $lang";
 
 		if [ -f "$lang/LC_MESSAGES/$DEFAULTDOMAIN.po~" ]; then
-		      echo "-- Removing .PO backup file $lang/LC_MESSAGES/$DEFAULTDOMAIN.po~";
-		      rm "$lang/LC_MESSAGES/$DEFAULTDOMAIN.po~"
+			echo "-- Removing .PO backup file $lang/LC_MESSAGES/$DEFAULTDOMAIN.po~";
+			rm "$lang/LC_MESSAGES/$DEFAULTDOMAIN.po~"
 		fi
-
 
 		[ ! -e $lang/LC_MESSAGES ] && mkdir $lang/LC_MESSAGES
 		if [ -e $lang/LC_MESSAGES/$DEFAULTDOMAIN.po ]; then

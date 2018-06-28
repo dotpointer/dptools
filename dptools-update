@@ -9,9 +9,7 @@
 # 2016-12-27 20:09:00 - adding removal of unnecessary files
 # 2017-02-01 19:08:00 - domain edit
 # 2017-07-28 12:53:00 - domain edit
-
-# where to put the cache file with the current timestamp
-cachefile="/var/cache/dptools.cache"
+# 2018-06-28 16:59:00 - switching source from dotpointer.ga to gitlab repository
 
 # target to put files into
 targetdir="/var/scripts/dptools"
@@ -19,118 +17,32 @@ targetdir="/var/scripts/dptools"
 # config dir
 configdir="/etc/dptools"
 
-basedomain="dotpointer.ga"
-
-# url to download files from
-downloadurl="http://www.$basedomain/service/?a=dptools"
-
-# url to check timestamp from
-timeurl="http://www.$basedomain/service/?a=dptools_time"
-
-# temporary file to store compressed file
-tmpfile="/tmp/dptools.tar.gz"
-
-# default localtime
-localtime=0
-
-# make sure we are root
-
 if [ ! $(whoami) == "root" ]; then
     echo "Root user is required to update the dptools"
     exit
 fi
 
-# is there a cachefile and it is readable?
-if test -r "$cachefile" -a -f "$cachefile"
+# does target dir exist
+if [ -d "$targetdir" ]; then
+	cd "$targetdir";
+	git pull
+	if [ ! $? -eq 0 ]; then
+		echo "Failed pulling data from git repository.";
+		exit 1;
+	fi
 then
-        echo "Reading current server version timestamp"
-        # get server time
-	servertime=$(wget "$timeurl" -q -O -)
-	
-	
-	if [ ! $? -eq 0 ] ; then
-	       echo "Failed retrieving current server version timestamp from $timeurl, no internet connection?";
-	       exit 1
-	fi
-
-        echo "Reading current local version timestamp"
-        # get local time from cachefile
-	localtime=$(cat $cachefile)
-	if [ ! $? -eq 0 ] ; then
-	      echo "Failed reading current local version timestamp from $cachefile, maybe it is not readable?";	      
-	      exit 1
-	fi
-
-        # output some info
-	# echo "Local version timestamp : $localtime"
-	# echo "Server version timestamp: $servertime"
-	
-	# is localtime >= servertime?
-	if [ "$localtime" -ge "$servertime" ]
-	then
-	     # then happily get out
-	     echo 'Update not required, local version is up to date';
-	     exit 0;
-	fi
 fi
 
-# update seems to be needed
-echo "Update required, downloading new version" # from $downloaddir"
-
-# download the new version to temp directory
-wget "$downloadurl" -q -O "$tmpfile"
-if [ ! $? -eq 0 ] ; then
-      echo "Failed downloading file from $downloadurl";
-      exit 1
-fi
-
-
-# make sure it exists
-if [ ! -f "$tmpfile" ]; then
-    echo "Downloaded temporary file $tmpfile not found"
-    exit
-fi
-
-# check target dir
+# does target dir not exist
 if [ ! -d "$targetdir" ]; then
-    echo "Creating directory $targetdir"
-    # make a directory
-    mkdir -p "$targetdir"
-    if [ ! $? -eq 0 ] ; then
-       echo "Failed creating directory $targetdir";
-       exit 1
-    fi
-fi
-
-# check configuration dir
-if [ ! -d "$configdir" ]; then
-    echo "Creating configuration directory $configdir"
-    # make a directory
-    mkdir -p "$configdir"
-    if [ ! $? -eq 0 ] ; then
-        echo "Failed creating directory $configdir";
-        exit 1
-    fi
-fi
-
-# extract contents
-echo "Extracting contents of $tmpfile to $targetdir"
-tar -xf $tmpfile -C $targetdir
-if [ ! $? -eq 0 ] ; then
-   echo "Failed creating directory $targetdir";
-      exit 1
-fi
-
-# remove the temp file
-echo "Removing temporary file $tmpfile"
-rm $tmpfile
-if [ ! $? -eq 0 ] ; then
-   echo "Failed removing temporary file $tmpfile";
-      exit 1
+	git clone https://gitlab.com/dotpointer/dptools.git /var/scripts/dptools
+	if [ ! $? -eq 0 ]; then
+		echo "Failed cloning data from git repository.";
+		exit 1;
+	fi
 fi
 
 # remove unnecessary files
-
 removefile="$targetdir/backup_databases"
 if [ -f "$removefile" ] ; then
 	echo "Removing unnecessary file: $removefile";
@@ -141,13 +53,48 @@ if [ -f "$removefile" ] ; then
 	fi
 fi
 
+# remove unnecessary files
+removefile="$targetdir/convdb-iso-8859-1-to-utf-8"
+if [ -f "$removefile" ] ; then
+	echo "Removing deprecated file: $removefile";
+	rm $removefile
+	if [ ! $? -eq 0 ] ; then
+		echo "Failed removing file $removefile";
+		exit 1
+	fi
+fi
 
-echo "Storing current timestamp"
-# store current time to file
-echo $servertime > $cachefile
-if [ ! $? -eq 0 ] ; then
-   echo "Failed storing current timestamp to $cachefile";
-      exit 1
+# remove deprecated files
+removefile="$targetdir/dpconvert"
+if [ -f "$removefile" ] ; then
+	echo "Removing deprecated file: $removefile";
+	rm $removefile
+	if [ ! $? -eq 0 ] ; then
+		echo "Failed removing file $removefile";
+		exit 1
+	fi
+fi
+
+# remove unnecessary files
+removefile="$targetdir/ka"
+if [ -f "$removefile" ] ; then
+	echo "Removing unnecessary file: $removefile";
+	rm $removefile
+	if [ ! $? -eq 0 ] ; then
+		echo "Failed removing file $removefile";
+		exit 1
+	fi
+fi
+
+# remove unnecessary files
+removefile="$targetdir/kc"
+if [ -f "$removefile" ] ; then
+	echo "Removing unnecessary file: $removefile";
+	rm $removefile
+	if [ ! $? -eq 0 ] ; then
+		echo "Failed removing file $removefile";
+		exit 1
+	fi
 fi
 
 echo "Setting 755 on dptools directory recursively"
@@ -161,7 +108,6 @@ then
   echo ""
   echo "$targetdir was not found in your PATH variable."
   echo ""
-  
   echo "This means that you cannot use the powers of dptools in this console."
   echo ""  
   echo "You need to add dp_console_setup.sh to your ~/.bashrc and ~/.profile files."
@@ -169,7 +115,7 @@ then
   echo "Open the files in an editor and add the following line at the end of them:"
   echo ". $targetdir/dp_console_setup.sh"
   echo ""
-  echo "Then reload: source ~/.profile"
+  echo "Then reload by running this: source ~/.profile"
 # or is it in the path
 else
   # then reload the profile

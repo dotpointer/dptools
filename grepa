@@ -1,2 +1,11 @@
 #!/bin/bash
+
+# grepa
+# recursively find files containing a case-sensitive text string
+# by robert klebe, dotpointer
+
+# changelog
+# 2017-01-24 12:45:36
+# 2018-06-28 17:25:00
+
 grep -rn "$1" --color=auto ./

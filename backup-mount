@@ -1,11 +1,15 @@
 #!/bin/bash
 
-# to mount a encrypted backup image over samba
-# by robert klebe
+# backup-mount
+# mount a encrypted backup image over samba
+# by robert klebe, dotpointer
 
 # changelog
 # 2014-11-05 14:37:27 - initial version
-# 2015-06-06 - making file a part of dptools
+# 2015-06-06 12:47:17 - making file a part of dptools
+# 2018-06-28 13:32:00 - cleanup
+# 2018-06-28 15:44:00 - description edit and cleanup
+
 
 # Make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
@@ -37,29 +41,52 @@ source $CONFIG_FILE;
 
 # check parameters
 
-if [ -z "$DIR_SHARE" ]; then echo "DIR_SHARE not set"; exit 1; fi
+if [ -z "$DIR_SHARE" ]; then
+	echo "DIR_SHARE not set";
+	exit 1;
+fi
 echo "Samba share mount point: $DIR_SHARE";
 
-if [ -z "$DIR_IMAGE" ]; then echo "DIR_IMAGE not set"; exit 1; fi
+if [ -z "$DIR_IMAGE" ]; then
+	echo "DIR_IMAGE not set";
+	exit 1;
+fi
 echo "Image file mount point : $DIR_IMAGE";
 
-if [ -z "$LOOPDEVICE" ]; then echo "LOOPDEVICE not set"; exit 1; fi
+if [ -z "$LOOPDEVICE" ]; then
+	echo "LOOPDEVICE not set";
+	exit 1;
+fi
 echo "Loop device: $LOOPDEVICE";
 
-if [ -z "$MAPPERNAME" ]; then echo "MAPPERNAME not set"; exit 1; fi
+if [ -z "$MAPPERNAME" ]; then
+	echo "MAPPERNAME not set";
+	exit 1;
+fi
 echo "Device mapper: /dev/mapper/$MAPPERNAME";
 
-if [ -z "$SAMBA_USER" ]; then echo "SAMBA_USER not set"; exit 1; fi
+if [ -z "$SAMBA_USER" ]; then
+	echo "SAMBA_USER not set";
+	exit 1;
+fi
 echo "Samba user: $SAMBA_USER";
 
-if [ -z "$SAMBA_PASSWORD" ]; then echo "SAMBA_PASSWORD not set"; exit 1; fi
+if [ -z "$SAMBA_PASSWORD" ]; then
+	echo "SAMBA_PASSWORD not set";
+	exit 1;
+fi
 
-if [ -z "$SAMBA_PATH_SHARE" ]; then echo "SAMBA_PATH_SHARE not set"; exit 1; fi
+if [ -z "$SAMBA_PATH_SHARE" ]; then
+	echo "SAMBA_PATH_SHARE not set";
+	exit 1;
+fi
 echo "Samba share path: $SAMBA_PATH_SHARE";
 
-if [ -z "$SAMBA_PATH_IMAGE" ]; then echo "SAMBA_PATH_IMAGE not set"; exit 1; fi
+if [ -z "$SAMBA_PATH_IMAGE" ]; then
+	echo "SAMBA_PATH_IMAGE not set";
+	exit 1;
+fi
 echo "Samba image path inside Samba share: $SAMBA_PATH_IMAGE";
-
 
 # make sure outer container dir is there
 echo "Checking share dir: $DIR_SHARE";
