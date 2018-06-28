@@ -1,3 +1,0 @@
-#!/bin/bash
-sudo sed -i 's/X-GIO-NoFuse=true/X-GIO-NoFuse=false/' /usr/share/applications/libreoffice-*
-
