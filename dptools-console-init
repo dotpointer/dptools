@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# dp_console_setup.sh
+# dptools-console-init
 # console formatter with a lot of aliases
 # by robert klebe, dotpointer
 
@@ -19,6 +19,7 @@
 # 2018-03-17 - adding batstat
 # 2018-04-26 - 17:34:00	adding jpegtran preference
 # 2018-06-29 - 16:37:00 - adding commands present in the dptools directory, cleanup
+# 2018-06-29 - 17:45:00 - rename from dp console setup.sh to dptools-console-init
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then

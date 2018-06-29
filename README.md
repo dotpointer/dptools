@@ -43,7 +43,7 @@ Run actions upon dnsmasq leases. Made in PHP, configuration file is
 
 Simplified traffic shaping, based on wondershaper. Made in Bash.
 
-### dp_console_setup.sh
+### dptools-console-init
 
 Console formatter with a lot of aliases.
 
