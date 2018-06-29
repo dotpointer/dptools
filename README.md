@@ -1,6 +1,6 @@
 # dptools
 
-dptools is a variated collection of useful tools.
+A variated collection of useful tools in Linux shells, scripts and cronjobs.
 
 ### backup-create, backup-mount, backup-sync, backup-umount
 
@@ -45,7 +45,7 @@ Simplified traffic shaping, based on wondershaper. Made in Bash.
 
 ### dptools-console-init
 
-Console formatter with a lot of aliases.
+Console formatter with a lot of aliases. Made in Bash.
 
 ### dptools-update
 
@@ -63,7 +63,7 @@ Rename file using EXIF data artist and title. Made in PHP.
 ### fakecheck
 
 Check if file contain anything else than null characters,
-returns 0 if non-null.
+returns 0 if non-null. Made in PHP.
 
 ### gettextrefresh
 
@@ -142,7 +142,7 @@ Rename audio files automatically. Made in PHP.
 ### stampresizer
 
 Mangler for scanned stamp auction images. Resizes, brands and reorganizes the pictures
-so they become ready to publish on auction sites.
+so they become ready to publish on auction sites. Made in PHP.
 
 ### sync-dependencies
 
@@ -159,7 +159,7 @@ so it can be stored in one file, may also delete original file if requested. Mad
 ### transfer
 
 Move files from one location to another using rsync, ftp or other services using cron.
-Useful in cronjobs. Made in PHP, configuration file is `/etc/dptools/transfer`.
+Useful in cronjobs. Made in PHP, configuration file is `/etc/dptools/transfer`. Made in PHP.
 
 ### update-flash
 
@@ -171,7 +171,7 @@ Video sheet generator. Creates an image file with thumbnails for a video file. M
 
 ### winmount
 
-Mount a Samba share using CIFS in a user friendly way.
+Mount a Samba share using CIFS in a user friendly way. Made in Bash.
 
 ### vmaddusb
 
@@ -259,7 +259,7 @@ VirtualBox, clear machine USB devices. Made in Bash.
 
 ## Other commands - aliases
 
-Please have a look of the commands defined as aliases in the `dp_console_setup.sh` file.
+Please have a look of the commands defined as aliases in the `dptools-console-init` file.
 
 ## Getting Started
 
@@ -299,7 +299,7 @@ sudo bash
 
 Clone the repository
 ```
-git clone https://gitlab.com/dotpointer/mysql-shim.git /opt/dptools
+git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
 ```
 
 Make all executable
@@ -312,12 +312,12 @@ Open ~/.bashrc and ~/.profile for all users that you want to have
 the dptools available for and put this line at the bottom of each of them:
 
 ```
-. /opt/dptools/dp_console_setup.sh
+. /opt/dptools/dptools-console-init
 ```
 
 ## Usage
 
-Enjoy the commands in a terminal, script or a cronjob.
+Enjoy the commands in a Linux shell, script or a cronjob.
 
 ## Authors
 
@@ -331,6 +331,3 @@ who participated in this project.
 
 This project is licensed under the MIT License - see the
 [LICENSE.md](LICENSE.md) file for details.
-
-Contains dependency files that may be licensed under their own respective
-licenses.

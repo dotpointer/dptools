@@ -111,10 +111,10 @@ then
   echo ""
   echo "This means that you cannot use the powers of dptools in this console."
   echo ""  
-  echo "You need to add dp_console_setup.sh to your ~/.bashrc and ~/.profile files."
+  echo "You need to add dptools-console-init to your ~/.bashrc and ~/.profile files."
   echo ""
   echo "Open the files in an editor and add the following line at the end of them:"
-  echo ". $targetdir/dp_console_setup.sh"
+  echo ". $targetdir/dptools-console-init"
   echo ""
   echo "Then reload by running this: source ~/.profile"
 # or is it in the path
