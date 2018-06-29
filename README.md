@@ -314,3 +314,23 @@ the dptools available for and put this line at the bottom of each of them:
 ```
 . /opt/dptools/dp_console_setup.sh
 ```
+
+## Usage
+
+Enjoy the commands in a terminal, script or a cronjob.
+
+## Authors
+
+* **Robert Klebe** - *Development* - [dotpointer](https://gitlab.com/dotpointer)
+
+See also the list of
+[contributors](https://gitlab.com/dotpointer/dptools/contributors)
+who participated in this project.
+
+## License
+
+This project is licensed under the MIT License - see the
+[LICENSE.md](LICENSE.md) file for details.
+
+Contains dependency files that may be licensed under their own respective
+licenses.
