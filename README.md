@@ -315,6 +315,10 @@ the dptools available for and put this line at the bottom of each of them:
 . /opt/dptools/dptools-console-init
 ```
 
+## Updating
+
+Run `dptools-update` in a root shell to update dptools.
+
 ## Usage
 
 Enjoy the commands in a Linux shell, script or a cronjob.
