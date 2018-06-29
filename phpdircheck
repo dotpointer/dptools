@@ -1,13 +1,13 @@
 #!/usr/bin/php
 <?php
 
-# phpdircheck - to php lint check a directory recursively
-# and stop if any errors occour
-# by robert klebe	
+# phpdircheck
+# php lint check a directory recursively and stop if any errors occour
+# by robert klebe
 
 # example bash file which checks php files before publishing data to a webroot:
 #
-# phpdircheck $SOURCE  
+# phpdircheck $SOURCE
 # if [ $? -eq 0 ]; then
 #	echo "Publishing data: $SOURCE -> $TARGET";
 #        # sync the source with the target, */=recursive, note that we must specify folder excludes first for some reason
@@ -22,12 +22,13 @@
 # 2016-09-21 20:38:18 - adding progressbar
 # 2016-09-21 21:31:02 - updated progressbar
 # 2017-02-04 23:11:00 - updated progressbar
+# 2018-06-29 14:56:00 - cleanup
 
 function progressbar($part, $total) {
 
 	# character length for progress bar
 	$pb_length = 10;
-	
+
 	# calculate the part
 	$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
 	# calculate the total
@@ -36,11 +37,11 @@ function progressbar($part, $total) {
 	return 
 		'['.
 		str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
-		
+
 		($part < $total && $pb_part > 0 ? '>' : '').
-		
+
 		str_repeat('.', $pb_total - $pb_part).
-		'] '.			
+		'] '.
 		# the first number is the actual amount of characters in the 
 		# resulting string, and we want 000.000, so that's 7
 		sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
@@ -48,8 +49,8 @@ function progressbar($part, $total) {
 		str_pad($part, strlen($total), '0', STR_PAD_LEFT).
 		'/'.
 		$total.
-		' '		
-		;			
+		' '
+		;
 }
 
 # check path
@@ -93,13 +94,12 @@ foreach ($files as $nr => $file) {
 		exit(3);
 	}
 	// echo sprintf('%0'.$l.'d',  ($nr + 1)).'/'.$total.' ('.( sprintf('%03d', round(( ($nr + 1)/$total)*100) )).'%) ok, checked: '.$file."\r";
-	
-	# blank previous line	
+
+	# blank previous line
 	echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
 
 	# write status
 	echo progressbar($nr + 1, $total).' checked: '.$file."\r";
-
 	$prevfile = $file;
 }
 

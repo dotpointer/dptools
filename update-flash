@@ -1,126 +1,123 @@
 #!/usr/bin/php
 <?php
 
-	# flash updater for Chromium - downloads and extracts update
-	# by robert klebe, dotpointer
+# update-flash
+# flash updater for chromium - downloads and extracts update
+# by robert klebe, dotpointer
 
-	# changelog
-	# 2018-02-17 22:22:00 - initial version
+# changelog
+# 2018-02-17 22:22:00 - initial version
+# 2018-02-17 22:39:40
+# 2018-06-29 16:04:00 - cleanup
 
-	$dir = '/usr/lib/pepperflashplugin-nonfree/';
-	$downloadfilename = 'flashupdate.tar.gz';
-	$debug = false;
+$dir = '/usr/lib/pepperflashplugin-nonfree/';
+$downloadfilename = 'flashupdate.tar.gz';
+$debug = false;
 
-	function curler($url) {
-		$ch = curl_init(); 
-		# not doing it with headers results in no download url
-		curl_setopt_array($ch, array(
-			CURLOPT_FOLLOWLOCATION => true,
-			CURLOPT_URL => $url,
-			CURLOPT_RETURNTRANSFER => 1,
-			CURLOPT_HTTPHEADER => array(
-				'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-				'Accept-Language: sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
-				'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.89 Safari/537.36'
-			)
-		));
+function curler($url) {
+	$ch = curl_init(); 
+	# not doing it with headers results in no download url
+	curl_setopt_array($ch, array(
+		CURLOPT_FOLLOWLOCATION => true,
+		CURLOPT_URL => $url,
+		CURLOPT_RETURNTRANSFER => 1,
+		CURLOPT_HTTPHEADER => array(
+			'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+			'Accept-Language: sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
+			'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.89 Safari/537.36'
+		)
+	));
 
-		$content = curl_exec($ch);
+	$content = curl_exec($ch);
+	curl_close($ch);
+	return $content;
+}
 
-		curl_close($ch);
+if (!is_dir($dir)) {
+	exec('mkdir -p '.escapeshellarg($dir), $return);
 
-		return $content;
-	}
-
-	if (!is_dir($dir)) {
-		exec('mkdir -p '.escapeshellarg($dir), $return);
-
-		if ($return !== 0) {
-			echo 'Failed creating '.$dir."\n";
-			die(1);
-	 	}
-	}
-
-	if (!chdir($dir)) {
-		echo 'Failed directory change to '.$dir."\n";
-		die(1);
-	}
-
-
-	error_reporting(E_ALL);
-	ini_set('display_errors', 1);
-
-	$url = "https://get.adobe.com/se/flashplayer/";
-
-	if (!$debug || !file_exists('test.tmp')) {
-		$content = curler($url);      
-
-		if ($debug) {
-			file_put_contents('test.tmp', $content);
-		}
-	}
-
-	if ($debug) {
-		$content = file_get_contents('test.tmp');
-	}
-
-	# $("#buttonDownload").attr("href","/se/flashplayer/download/?installer=FP_28.0_for_Linux_64-bit_(.rpm)_-_PPAPI&sType=7480&standalone=1");
-	$pattern = '/\#buttonDownload\"\)\.attr\(\"href\",\"(.*?\(\.tar\.gz\).*?)\"/i';
-
-	preg_match($pattern, $content, $matches);
-
-	if (!isset($matches[1])) {
-		echo 'Failed extracting URL from page 1.'."\n";
-		die(1);
-	}
-
-	$url = parse_url($url);
-
-	$url = $url['scheme'].'://'.$url['host'].$matches[1];
-
-	if (!$debug || !file_exists('test2.tmp')) {
-		$content = curler($url);
-		if ($debug) {
-			file_put_contents('test2.tmp', $content);
-		}
-	}
-
-	if ($debug) {
-		$content = file_get_contents('test2.tmp');
-	}
-
-	# setTimeout("location.href = 'https://fpdownload.adobe.com/pub/flashplayer/pdc/28.0.0.161/flash_player_ppapi_linux.x86_64.tar.gz';", 2000);
-
-	$pattern = '/setTimeout\(\"location\.href = \'(.*?)\';\", 2000\)/i';
-	preg_match($pattern, $content, $matches);
-	if (!isset($matches[1])) {
-		echo 'Failed extracting URL from page 2.'."\n";
-		die(1);
-	}
-
-	$url = $matches[1];
-
-	if (!file_exists($downloadfilename)) {
-		passthru('wget -O flashupdate.tar.gz '.escapeshellarg($url), $return);
-
-		if ($return !== 0) {
-			echo 'Failed downloading update.'."\n";
-			die(1);
-	 	}
-	}
-
-	$mime = shell_exec('mimetype flashupdate.tar.gz');
-
-	if (trim($mime) !== 'flashupdate.tar.gz: application/x-compressed-tar') {
-		echo 'Downloaded file is not of desired mime type, it is: '.trim($mime)."\n";
-		die(1);
-	}
-
-	passthru('tar -xvf flashupdate.tar.gz', $return);
 	if ($return !== 0) {
-		echo 'Failed extracting update to '.$dir."\n";
+		echo 'Failed creating '.$dir."\n";
 		die(1);
- 	}
+	}
+}
 
-	unlink($downloadfilename);
+if (!chdir($dir)) {
+	echo 'Failed directory change to '.$dir."\n";
+	die(1);
+}
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+$url = "https://get.adobe.com/se/flashplayer/";
+
+if (!$debug || !file_exists('test.tmp')) {
+	$content = curler($url);
+	if ($debug) {
+		file_put_contents('test.tmp', $content);
+	}
+}
+
+if ($debug) {
+	$content = file_get_contents('test.tmp');
+}
+
+# $("#buttonDownload").attr("href","/se/flashplayer/download/?installer=FP_28.0_for_Linux_64-bit_(.rpm)_-_PPAPI&sType=7480&standalone=1");
+$pattern = '/\#buttonDownload\"\)\.attr\(\"href\",\"(.*?\(\.tar\.gz\).*?)\"/i';
+
+preg_match($pattern, $content, $matches);
+
+if (!isset($matches[1])) {
+	echo 'Failed extracting URL from page 1.'."\n";
+	die(1);
+}
+
+$url = parse_url($url);
+
+$url = $url['scheme'].'://'.$url['host'].$matches[1];
+
+if (!$debug || !file_exists('test2.tmp')) {
+	$content = curler($url);
+	if ($debug) {
+		file_put_contents('test2.tmp', $content);
+	}
+}
+
+if ($debug) {
+	$content = file_get_contents('test2.tmp');
+}
+
+# setTimeout("location.href = 'https://fpdownload.adobe.com/pub/flashplayer/pdc/28.0.0.161/flash_player_ppapi_linux.x86_64.tar.gz';", 2000);
+
+$pattern = '/setTimeout\(\"location\.href = \'(.*?)\';\", 2000\)/i';
+preg_match($pattern, $content, $matches);
+if (!isset($matches[1])) {
+	echo 'Failed extracting URL from page 2.'."\n";
+	die(1);
+}
+
+$url = $matches[1];
+
+if (!file_exists($downloadfilename)) {
+	passthru('wget -O flashupdate.tar.gz '.escapeshellarg($url), $return);
+	if ($return !== 0) {
+		echo 'Failed downloading update.'."\n";
+		die(1);
+	}
+}
+
+$mime = shell_exec('mimetype flashupdate.tar.gz');
+if (trim($mime) !== 'flashupdate.tar.gz: application/x-compressed-tar') {
+	echo 'Downloaded file is not of desired mime type, it is: '.trim($mime)."\n";
+	die(1);
+}
+
+passthru('tar -xvf flashupdate.tar.gz', $return);
+if ($return !== 0) {
+	echo 'Failed extracting update to '.$dir."\n";
+	die(1);
+}
+
+unlink($downloadfilename);
 ?>

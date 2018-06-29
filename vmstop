@@ -1,12 +1,18 @@
 #!/bin/bash
-# to stop virtual machines
+
+# vmstop
+# virtualbox, stop a machine
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 12:09:18
+# 2018-06-29 17:09:00 - cleanup
 
 # if machine is specified, stop that
 if [ -n "$1" ]; then
-    VBoxManage controlvm "$1" poweroff
+	 VBoxManage controlvm "$1" poweroff
 # otherwise stop them all
 else
-   echo 'VM name must be specified';
-   exit 1;
+	echo 'VM name must be specified';
+	exit 1;
 fi
-

@@ -1,41 +1,40 @@
 #!/usr/bin/php
 <?php
-	# to sort files into date subdirectories, based on the modify time of 
-	# the files
 
-	# by robert klebe
+# sortbymodify
+# sort files into date subdirectories, based on the modify time of the files
+# by robert klebe
 
-	# changelog
-	# 2014-10-31 18:11:06 - initial version
+# changelog
+# 2014-10-31 18:11:06 - initial version
+# 2014-11-01 23:03:55
+# 2018-06-29 15:32:00 - cleanup
 
-	# timezone must be specified
-	date_default_timezone_set('Europe/Stockholm');
+# timezone must be specified
+date_default_timezone_set('Europe/Stockholm');
 
-	# get options
-	$options = getopt('d:ehs:', array('dir:', 'execute', 'help', 'suffix:'));
-	
-	# default options
-	$dir = '.';
-	$execute = false;
-	$suffix = false;
+# get options
+$options = getopt('d:ehs:', array('dir:', 'execute', 'help', 'suffix:'));
 
-	# walk options
-	foreach ($options as $key => $value) {
-		# find out what option this is
-		switch ($key) {
-		
-			case 'd': # set working directory
-			case 'dir':
-				$dir = $value;
-				break;
-				
-			case 'e': # perform changes
-			case 'execute':
-				$execute = true;
-				break;
-						
-			case 'h': # help
-			case 'help':
+# default options
+$dir = '.';
+$execute = false;
+$suffix = false;
+
+# walk options
+foreach ($options as $key => $value) {
+	# find out what option this is
+	switch ($key) {
+		case 'd': # set working directory
+		case 'dir':
+			$dir = $value;
+			break;
+		case 'e': # perform changes
+		case 'execute':
+			$execute = true;
+			break;
+		case 'h': # help
+		case 'help':
 ?>
 To move files into date subdirectories based on the modify date of the files.
 -d, --dir=<dirpath>
@@ -47,119 +46,117 @@ To move files into date subdirectories based on the modify date of the files.
 -h, --help
 	Print this information
 
--s <suffix>, --suffix=<suffix>	
-	Set a suffix on sub directories to create, for example 
+-s <suffix>, --suffix=<suffix>
+	Set a suffix on sub directories to create, for example
 	YYYY-MM-DD - This is a suffix
-<?php		
-				die();
-			case 's': # suffix
-			case 'suffix':
-				$suffix = $value;
-				break;
-
-		}
+<?php
+			die();
+		case 's': # suffix
+		case 'suffix':
+			$suffix = $value;
+			break;
 	}
-	
-	echo 'Working directory is: '.$dir."\n";
-	echo 'Suffix is: '.$suffix."\n";
-	echo 'Executing changes: '.($execute ? 'Yes' : 'No, dry-run')."\n";
-	
-	if (!is_dir($dir)) {
-		echo 'ERROR, Working directory is not a directory: '.$dir."\n";
+}
+
+echo 'Working directory is: '.$dir."\n";
+echo 'Suffix is: '.$suffix."\n";
+echo 'Executing changes: '.($execute ? 'Yes' : 'No, dry-run')."\n";
+
+if (!is_dir($dir)) {
+	echo 'ERROR, Working directory is not a directory: '.$dir."\n";
+	die(1);
+}
+
+# get files from dir
+$files = scandir($dir);
+if ($files === false) {
+	echo 'Failed scanning dir for files: '.$dir."\n";
+	die(1);
+}
+
+# list of dirs to make
+$makedirs = array();
+
+foreach ($files as $file) {
+	# make a fullpath to file
+	$source_fullpath = (substr($dir, -1) !== '/' ? $dir.'/' : $dir).$file;
+
+	# not a file, go next
+	if (!is_file($source_fullpath)) continue;
+
+	# get date
+	$date = date('Y-m-d', filemtime($source_fullpath));
+
+	# create dirname, add suffix if there is one
+	$dirname = $date.($suffix ? ' - '.$suffix : '');
+
+	# make a fullpath to the dir
+	$target_dirpath = (substr($dir, -1) !== '/' ? $dir.'/' : $dir).$dirname;
+
+	# check dir
+	if (
+		# not in array of dirs to make
+		!in_array($dirname, $makedirs) &&
+		# does not exist
+		!file_exists( $target_dirpath  )
+	) {
+		# add it to dirs to make
+		$makedirs[] = $dirname;
+	} else if (
+		# target dir exists
+		file_exists( $target_dirpath  ) &&
+		# and it is not a dir
+		!is_dir( $target_dirpath )
+	) {
+		# then this is fatal, end here
+		echo 'ERROR, target dir is not a dir: '.$target_dirpath."\n";
 		die(1);
 	}
-	
-	# get files from dir
-	$files = scandir($dir);
-	if ($files === false) {
-		echo 'Failed scanning dir for files: '.$dir."\n";
+
+	# make sure target file is nonexistant
+	if (file_exists($target_dirpath.'/'.$file)) {
+		echo 'ERROR, Target file exists: '.$target_dirpath.'/'.$file;
 		die(1);
 	}
-	
-	# list of dirs to make
-	$makedirs = array();
-	
-	foreach ($files as $file) {
-		# make a fullpath to file
-		$source_fullpath = (substr($dir, -1) !== '/' ? $dir.'/' : $dir).$file;
 
-		# not a file, go next
-		if (!is_file($source_fullpath)) continue;
+	# add this file to files to move
+	$movefiles[] = array(
+		'from' => $source_fullpath,
+		'to' => $target_dirpath.'/'.$file
+	);
+}
 
-		# get date
-		$date = date('Y-m-d', filemtime($source_fullpath));
-		
-		# create dirname, add suffix if there is one
-		$dirname = $date.($suffix ? ' - '.$suffix : '');
-		
-		# make a fullpath to the dir
-		$target_dirpath = (substr($dir, -1) !== '/' ? $dir.'/' : $dir).$dirname;
-		
-		# check dir
-		if (
-			# not in array of dirs to make
-			!in_array($dirname, $makedirs) &&
-			# does not exist
-			!file_exists( $target_dirpath  ) 
-		) {
-			# add it to dirs to make
-			$makedirs[] = $dirname;
-		} else if (
-			# target dir exists
-			file_exists( $target_dirpath  ) &&
-			# and it is not a dir
-			!is_dir( $target_dirpath )
-		) {
-			# then this is fatal, end here
-			echo 'ERROR, target dir is not a dir: '.$target_dirpath."\n";
-			die(1);		
-		}
-		
-		# make sure target file is nonexistant
-		if (file_exists($target_dirpath.'/'.$file)) {
-			echo 'ERROR, Target file exists: '.$target_dirpath.'/'.$file;
-			die(1);
-		}
-		
-		# add this file to files to move
-		$movefiles[] = array(
-			'from' => $source_fullpath,
-			'to' => $target_dirpath.'/'.$file
-		);
+# sort the dirs and files alphabetically
+asort($makedirs);
+asort($movefiles);
 
+# walk dirs to make
+foreach ($makedirs as $dir_to_make) {
+	# tell what we're doing
+	echo 'Make dir: '.$dir_to_make."\n";
+	# should we execute?
+	if ($execute && !mkdir($dir_to_make)) {
+		# fatal, end here
+		echo 'ERROR, Failed creating directory: '.$dir_to_make."\n";
+		die(1);
 	}
-	
-	# sort the dirs and files alphabetically
-	asort($makedirs);
-	asort($movefiles);
-	
-	# walk dirs to make
-	foreach ($makedirs as $dir_to_make) {
-		# tell what we're doing
-		echo 'Make dir: '.$dir_to_make."\n";	
-		# should we execute?
-		if ($execute && !mkdir($dir_to_make)) {
-			# fatal, end here
-			echo 'ERROR, Failed creating directory: '.$dir_to_make."\n";
-			die(1);
-		}
-	}
+}
 
-	# walk files to move
-	foreach ($movefiles as $file_to_move) {
-		# tell what we're doing
-		echo 'Move file: '.$file_to_move['from'].' -> '.$file_to_move['to']."\n";	
-		# should we execute?
-		if ($execute && !rename($file_to_move['from'], $file_to_move['to'])) {
-			echo 'ERROR, Failed moving file: '.$file_to_move['from'].' -> '.$file_to_move['to']."\n";
-			die(1);
-		}
+# walk files to move
+foreach ($movefiles as $file_to_move) {
+	# tell what we're doing
+	echo 'Move file: '.$file_to_move['from'].' -> '.$file_to_move['to']."\n";
+	# should we execute?
+	if ($execute && !rename($file_to_move['from'], $file_to_move['to'])) {
+		echo 'ERROR, Failed moving file: '.$file_to_move['from'].' -> '.$file_to_move['to']."\n";
+		die(1);
 	}
-	
-	# was this a dry run
-	if (!$execute) {
-		echo 'Run with -e to execute changes'."\n";
-	} else {
-		echo 'Changes has been done.'."\n";
-	}
+}
+
+# was this a dry run
+if (!$execute) {
+	echo 'Run with -e to execute changes'."\n";
+} else {
+	echo 'Changes has been done.'."\n";
+}
 ?>

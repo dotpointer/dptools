@@ -1,94 +1,109 @@
 #!/usr/bin/php
 <?php
-	# to disconnect, compact and reconnect all disks on a virtual box machine
-	# by robert klebe
 
-	# changelog
-	# 2014-09-16 21:19
-	# 2014-09-21 13:31:06
-	# 2014-09-21 17:45:05 - first working edition
+# vmcompress
+# virtualbox, disconnect, compact and reconnect all disks on a machine
+# by robert klebe
 
-	# path to vboxmanage
-	$vbm = '/usr/bin/VBoxManage';
-	
-	# get first argument - name of the machine
-	$vm = isset($argv[1]) ? $argv[1] : false;
-	
-	# make machine is specified
-	if ($vm === false) die('Virtual machine name must be specified'."\n");
+# changelog
+# 2014-09-16 21:19
+# 2014-09-21 13:31:06
+# 2014-09-21 17:45:05 - first working edition
+# 2018-06-29 16:24:00 - cleanup
 
-	# get machine info
-	echo 'Requesting machine info...'."\n";
-	$c = $vbm.' showvminfo '.escapeshellarg($vm);
+# path to vboxmanage
+$vbm = '/usr/bin/VBoxManage';
+
+# get first argument - name of the machine
+$vm = isset($argv[1]) ? $argv[1] : false;
+
+# make machine is specified
+if ($vm === false) {
+	die('Virtual machine name must be specified'."\n");
+}
+
+# get machine info
+echo 'Requesting machine info...'."\n";
+$c = $vbm.' showvminfo '.escapeshellarg($vm);
+exec($c, $o, $r);
+if ($r) {
+	die('Failed: '.$c);
+}
+
+$vminfo = $o;
+
+echo 'Looking for machine state...'."\n";
+# verify machine state
+$state = false;
+foreach ($vminfo as $line) {
+	# IDE Controller (0, 0): /path/to/file.vdi (UUID: 435435345-345345-435aa3-324aa)
+	if (preg_match('/^State:\s+(.*) \(.*$/', $line, $m)) {
+		$state = $m[1];
+	}
+}
+
+# make sure machine is powered off
+if ($state !== 'powered off') {
+	die('State is not "powered off", must be.'."\n");
+}
+
+# get disks
+echo 'Looking for disks...'."\n";
+$disks = array();
+foreach ($o as $line) {
+	# IDE Controller (0, 0): /path/to/file.vdi (UUID: 435435345-345345-435aa3-324aa)
+	if (preg_match('/^(.*) \((\d+), (\d+)\)\: (.*) \(UUID\: ([a-z0-9\-]+)\)$/', $line, $m)) {
+		echo $m[0]."\n";
+		$disks[] = array(
+			'controller' => $m[1],
+			'device' => $m[3],
+			'port' => $m[2],
+			'path' => $m[4],
+			'uuid' => $m[5]
+		);
+	}
+}
+
+echo 'Walking disks to disconnect, compress and reconnect them...'."\n";
+
+# walk the disks
+foreach ($disks as $disk) {
+
+	# disconnect the disk from the vm
+	echo 'Disconnecting: '.$disk['path']."\n";
+	$c = $vbm.' storageattach '.escapeshellarg($vm).' --storagectl '.escapeshellarg($disk['controller']).' --port '.$disk['port'].' --device '.$disk['device'].' --medium none';
+	echo $c."\n";
 	exec($c, $o, $r);
-	if ($r) die('Failed: '.$c);
-
-	$vminfo = $o;
-
-	echo 'Looking for machine state...'."\n";
-	# verify machine state
-	$state = false;
-	foreach ($vminfo as $line) {
-	    # IDE Controller (0, 0): /path/to/file.vdi (UUID: 435435345-345345-435aa3-324aa)
-	    if (preg_match('/^State:\s+(.*) \(.*$/', $line, $m)) { 
-	    	$state = $m[1];
-	    }
-	}	
-	
-	# make sure machine is powered off	
-	if ($state !== 'powered off') die('State is not "powered off", must be.'."\n");
-	
-	# get disks
-	echo 'Looking for disks...'."\n";
-	$disks = array();
-	foreach ($o as $line) {
-	    # IDE Controller (0, 0): /path/to/file.vdi (UUID: 435435345-345345-435aa3-324aa)
-	    if (preg_match('/^(.*) \((\d+), (\d+)\)\: (.*) \(UUID\: ([a-z0-9\-]+)\)$/', $line, $m)) { 
-			echo $m[0]."\n";
-			$disks[] = array(
-				'controller' => $m[1],
-				'device' => $m[3],
-				'port' => $m[2],
-				'path' => $m[4],
-				'uuid' => $m[5]
-			);
-	    }
+	if ($r) {
+		die('Failed: '.$c);
 	}
 
-	echo 'Walking disks to disconnect, compress and reconnect them...'."\n";
-	
-	# walk the disks
-	foreach ($disks as $disk) {
-		
-		# disconnect the disk from the vm
-		echo 'Disconnecting: '.$disk['path']."\n";
-		$c = $vbm.' storageattach '.escapeshellarg($vm).' --storagectl '.escapeshellarg($disk['controller']).' --port '.$disk['port'].' --device '.$disk['device'].' --medium none';
-		echo $c."\n";
-		exec($c, $o, $r);
-		if ($r) die('Failed: '.$c);		
-
-		# close the medium		
-		echo 'Closing medium: '.$disk['path']."\n";
-		$c = $vbm.' closemedium disk '.escapeshellarg($disk['path']);
-		echo $c."\n";
-		exec($c, $o, $r);
-		if ($r) die('Failed: '.$c);	
-
-		# compact the medium		
-		echo 'Compacting medium: '.$disk['path']."\n";
-		$c = $vbm.' modifyhd '.escapeshellarg($disk['path']).' --compact';
-		echo $c."\n";
-		exec($c, $o, $r);
-		# do not stop if it fails
-		if ($r) echo 'Failed: '.$c."\n";
-
-		# reconnect the medium
-		echo 'Reconnecting: '.$disk['path']."\n";
-		$c = $vbm.' storageattach '.escapeshellarg($vm).' --storagectl '.escapeshellarg($disk['controller']).' --port '.$disk['port'].' --device '.$disk['device'].' --type hdd --medium '.escapeshellarg($disk['path']);
-		echo $c."\n";
-		exec($c, $o, $r);
-		if ($r) die('Failed: '.$c);		
-
-			
+	# close the medium
+	echo 'Closing medium: '.$disk['path']."\n";
+	$c = $vbm.' closemedium disk '.escapeshellarg($disk['path']);
+	echo $c."\n";
+	exec($c, $o, $r);
+	if ($r) {
+		die('Failed: '.$c);
 	}
+
+	# compact the medium
+	echo 'Compacting medium: '.$disk['path']."\n";
+	$c = $vbm.' modifyhd '.escapeshellarg($disk['path']).' --compact';
+	echo $c."\n";
+	exec($c, $o, $r);
+	# do not stop if it fails
+	if ($r) {
+		echo 'Failed: '.$c."\n";
+	}
+
+	# reconnect the medium
+	echo 'Reconnecting: '.$disk['path']."\n";
+	$c = $vbm.' storageattach '.escapeshellarg($vm).' --storagectl '.escapeshellarg($disk['controller']).' --port '.$disk['port'].' --device '.$disk['device'].' --type hdd --medium '.escapeshellarg($disk['path']);
+	echo $c."\n";
+	exec($c, $o, $r);
+	if ($r) {
+		die('Failed: '.$c);
+	}
+}
 ?>

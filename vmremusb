@@ -1,8 +1,16 @@
 #!/bin/bash
 
+# vmremusb
+# virtualbox, remove usb device from machine
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 12:09:05
+# 2018-06-29 17:03:00 - cleanup
+
 if [ -z "$1" ] || [ -z "$2" ]; then
-   echo "VM name and USB UUID must be given.";
-   exit 1
+	echo "VM name and USB UUID must be given.";
+	exit 1
 fi
 
 VBoxManage controlvm "$1" usbdetach "$2"

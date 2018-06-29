@@ -1,2 +1,11 @@
 #!/bin/bash
+
+# vmrealcdoff
+# virtualbox, unmount sata optical drive
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-06-17 14:39:23
+# 2018-06-29 17:02:00 - cleanup
+
 VBoxManage storageattach "$1" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium none

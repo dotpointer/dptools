@@ -1,18 +1,25 @@
 #!/usr/bin/php
 <?php
-	$data = file_get_contents($argv[1]);
 
-	# fix < ?=
-	$data = preg_replace("/<\?=/i", "<?php echo ", $data);
+# phpshorttagreplace
+# replace PHP short tags with the longer recommended version
+# by robert klebe, dotpointer
 
-	# fix < ?newline
-	$data = preg_replace("/<\?(\s*\n)/i", "<?php$1", $data);
+# changelog
+# 2018-06-29 15:25:00
+# 2015-08-24 18:02:16
+# 2018-06-29 15:25:00 - cleanup
 
-	# fix < ?space	
-	$data = preg_replace("/<\?(\s+)/i", "<?php$1", $data);
+$data = file_get_contents($argv[1]);
 
+# fix < ?=
+$data = preg_replace("/<\?=/i", '<?php echo ', $data);
 
-	# file_put_contents($argv[1], $data);
+# fix < ?newline
+$data = preg_replace("/<\?(\s*\n)/i", '<?php$1', $data);
 
-	echo $data;
+# fix < ?space
+$data = preg_replace("/<\?(\s+)/i", '<?php$1', $data);
+
+echo $data;
 ?>

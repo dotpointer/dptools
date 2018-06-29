@@ -1,11 +1,19 @@
 #!/bin/bash
 
+# vmrestart
+# virtualbox, restart a machine
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 11:23:01
+# 2018-06-29 17:06:00 - cleanup
+
 # if machine is specified, stop that
 if [ -n "$1" ]; then
-    vmstop "$1"
-    vmstart "$1"
-    # otherwise stop them all
+	vmstop "$1"
+	vmstart "$1"
+	# otherwise stop them all
 else
-   echo 'VM name must be specified';
-   exit 1;
+	echo 'VM name must be specified';
+	exit 1;
 fi

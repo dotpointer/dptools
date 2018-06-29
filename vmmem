@@ -1,2 +1,11 @@
 #!/bin/bash
+
+# vmmem
+# virtualbox, set machine working memory
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-06-24 11:34:58
+# 2018-06-29 16:49:00 - cleanup
+
 VBoxManage modifyvm "$1" --memory $2

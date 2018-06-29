@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# to mount a samba share using cifs in a user friendly way
+# winmount
+# mount a samba share using cifs in a user friendly way
+# by robert klebe, dotpointer
+
+# changelog
 # 2009-03-05 14:34:00
 # 2015-03-15 20:56:00
+# 2015-03-22 20:56:53
+# 2018-06-29 16:09:00 - cleanup
 
-
-
-   echo -e "\nMount a windows-resource... step 1-4";
-   echo -e "--------------------------------------";
+# print details
+echo -e "\nMount a windows-resource... step 1-4";
+echo -e "--------------------------------------";
 echo -n -e "1/4 - Resource path (use /-slashes)  : ";
 read MNT_RESPATH;
 echo -n -e "2/4 - Resource username              : ";
@@ -16,12 +21,9 @@ echo -n -e "3/4 - Resource password              : ";
 read MNT_PASS;
 echo -n -e "4/4 - Mount path for this system     : ";
 read MNT_MNTPATH;
-   echo -e "--------------------------------------";
-   echo -e "Trying to map                        : $MNT_RESPATH <--> $MNT_MNTPATH...";
-   echo -e "--------------------------------------\n";
+echo -e "--------------------------------------";
+echo -e "Trying to map                        : $MNT_RESPATH <--> $MNT_MNTPATH...";
+echo -e "--------------------------------------\n";
+
 # try to mount
 mount -t cifs -o username=${MNT_USER},password=${MNT_PASS} ${MNT_RESPATH} ${MNT_MNTPATH}
-
-
-
-

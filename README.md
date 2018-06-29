@@ -56,7 +56,7 @@ Update dptools. Made in Bash.
 DynDNS 2 updating client. Made in PHP, configuration is in 
 `/etc/dptools/dynamichost-updater`.
 
-### exifmp3renamer
+### exifrenamer
 
 Rename file using EXIF data artist and title. Made in PHP.
 
@@ -100,11 +100,7 @@ Create nginx certificates. Made in Bash.
 
 ### makeutf8
 
-Convert a file from ISO-8859-1 to UTF-8 encoding. Made in Bash.
-
-### mp3renamer
-
-Rename MP3 files automatically. Made in PHP.
+Convert a file from ISO-8859-1 to UTF-8. Made in Bash.
 
 ### mp4tom4a
 
@@ -124,7 +120,7 @@ Move and resize photos from memory cards, useful for auctioning photos. Made in 
 
 ### phpdircheck
 
-PHP lint check a directory recursively. Made in PHP.
+PHP lint check a directory recursively and stop if any errors occour. Made in PHP.
 
 ### phpshorttagreplace
 
@@ -138,6 +134,10 @@ by reading a `.dptools` configuration file in the project root folder. Made in P
 ### sortbymodify
 
 Sort files into date subdirectories, based on the modify time of the files. Made in PHP.
+
+### soundrenamer
+
+Rename audio files automatically. Made in PHP.
 
 ### stampresizer
 
@@ -161,7 +161,7 @@ so it can be stored in one file, may also delete original file if requested. Mad
 Move files from one location to another using rsync, ftp or other services using cron.
 Useful in cronjobs. Made in PHP, configuration file is `/etc/dptools/transfer`.
 
-### flash-updater
+### update-flash
 
 Flash updater for Chromium - downloads and extracts update. Made in PHP.
 
@@ -179,11 +179,11 @@ VirtualBox, add USB device. Made in Bash.
 
 ### vmcap
 
-VirtualBox, get and set CPU cap. Made in Bash.
+VirtualBox, get and set machine CPU cap. Made in Bash.
 
 ### vmcd
 
-VirtualBox, set optical SATA device. Made in Bash.
+VirtualBox, set machine optical SATA device disc. Made in Bash.
 
 ### vmcdide
 
@@ -195,7 +195,7 @@ VirtualBox, disconnect, compact and reconnect all disks on a machine. Made in PH
 
 ### vmcpus
 
-VirtualBox, get and set the number of CPU:s. Made in Bash.
+VirtualBox, get and set the number of machine CPU:s. Made in Bash.
 
 ### vmdel
 
@@ -203,24 +203,15 @@ VirtualBox, delete machine. Made in Bash.
 
 ### vmdiskmount
 
-VirtualBox, mount IDE device. Made in Bash.
+VirtualBox, mount machine IDE device. Made in Bash.
 
 ### vmfloppy
 
-VirtualBox, insert and eject floppy disks. Made in Bash.
+VirtualBox, insert and eject machine floppy disks. Made in Bash.
 
 ### vminfo
 
 VirtualBox, show machine information. Made in Bash.
-
-
-### vmlist
-
-VirtualBox, list machines. Made in Bash.
-
-### vmlistusb
-
-VirtualBox, list USB devices. Made in Bash.
 
 ### vmmem
 
@@ -266,6 +257,10 @@ VirtualBox, stop a machine. Made in Bash.
 
 VirtualBox, clear machine USB devices. Made in Bash.
 
+## Other commands - aliases
+
+Please have a look of the commands defined as aliases in the `dp_console_setup.sh` file.
+
 ## Getting Started
 
 These instructions will get you a copy of the project up and running on your
@@ -304,18 +299,18 @@ sudo bash
 
 Clone the repository
 ```
-git clone https://gitlab.com/dotpointer/mysql-shim.git /var/scripts/dptools
+git clone https://gitlab.com/dotpointer/mysql-shim.git /opt/dptools
 ```
 
 Make all executable
 ```
-chmod 755 /var/scripts/dptools
-chmod -x /var/scripts/dptools/README
+chmod 755 /opt/dptools
+chmod -x /opt/dptools/README
 ```
 
 Open ~/.bashrc and ~/.profile for all users that you want to have
 the dptools available for and put this line at the bottom of each of them:
 
 ```
-. /var/scripts/dptools/dp_console_setup.sh
+. /opt/dptools/dp_console_setup.sh
 ```

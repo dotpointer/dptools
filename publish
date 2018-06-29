@@ -1,691 +1,694 @@
 #!/usr/bin/php
 <?php
-	# publish - a simple publishing command
-	# by robert klebe, dotpointer
 
-	# what it does
-	# makes you a better content publisher by forcing you to correct the errors
-	# before publishing the content
-	#
-	# reads a config in dir, scan for files, run checks, then run commands to publish
+# publish
+# validates and publishes content from an internal project directory
+# to a public directory by reading a `.dptools` configuration file
+# in the project root folder
+# by robert klebe, dotpointer
 
-	# usage
-	# place a .dptools config file in source root directory, fill it with:
+# what it does
+# makes you a better content publisher by forcing you to correct the errors
+# before publishing the content. reads a configuration file in directory,
+# scan for files, run checks, then run commands to publish
 
-	#{
-	#        "publish": {
-	#                "source": "/source/",
-	#                "target": "/target/",
-	#                "checks": {
-	##                       check for non-UNIX line endings
-	#                        "lineendingunix": {
-	#                                "fileextensions": "css,htm,html,js,php,xml",
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	#                        },
-	##                       check for spaces/tabs before line endings
-	##                       "lineendingspace": {
-	#                                "fileextensions": "css,htm,html,js,php,xml",
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	##                       },
-	#                        "maxsize": {
-	#                                "fileextensions": {
-	#                                        "gif": 256000,
-	#                                        "jpg": 256000,
-	#                                        "png": 256000
-	#                                },
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	#                        },
-	##                       check for mixed spaces/tabs
-	##                       "mixspacetabs": {
-	##                               "fileextensions": "css,html,html,js,php,xml",
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	##                       },
-	##                       PHP lint check files
-	#                        "phplint": {
-	#                                "fileextensions": "php",
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	#                        },
-	##                       check for PHP short open tags
-	#                        "phpshorttag": {
-	#                                "fileextensions": "php",
-	#                                "ignorepatterns": "filetoignore,pathtoignore/"
-	#                        },
-	##                       check git status
-	#                        "git": true
-	#                },
-	#                "commands": [
-	#                        "rsync -av --exclude='.dptools' $SOURCE$ $TARGET"
-	#                ]
-	#        }
-	#}
-	#
+# usage
+# place a .dptools config file in source root directory, fill it with:
 
-	#
-	# then run publish in the source root directory
-	# checks:
-	# lineendingspace, check for spaces/tabs before line endings
-	# lineendingunix, check for non-UNIX line endings
-	# mixspacetabs, check for mixed spaces and tabs and vice versa
-	# phplint, check for PHP lint errors
-	# phpshorttag, check for PHP short open tags
+#{
+#        "publish": {
+#                "source": "/source/",
+#                "target": "/target/",
+#                "checks": {
+##                       check for non-UNIX line endings
+#                        "lineendingunix": {
+#                                "fileextensions": "css,htm,html,js,php,xml",
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+#                        },
+##                       check for spaces/tabs before line endings
+##                       "lineendingspace": {
+#                                "fileextensions": "css,htm,html,js,php,xml",
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+##                       },
+#                        "maxsize": {
+#                                "fileextensions": {
+#                                        "gif": 256000,
+#                                        "jpg": 256000,
+#                                        "png": 256000
+#                                },
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+#                        },
+##                       check for mixed spaces/tabs
+##                       "mixspacetabs": {
+##                               "fileextensions": "css,html,html,js,php,xml",
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+##                       },
+##                       PHP lint check files
+#                        "phplint": {
+#                                "fileextensions": "php",
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+#                        },
+##                       check for PHP short open tags
+#                        "phpshorttag": {
+#                                "fileextensions": "php",
+#                                "ignorepatterns": "filetoignore,pathtoignore/"
+#                        },
+##                       check git status
+#                        "git": true
+#                },
+#                "commands": [
+#                        "rsync -av --exclude='.dptools' $SOURCE$ $TARGET"
+#                ]
+#        }
+#}
+#
 
-	# comments can be done in config, by using the bracket (#) character, only space/tab may exist before it
+#
+# then run publish in the source root directory
+# checks:
+# lineendingspace, check for spaces/tabs before line endings
+# lineendingunix, check for non-UNIX line endings
+# mixspacetabs, check for mixed spaces and tabs and vice versa
+# phplint, check for PHP lint errors
+# phpshorttag, check for PHP short open tags
 
-	# major dependencies
-	# php5, git, phpdircheck and rsync (or what you use to transfer)
+# comments can be done in config, by using the bracket (#) character, only space/tab may exist before it
 
-	# changelog
-	# 2017-02-03 23:59:47 - first version
-	# 2017-02-04 21:07:59 - adding space check and line ending check
-	# 2017-02-12 02:12:57 - rewriting checks, adding checks part to config
+# major dependencies
+# php5, git, phpdircheck and rsync (or what you use to transfer)
 
-	# ---
+# changelog
+# 2017-02-03 23:59:47 - first version
+# 2017-02-04 21:07:59 - adding space check and line ending check
+# 2017-02-12 02:12:57 - rewriting checks, adding checks part to config
+# 2017-02-12 19:51:24
+# 2018-06-29 15:28:00 - cleanup
 
-	function progressbar($part, $total) {
+function progressbar($part, $total) {
 
-		# character length for progress bar
-		$pb_length = 10;
+	# character length for progress bar
+	$pb_length = 10;
 
-		# calculate the part
-		$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
-		# calculate the total
-		$pb_total = $pb_length;
+	# calculate the part
+	$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
+	# calculate the total
+	$pb_total = $pb_length;
 
-		return
-			'['.
-			str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
+	return
+		'['.
+		str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
 
-			($part < $total && $pb_part > 0 ? '>' : '').
+		($part < $total && $pb_part > 0 ? '>' : '').
 
-			str_repeat('.', $pb_total - $pb_part).
-			'] '.
-			# the first number is the actual amount of characters in the
-			# resulting string, and we want 000.000, so that's 7
-			sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
-			'% '.
-			str_pad($part, strlen($total), '0', STR_PAD_LEFT).
-			'/'.
-			$total.
-			' '
-			;
-	}
+		str_repeat('.', $pb_total - $pb_part).
+		'] '.
+		# the first number is the actual amount of characters in the
+		# resulting string, and we want 000.000, so that's 7
+		sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
+		'% '.
+		str_pad($part, strlen($total), '0', STR_PAD_LEFT).
+		'/'.
+		$total.
+		' '
+		;
+}
 
-	# to remove comments in a string beginning with a # sign
-	function remove_comments($s) {
-		$s = explode("\n", $s);
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+	$s = explode("\n", $s);
 
-		foreach ($s as $k => $v) {
+	foreach ($s as $k => $v) {
 		$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
-		}
-
-		return implode("\n", $s);
 	}
 
-	# config file name
-	$configfile = false;
-	$dryrun = false;
-	$rungittest = true;
-	$runphptest = true;
+	return implode("\n", $s);
+}
 
-	# get command line options
-	$opt = getopt(
-		'c:dh',
-		array(
-			'configfile:',
-			'dryrun',
-			'help',
-		)
-	);
+# config file name
+$configfile = false;
+$dryrun = false;
+$rungittest = true;
+$runphptest = true;
 
-	# walk options
-	foreach ($opt as $k => $v) {
-		switch ($k) {
-			case 'c':
-			case 'configfile':
-				$configfile = $v;
-				echo 'Using config file: '.$configfile."\n";
-				break;
-			case 'd':
-			case 'dryrun':
-				$dryrun = true;
-				echo 'Dry-run mode activated.'."\n";
-				break;
-			case 'h':
-			case 'help':
+# get command line options
+$opt = getopt(
+	'c:dh',
+	array(
+		'configfile:',
+		'dryrun',
+		'help',
+	)
+);
+
+# walk options
+foreach ($opt as $k => $v) {
+	switch ($k) {
+		case 'c':
+		case 'configfile':
+			$configfile = $v;
+			echo 'Using config file: '.$configfile."\n";
+			break;
+		case 'd':
+		case 'dryrun':
+			$dryrun = true;
+			echo 'Dry-run mode activated.'."\n";
+			break;
+		case 'h':
+		case 'help':
 ?>
 Usage:
-	-c <file>, --configfile <file>
-		Specify a config file other than .dptools in the current working dir.
-	-d, --dryrun
-		Do not run the commands, use for testing purposes.
+-c <file>, --configfile <file>
+	Specify a config file other than .dptools in the current working dir.
+-d, --dryrun
+	Do not run the commands, use for testing purposes.
 <?php
-				die();
-		}
+			die();
 	}
+}
 
-	# no config file specified?
-	if (!$configfile) {
+# no config file specified?
+if (!$configfile) {
 
-		# get current working directory
-		$configdir = getcwd();
+	# get current working directory
+	$configdir = getcwd();
 
-		# default name
-		$configfile = '.dptools';
+	# default name
+	$configfile = '.dptools';
 
-		# make sure dir ends with a slash
-		$configdir = substr($configdir,-1) === '/' ? $configdir : $configdir.'/';
+	# make sure dir ends with a slash
+	$configdir = substr($configdir,-1) === '/' ? $configdir : $configdir.'/';
 
-		# echo 'Searching for config in '.$configdir."\n";
-		# run while no config found and there still is a path
-		while (
-			!file_exists($configdir.$configfile) &&
-			strlen($configdir) > 1
-		) {
-
-			# echo 'Not satisfied with: '.$configdir.$configfile."\n";
-			# split by slash
-
-			$configdir = array_filter( explode('/', $configdir), 'strlen' );
-
-			# drop last folder
-			array_pop($configdir);
-
-			# no items left?
-			if (!count($configdir)) {
-				# at the root
-				$configdir = '/';
-			# or items left
-			} else {
-				# glue it together again
-				$configdir = '/'.implode('/', $configdir).'/';
-			}
-			echo 'Searching for config in '.$configdir."\n";
-			# echo 'Checking '.$configdir.$configfile."\n";
-		}
-
-		# still no config file
-		if (!file_exists($configdir.$configfile)) {
-			echo 'Failed finding config file'."\n";
-			die(1);
-		}
-		$configfile = $configdir.$configfile;
-
-	# check config file existence
-	} else if (!file_exists($configfile)) {
-		echo 'Fatal error, no config file '.$configfile.' found'."\n";
-		die(1);
-	}
-
-	echo 'Using config file: '.$configfile."\n";
-
-	# try to read config data from file
-	if (!$config = file_get_contents($configfile)) {
-		echo 'Failed reading config file '.$configfile.', maybe empty or unreadable.'."\n";
-		die(1);
-	}
-
-	# strip comment lines from config
-	$config = remove_comments($config);
-
-	# try to decode json
-	$config = json_decode($config, true);
-	if ($config === NULL) {
-		echo 'Failed decoding JSON from config file '.$configfile.', check config file syntax.'."\n";
-		die(1);
-	}
-
-	# make sure all parts are there
-	if (!isset(
-		$config['publish'],
-		$config['publish']['commands'],
-		$config['publish']['source'],
-		$config['publish']['target']
-	)) {
-		echo 'Config file '.$configfile.' is missing required properties.'."\n";
-		die(1);
-	}
-
-	# make sure source and target dir is filled in and ends with slashes
-	if (
-		!strlen($config['publish']['source']) ||
-		!strlen($config['publish']['target']) ||
-		substr($config['publish']['source'], -1) !== '/' ||
-		substr($config['publish']['target'], -1) !== '/'
+	# echo 'Searching for config in '.$configdir."\n";
+	# run while no config found and there still is a path
+	while (
+		!file_exists($configdir.$configfile) &&
+		strlen($configdir) > 1
 	) {
-		echo 'Source or target dir is not entered or does not end with / slash in config file '.$configfile."\n";
-		die(1);
+
+		# echo 'Not satisfied with: '.$configdir.$configfile."\n";
+		# split by slash
+
+		$configdir = array_filter( explode('/', $configdir), 'strlen' );
+
+		# drop last folder
+		array_pop($configdir);
+
+		# no items left?
+		if (!count($configdir)) {
+			# at the root
+			$configdir = '/';
+		# or items left
+		} else {
+			# glue it together again
+			$configdir = '/'.implode('/', $configdir).'/';
+		}
+		echo 'Searching for config in '.$configdir."\n";
+		# echo 'Checking '.$configdir.$configfile."\n";
 	}
 
-	# make sure source and target are dirs
-	if (
-		!is_dir($config['publish']['source'])||
-		!is_dir($config['publish']['target'])
-	) {
-		echo 'Source dir or target dir is not a full dir path in config file '.$configfile.'.'."\n";
+	# still no config file
+	if (!file_exists($configdir.$configfile)) {
+		echo 'Failed finding config file'."\n";
 		die(1);
 	}
+	$configfile = $configdir.$configfile;
 
-	# check commands
-	if (
-		!is_array($config['publish']['commands']) ||
-		!count($config['publish']['commands'])
-	) {
-		echo 'No commands specified in config file '.$configfile."\n";
-		die(1);
+# check config file existence
+} else if (!file_exists($configfile)) {
+	echo 'Fatal error, no config file '.$configfile.' found'."\n";
+	die(1);
+}
+
+echo 'Using config file: '.$configfile."\n";
+
+# try to read config data from file
+if (!$config = file_get_contents($configfile)) {
+	echo 'Failed reading config file '.$configfile.', maybe empty or unreadable.'."\n";
+	die(1);
+}
+
+# strip comment lines from config
+$config = remove_comments($config);
+
+# try to decode json
+$config = json_decode($config, true);
+if ($config === NULL) {
+	echo 'Failed decoding JSON from config file '.$configfile.', check config file syntax.'."\n";
+	die(1);
+}
+
+# make sure all parts are there
+if (!isset(
+	$config['publish'],
+	$config['publish']['commands'],
+	$config['publish']['source'],
+	$config['publish']['target']
+)) {
+	echo 'Config file '.$configfile.' is missing required properties.'."\n";
+	die(1);
+}
+
+# make sure source and target dir is filled in and ends with slashes
+if (
+	!strlen($config['publish']['source']) ||
+	!strlen($config['publish']['target']) ||
+	substr($config['publish']['source'], -1) !== '/' ||
+	substr($config['publish']['target'], -1) !== '/'
+) {
+	echo 'Source or target dir is not entered or does not end with / slash in config file '.$configfile."\n";
+	die(1);
+}
+
+# make sure source and target are dirs
+if (
+	!is_dir($config['publish']['source'])||
+	!is_dir($config['publish']['target'])
+) {
+	echo 'Source dir or target dir is not a full dir path in config file '.$configfile.'.'."\n";
+	die(1);
+}
+
+# check commands
+if (
+	!is_array($config['publish']['commands']) ||
+	!count($config['publish']['commands'])
+) {
+	echo 'No commands specified in config file '.$configfile."\n";
+	die(1);
+}
+
+# is the checks part available
+if (isset($config['publish']['checks'])) {
+
+	# find the status of the checks
+	$git = isset($config['publish']['checks']['git']) ? $config['publish']['checks']['git'] : false;
+	$lineendingspace = isset($config['publish']['checks']['lineendingspace']) ? $config['publish']['checks']['lineendingspace'] : false;
+	$lineendingunix = isset($config['publish']['checks']['lineendingunix']) ? $config['publish']['checks']['lineendingunix'] : false;
+	$maxsize = isset($config['publish']['checks']['maxsize']) ? $config['publish']['checks']['maxsize'] : false;
+	$mixspacetabs = isset($config['publish']['checks']['mixspacetabs']) ? $config['publish']['checks']['mixspacetabs'] : false;
+	$phplint = isset($config['publish']['checks']['phplint']) ? $config['publish']['checks']['phplint'] : false;
+	$phpshorttag = isset($config['publish']['checks']['phpshorttag']) ? $config['publish']['checks']['phpshorttag'] : false;
+
+	$exts = array();
+
+	# if line ending space checks are enabled
+	if ($lineendingspace) {
+		$lineendingspace['fileextensions'] = explode(',', $lineendingspace['fileextensions']);
+		$lineendingspace['ignorepatterns'] = isset($lineendingspace['ignorepatterns']) ? explode(',', $lineendingspace['ignorepatterns']) : array();
+		echo 'Check enabled, space before line endings: '.implode(', ', $lineendingspace['fileextensions'])."\n";
+
+		# walk and add these extensions to the find array
+		foreach ($lineendingspace['fileextensions'] as $v) {
+			$v = strtolower($v);
+			if (!in_array($v, $exts)) {
+				$exts[] = $v;
+			}
+		}
 	}
 
-	# is the checks part available
-	if (isset($config['publish']['checks'])) {
+	# if line ending non-unix checks are enabled
+	if ($lineendingunix) {
+		$lineendingunix['fileextensions'] = explode(',', $lineendingunix['fileextensions']);
+		$lineendingunix['ignorepatterns'] = isset($lineendingunix['ignorepatterns']) ? explode(',', $lineendingunix['ignorepatterns']) : array();
+		echo 'Check enabled, non-UNIX line endings: '.implode(', ', $lineendingunix['fileextensions'])."\n";
 
-		# find the status of the checks
-		$git = isset($config['publish']['checks']['git']) ? $config['publish']['checks']['git'] : false;
-		$lineendingspace = isset($config['publish']['checks']['lineendingspace']) ? $config['publish']['checks']['lineendingspace'] : false;
-		$lineendingunix = isset($config['publish']['checks']['lineendingunix']) ? $config['publish']['checks']['lineendingunix'] : false;
-		$mixspacetabs = isset($config['publish']['checks']['mixspacetabs']) ? $config['publish']['checks']['mixspacetabs'] : false;
-		$phplint = isset($config['publish']['checks']['phplint']) ? $config['publish']['checks']['phplint'] : false;
-		$phpshorttag = isset($config['publish']['checks']['phpshorttag']) ? $config['publish']['checks']['phpshorttag'] : false;
-		$maxsize = isset($config['publish']['checks']['maxsize']) ? $config['publish']['checks']['maxsize'] : false;
+		# walk and add these extensions to the find array
+		foreach ($lineendingunix['fileextensions'] as $v) {
+			$v = strtolower($v);
+			if (!in_array($v, $exts)) {
+				$exts[] = $v;
+			}
+		}
+	}
 
-		$exts = array();
+	# if maxsize is enabled
+	if ($maxsize) {
+		# $maxsize['fileextensions'] = array_keys($maxsize['fileextensions']));
+		$maxsize['ignorepatterns'] = isset($maxsize['ignorepatterns']) ? explode(',', $maxsize['ignorepatterns']) : array();
+		echo 'Check enabled, max size: ';
+		$i = 0;
+		foreach ($maxsize['fileextensions'] as $k => $v) {
+			if ($i) {
+				echo ', ';
+			}
+			echo strtolower($k).'('.$v.' b)';
+			$i++;
+		}
 
-		# if line ending space checks are enabled
-		if ($lineendingspace) {
-			$lineendingspace['fileextensions'] = explode(',', $lineendingspace['fileextensions']);
-			$lineendingspace['ignorepatterns'] = isset($lineendingspace['ignorepatterns']) ? explode(',', $lineendingspace['ignorepatterns']) : array();
-			echo 'Check enabled, space before line endings: '.implode(', ', $lineendingspace['fileextensions'])."\n";
+		echo "\n";
 
-			# walk and add these extensions to the find array
-			foreach ($lineendingspace['fileextensions'] as $v) {
-				$v = strtolower($v);
-				if (!in_array($v, $exts)) {
-					$exts[] = $v;
-				}
+		# walk and add these extensions to the find array
+		foreach ($maxsize['fileextensions'] as $k => $v) {
+			$k = strtolower($k);
+			if (!in_array($k, $exts)) {
+				$exts[] = $k;
+			}
+		}
+	}
+
+	# if mixed spaces and tabs checks are enabled
+	if ($mixspacetabs) {
+		$mixspacetabs['fileextensions'] = explode(',', $mixspacetabs['fileextensions']);
+		$mixspacetabs['ignorepatterns'] = isset($mixspacetabs['ignorepatterns']) ? explode(',', $mixspacetabs['ignorepatterns']) : array();
+		echo 'Check enabled, mixed spaces and tabs: '.implode(', ', $mixspacetabs['fileextensions'])."\n";
+
+		# walk and add these extensions to the find array
+		foreach ($mixspacetabs['fileextensions'] as $v) {
+			$v = strtolower($v);
+			if (!in_array($v, $exts)) {
+				$exts[] = $v;
+			}
+		}
+	}
+
+	# if php lint checks are enabled
+	if ($phplint) {
+		$phplint['fileextensions'] = explode(',', $phplint['fileextensions']);
+		$phplint['ignorepatterns'] = isset($phplint['ignorepatterns']) ? explode(',', $phplint['ignorepatterns']) : array();
+		echo 'Check enabled, PHP lint errors: '.implode(', ', $phplint['fileextensions'])."\n";
+
+		# walk and add these extensions to the find array
+		foreach ($phplint['fileextensions'] as $v) {
+			$v = strtolower($v);
+			if (!in_array($v, $exts)) {
+				$exts[] = $v;
 			}
 		}
 
-		# if line ending non-unix checks are enabled
-		if ($lineendingunix) {
-			$lineendingunix['fileextensions'] = explode(',', $lineendingunix['fileextensions']);
-			$lineendingunix['ignorepatterns'] = isset($lineendingunix['ignorepatterns']) ? explode(',', $lineendingunix['ignorepatterns']) : array();
-			echo 'Check enabled, non-UNIX line endings: '.implode(', ', $lineendingunix['fileextensions'])."\n";
+	}
 
-			# walk and add these extensions to the find array
-			foreach ($lineendingunix['fileextensions'] as $v) {
-				$v = strtolower($v);
-				if (!in_array($v, $exts)) {
-					$exts[] = $v;
-				}
+	# if php short tag checks are enabled
+	if ($phpshorttag) {
+		$phpshorttag['fileextensions'] = explode(',', $phpshorttag['fileextensions']);
+		$phpshorttag['ignorepatterns'] = isset($phpshorttag['ignorepatterns']) ? explode(',', $phpshorttag['ignorepatterns']) : array();
+		echo 'Check enabled, PHP short tags: '.implode(', ', $phpshorttag['fileextensions'])."\n";
+
+		# walk and add these extensions to the find array
+		foreach ($phpshorttag['fileextensions'] as $v) {
+			$v = strtolower($v);
+			if (!in_array($v, $exts)) {
+				$exts[] = $v;
 			}
 		}
+	}
 
-		# if maxsize is enabled
-		if ($maxsize) {
-			# $maxsize['fileextensions'] = array_keys($maxsize['fileextensions']));
-			$maxsize['ignorepatterns'] = isset($maxsize['ignorepatterns']) ? explode(',', $maxsize['ignorepatterns']) : array();
-			echo 'Check enabled, max size: ';
-			$i = 0;
-			foreach ($maxsize['fileextensions'] as $k => $v) {
-				if ($i) {
-					echo ', ';
-				}
-				echo strtolower($k).'('.$v.' b)';
-				$i++;
-			}
+	if ($git) {
+		echo 'Check enabled, git dirty files'."\n";
+	}
 
-			echo "\n";
+	echo 'Finding files with extensions matching '.implode(', ', $exts).'...';
 
-			# walk and add these extensions to the find array
-			foreach ($maxsize['fileextensions'] as $k => $v) {
-				$k = strtolower($k);
-				if (!in_array($k, $exts)) {
-					$exts[] = $k;
-				}
-			}
+	foreach ($exts as $k => $v) {
+		$exts[$k] = escapeshellarg('*.'.$v);
+	}
+
+	$c = 'find '.escapeshellarg($config['publish']['source']).' -type f \( -iname '.implode(' -o -iname ',$exts ).' \)';
+
+	$files = shell_exec($c);
+	if (!$files) {
+		echo 'No files found.';
+		die(2);
+	}
+
+	# split the lines by newline
+	$files = explode("\n", trim($files));
+	$total = count($files);
+
+	echo $total.' files found'."\n";
+
+	$l = strlen((string)$total);
+
+	$errorsfound = array();
+	# walk files
+	$prevfile = '';
+	foreach ($files as $nr => $file) {
+
+		# file does not exist
+		if (!file_exists($file)) {
+			# echo 'File does not exist: '.$file."\n";
+			# go next
+			continue;
 		}
 
-		# if mixed spaces and tabs checks are enabled
-		if ($mixspacetabs) {
-			$mixspacetabs['fileextensions'] = explode(',', $mixspacetabs['fileextensions']);
-			$mixspacetabs['ignorepatterns'] = isset($mixspacetabs['ignorepatterns']) ? explode(',', $mixspacetabs['ignorepatterns']) : array();
-			echo 'Check enabled, mixed spaces and tabs: '.implode(', ', $mixspacetabs['fileextensions'])."\n";
+		# get extension
+		$ext = basename($file);
+		$ext = strpos($ext, '.') !== false ? strtolower(substr($ext, strrpos($ext, '.') + 1)) : false;
 
-			# walk and add these extensions to the find array
-			foreach ($mixspacetabs['fileextensions'] as $v) {
-				$v = strtolower($v);
-				if (!in_array($v, $exts)) {
-					$exts[] = $v;
-				}
-			}
+		# could not extract extension
+		if (!$ext) {
+			# go next file
+			continue;
 		}
 
-		# if php lint checks are enabled
-		if ($phplint) {
-			$phplint['fileextensions'] = explode(',', $phplint['fileextensions']);
-			$phplint['ignorepatterns'] = isset($phplint['ignorepatterns']) ? explode(',', $phplint['ignorepatterns']) : array();
-			echo 'Check enabled, PHP lint errors: '.implode(', ', $phplint['fileextensions'])."\n";
-
-			# walk and add these extensions to the find array
-			foreach ($phplint['fileextensions'] as $v) {
-				$v = strtolower($v);
-				if (!in_array($v, $exts)) {
-					$exts[] = $v;
-				}
-			}
-
-		}
-
-		# if php short tag checks are enabled
-		if ($phpshorttag) {
-			$phpshorttag['fileextensions'] = explode(',', $phpshorttag['fileextensions']);
-			$phpshorttag['ignorepatterns'] = isset($phpshorttag['ignorepatterns']) ? explode(',', $phpshorttag['ignorepatterns']) : array();
-			echo 'Check enabled, PHP short tags: '.implode(', ', $phpshorttag['fileextensions'])."\n";
-
-			# walk and add these extensions to the find array
-			foreach ($phpshorttag['fileextensions'] as $v) {
-				$v = strtolower($v);
-				if (!in_array($v, $exts)) {
-					$exts[] = $v;
-				}
-			}
-		}
-
-		if ($git) {
-			echo 'Check enabled, git dirty files'."\n";
-		}
-
-		echo 'Finding files with extensions matching '.implode(', ', $exts).'...';
-
-		foreach ($exts as $k => $v) {
-			$exts[$k] = escapeshellarg('*.'.$v);
-		}
-
-		$c = 'find '.escapeshellarg($config['publish']['source']).' -type f \( -iname '.implode(' -o -iname ',$exts ).' \)';
-
-		$files = shell_exec($c);
-		if (!$files) {
-			echo 'No files found.';
-			die(2);
-		}
-
-		# split the lines by newline
-		$files = explode("\n", trim($files));
-		$total = count($files);
-
-		echo $total.' files found'."\n";
-
-		$l = strlen((string)$total);
-
-		$errorsfound = array();
-		# walk files
-		$prevfile = '';
-		foreach ($files as $nr => $file) {
-
-			# file does not exist
-			if (!file_exists($file)) {
-				# echo 'File does not exist: '.$file."\n";
-				# go next
-				continue;
-			}
-
-			# get extension
-			$ext = basename($file);
-			$ext = strpos($ext, '.') !== false ? strtolower(substr($ext, strrpos($ext, '.') + 1)) : false;
-
-			# could not extract extension
-			if (!$ext) {
-				# go next file
-				continue;
-			}
-
-			# is line ending space check enabled and this extension matches the list of extensions
-			if ($lineendingspace && in_array($ext, $lineendingspace['fileextensions'])) {
-				# make sure ignore list is not on for this
-				if (isset($lineendingspace['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($lineendingspace['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
+		# is line ending space check enabled and this extension matches the list of extensions
+		if ($lineendingspace && in_array($ext, $lineendingspace['fileextensions'])) {
+			# make sure ignore list is not on for this
+			if (isset($lineendingspace['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($lineendingspace['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
 					}
 				}
-
-				# run command
-				unset($c, $o, $r);
-				# $c = 'cat '.escapeshellarg($file).'|grep -n -P "\h\r?$"';
-				$c = 'cat '.escapeshellarg($file).'|grep "[[:blank:]]$"';
-				exec($c, $o, $r);
-
-				if (count($o)) {
-		            # add to error array
-		            $errorsfound[] = array(
-		            		'type' => 'Spaces before line endings',
-		                    'file' => $file,
-		                    'errors' => $o
-		            );
-				}
-			} # if-lineendingspace
-
-			# is line ending space check enabled and this extension matches the list of extensions
-			if ($lineendingunix && in_array($ext, $lineendingunix['fileextensions'])) {
-
-				# make sure ignore list is not on for this
-				if (isset($lineendingunix['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($lineendingunix['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
-					}
-				}
-
-				# run command
-				unset($c, $o, $r);
-				$c = 'cat '.escapeshellarg($file).'|grep -n -P "\r$"';
-				exec($c, $o, $r);
-
-				if (count($o)) {
-		            # add to error array
-		            $errorsfound[] = array(
-		            		'type' => 'Non-UNIX line endings',
-		                    'file' => $file,
-		                    'errors' => $o
-		            );
-				}
-			} # if-lineendingunix
-
-			# is mixed spaces and tabs check enabled and this extension matches the list of extensions
-			if ($maxsize && in_array($ext, array_keys($maxsize['fileextensions']))) {
-
-				# make sure ignore list is not on for this
-				if (isset($maxsize['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($maxsize['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
-					}
-				}
-
-				# walk extensions
-				foreach ($maxsize['fileextensions'] as $kext => $vmax) {
-					# does this extension match the one in the list and the file size is above the max value
-					if (
-						strtolower($ext) === strtolower($kext) && 
-						filesize($file) > $vmax
-					) {
-					    # add to error array
-					    $errorsfound[] = array(
-				    		'type' => 'File above '.$vmax.' b',
-				            'file' => $file,
-				            'errors' => array('Above '.$vmax.' b')
-					    );
-						break;
-					}
-				}
-			} # if-maxsize
-
-			# is mixed spaces and tabs check enabled and this extension matches the list of extensions
-			if ($mixspacetabs && in_array($ext, $mixspacetabs['fileextensions'])) {
-
-				# make sure ignore list is not on for this
-				if (isset($mixspacetabs['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($mixspacetabs['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
-					}
-				}
-
-				# run command
-				unset($c, $o, $r);
-				# $c = 'cat '.escapeshellarg($file).'|grep -P -n "\t\h|\h\t"';
-				$c = 'cat '.escapeshellarg($file).'|grep -P -n " \t|\t "';
-				exec($c, $o, $r);
-
-				if (count($o)) {
-		            # add to error array
-		            $errorsfound[] = array(
-		            		'type' => 'Mixed spaces and tabs',
-		                    'file' => $file,
-		                    'errors' => $o
-		            );
-				}
-			} # if-mixspacetabs
-
-			# is php lint check enabled and this extension matches the list of extensions
-			if ($phplint && in_array($ext, $phplint['fileextensions'])) {
-				# make sure ignore list is not on for this
-				if (isset($phplint['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($phplint['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
-					}
-				}
-
-				# run command
-				unset($c, $o, $r);
-				$c = 'php -l '.escapeshellarg($file);
-				exec($c, $o, $r);
-
-				if ($r) {
-		            # add to error array
-		            $errorsfound[] = array(
-		            		'type' => 'PHP lint errors',
-		                    'file' => $file,
-		                    'errors' => is_array($o) ? trim(implode("\n", $o)) : $o
-		            );
-				}
-			} # if-phplint
-
-			# is php short tag check enabled and this extension matches the list of extensions
-			if ($phpshorttag && in_array($ext, $phpshorttag['fileextensions'])) {
-				# make sure ignore list is not on for this
-				if (isset($phpshorttag['ignorepatterns'])) {
-					# walk ignore lines
-					foreach ($phpshorttag['ignorepatterns'] as $ignoreline) {
-						# does this ignore line match the filepath
-						if (strpos($file, $ignoreline) !== false) {
-							# go next file
-							continue 2;
-						}
-					}
-				}
-
-				# run command
-				unset($c, $o, $r);
-				# $c = 'cat '.escapeshellarg($file).'|grep -n "<?[^p]"';
-				$c = 'cat '.escapeshellarg($file).'|grep -n -P "<\?(?!(php|xml|=))"';
-				exec($c, $o, $r);
-
-				if (count($o)) {
-		            # add to error array
-		            $errorsfound[] = array(
-		            		'type' => 'PHP short tags',
-		                    'file' => $file,
-		                    'errors' => $o
-		            );
-				}
-			} # if-phpshorttag
-
-
-			# blank previous line
-			echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
-
-			# write status
-			echo progressbar($nr + 1, $total).' checked: '.$file."\r";
-
-			$prevfile = $file;
-		} # foreach-files
-
-        # blank previous line
-        echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
-
-        # write status
-        echo progressbar($nr + 1, $total).' check ended'."\r\n";
-
-		# was there errors found
-		if (count($errorsfound)) {
-			# blank previous line
-			echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
-			echo 'Error, the following '.count($errorsfound).' files contain errors:'."\n";
-			# walk the errors
-			foreach ($errorsfound as $fileinfo) {
-				# print the file and the error amount
-				echo $fileinfo['type'].', '.$fileinfo['file'].': '.count($fileinfo['errors']).' error(s)'."\n";
 			}
-			die(1);
-		}
 
-		# look for a git directory in source/.git
-		if ($git && is_dir($config['publish']['source'].'.git')) {
-			# run git check
-			echo 'git: checking directory status of '.$config['publish']['source']."\n";
+			# run command
 			unset($c, $o, $r);
-			$c = 'git --work-tree='.escapeshellarg($config['publish']['source']).' --git-dir='.escapeshellarg($config['publish']['source'].'/.git').' status --porcelain 2>/dev/null';
+			# $c = 'cat '.escapeshellarg($file).'|grep -n -P "\h\r?$"';
+			$c = 'cat '.escapeshellarg($file).'|grep "[[:blank:]]$"';
 			exec($c, $o, $r);
-			if ($r !== 0) {
-				echo 'Failed running command: '.$c."\n";
-				die(1);
-			}
+
 			if (count($o)) {
-				echo 'git error: Dirty files in '.$config['publish']['source'].' according to git status --porcelain, please fix this.'."\n";
-				die(1);
-
+				# add to error array
+				$errorsfound[] = array(
+						'type' => 'Spaces before line endings',
+						'file' => $file,
+						'errors' => $o
+				);
 			}
-			echo 'git: directory passed check'."\n";
+		} # if-lineendingspace
+
+		# is line ending space check enabled and this extension matches the list of extensions
+		if ($lineendingunix && in_array($ext, $lineendingunix['fileextensions'])) {
+
+			# make sure ignore list is not on for this
+			if (isset($lineendingunix['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($lineendingunix['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
+					}
+				}
+			}
+
+			# run command
 			unset($c, $o, $r);
-		}
-	} # if-checks
+			$c = 'cat '.escapeshellarg($file).'|grep -n -P "\r$"';
+			exec($c, $o, $r);
 
-	# walk commands
-	echo 'Publishing '.$config['publish']['source'].' -> '.$config['publish']['target']."\n";
-	foreach ($config['publish']['commands'] as $c) {
-		# fill placeholders in the command
-		$c = str_replace('$SOURCE$', escapeshellarg($config['publish']['source']), $c);
-		$c = str_replace('$TARGET$', escapeshellarg($config['publish']['target']), $c);
-
-		# run the command
-		unset($r);
-		echo 'Running: '.$c."\n";
-		if (!$dryrun) {
-			passthru($c, $r);
-			if ($r !== 0) {
-				echo 'Last command failed, aborting publish operation.';
-				die(1);
+			if (count($o)) {
+				# add to error array
+				$errorsfound[] = array(
+						'type' => 'Non-UNIX line endings',
+						'file' => $file,
+						'errors' => $o
+				);
 			}
+		} # if-lineendingunix
+
+		# is mixed spaces and tabs check enabled and this extension matches the list of extensions
+		if ($maxsize && in_array($ext, array_keys($maxsize['fileextensions']))) {
+
+			# make sure ignore list is not on for this
+			if (isset($maxsize['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($maxsize['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
+					}
+				}
+			}
+
+			# walk extensions
+			foreach ($maxsize['fileextensions'] as $kext => $vmax) {
+				# does this extension match the one in the list and the file size is above the max value
+				if (
+					strtolower($ext) === strtolower($kext) && 
+					filesize($file) > $vmax
+				) {
+					# add to error array
+					$errorsfound[] = array(
+						'type' => 'File above '.$vmax.' b',
+						'file' => $file,
+						'errors' => array('Above '.$vmax.' b')
+					);
+					break;
+				}
+			}
+		} # if-maxsize
+
+		# is mixed spaces and tabs check enabled and this extension matches the list of extensions
+		if ($mixspacetabs && in_array($ext, $mixspacetabs['fileextensions'])) {
+
+			# make sure ignore list is not on for this
+			if (isset($mixspacetabs['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($mixspacetabs['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
+					}
+				}
+			}
+
+			# run command
+			unset($c, $o, $r);
+			# $c = 'cat '.escapeshellarg($file).'|grep -P -n "\t\h|\h\t"';
+			$c = 'cat '.escapeshellarg($file).'|grep -P -n " \t|\t "';
+			exec($c, $o, $r);
+
+			if (count($o)) {
+				# add to error array
+				$errorsfound[] = array(
+						'type' => 'Mixed spaces and tabs',
+						'file' => $file,
+						'errors' => $o
+				);
+			}
+		} # if-mixspacetabs
+
+		# is php lint check enabled and this extension matches the list of extensions
+		if ($phplint && in_array($ext, $phplint['fileextensions'])) {
+			# make sure ignore list is not on for this
+			if (isset($phplint['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($phplint['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
+					}
+				}
+			}
+
+			# run command
+			unset($c, $o, $r);
+			$c = 'php -l '.escapeshellarg($file);
+			exec($c, $o, $r);
+
+			if ($r) {
+				# add to error array
+				$errorsfound[] = array(
+						'type' => 'PHP lint errors',
+						'file' => $file,
+						'errors' => is_array($o) ? trim(implode("\n", $o)) : $o
+				);
+			}
+		} # if-phplint
+
+		# is php short tag check enabled and this extension matches the list of extensions
+		if ($phpshorttag && in_array($ext, $phpshorttag['fileextensions'])) {
+			# make sure ignore list is not on for this
+			if (isset($phpshorttag['ignorepatterns'])) {
+				# walk ignore lines
+				foreach ($phpshorttag['ignorepatterns'] as $ignoreline) {
+					# does this ignore line match the filepath
+					if (strpos($file, $ignoreline) !== false) {
+						# go next file
+						continue 2;
+					}
+				}
+			}
+
+			# run command
+			unset($c, $o, $r);
+			# $c = 'cat '.escapeshellarg($file).'|grep -n "<?[^p]"';
+			$c = 'cat '.escapeshellarg($file).'|grep -n -P "<\?(?!(php|xml|=))"';
+			exec($c, $o, $r);
+
+			if (count($o)) {
+				# add to error array
+				$errorsfound[] = array(
+						'type' => 'PHP short tags',
+						'file' => $file,
+						'errors' => $o
+				);
+			}
+		} # if-phpshorttag
+
+
+		# blank previous line
+		echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+
+		# write status
+		echo progressbar($nr + 1, $total).' checked: '.$file."\r";
+
+		$prevfile = $file;
+	} # foreach-files
+
+	# blank previous line
+	echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+
+	# write status
+	echo progressbar($nr + 1, $total).' check ended'."\r\n";
+
+	# was there errors found
+	if (count($errorsfound)) {
+		# blank previous line
+		echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+		echo 'Error, the following '.count($errorsfound).' files contain errors:'."\n";
+		# walk the errors
+		foreach ($errorsfound as $fileinfo) {
+			# print the file and the error amount
+			echo $fileinfo['type'].', '.$fileinfo['file'].': '.count($fileinfo['errors']).' error(s)'."\n";
+		}
+		die(1);
+	}
+
+	# look for a git directory in source/.git
+	if ($git && is_dir($config['publish']['source'].'.git')) {
+		# run git check
+		echo 'git: checking directory status of '.$config['publish']['source']."\n";
+		unset($c, $o, $r);
+		$c = 'git --work-tree='.escapeshellarg($config['publish']['source']).' --git-dir='.escapeshellarg($config['publish']['source'].'/.git').' status --porcelain 2>/dev/null';
+		exec($c, $o, $r);
+		if ($r !== 0) {
+			echo 'Failed running command: '.$c."\n";
+			die(1);
+		}
+		if (count($o)) {
+			echo 'git error: Dirty files in '.$config['publish']['source'].' according to git status --porcelain, please fix this.'."\n";
+			die(1);
+
+		}
+		echo 'git: directory passed check'."\n";
+		unset($c, $o, $r);
+	}
+} # if-checks
+
+# walk commands
+echo 'Publishing '.$config['publish']['source'].' -> '.$config['publish']['target']."\n";
+foreach ($config['publish']['commands'] as $c) {
+	# fill placeholders in the command
+	$c = str_replace('$SOURCE$', escapeshellarg($config['publish']['source']), $c);
+	$c = str_replace('$TARGET$', escapeshellarg($config['publish']['target']), $c);
+
+	# run the command
+	unset($r);
+	echo 'Running: '.$c."\n";
+	if (!$dryrun) {
+		passthru($c, $r);
+		if ($r !== 0) {
+			echo 'Last command failed, aborting publish operation.';
+			die(1);
 		}
 	}
+}
 ?>

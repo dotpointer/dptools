@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# pdfgreyscale
 # make pdf files greyscale
 # by robert klebe, dotpointer
 
@@ -7,6 +8,7 @@
 # 2015-10-15 11:23:18
 # 2017-02-05 14:25:00 - updating with checks and optional output name
 # 2017-02-05 15:52:00 - updating meta data with creation date set to original file
+# 2018-06-29 14:18:00 - cleanup
 
 # check locales
 
@@ -20,8 +22,8 @@ fi
 # no parameters
 if [ $# -eq 0 ]; then
 	# show help
-	echo "Usage: $0 input.pdf [output.pdf - defaults to input.greyscale.pdf]"
-	exit 1
+	echo "Usage: $0 input.pdf [output.pdf - defaults to input.greyscale.pdf]";
+	exit 1;
 fi
 
 # only 1 parameter
@@ -36,17 +38,17 @@ fi
 
 export LC_ALL=en_US.utf8;
 
-TMPPDF="/tmp/pdf_temp_file"
+TMPPDF="/tmp/pdf_temp_file";
 
 # store metadata
 pdftk "$1" dump_data_utf8 > "$OUTNAME.metadata"
 
 # get and format creation date
-CREATIONDATE=$(/bin/date +'%a %b %Oe %T %Y' -r "$1")
+CREATIONDATE=$(/bin/date +'%a %b %Oe %T %Y' -r "$1");
 # put this info to the metadata file
-echo "InfoBegin" >> $OUTNAME.metadata
-echo "InfoKey: CreationDate" >> $OUTNAME.metadata
-echo "InfoValue: $CREATIONDATE" >> $OUTNAME.metadata
+echo "InfoBegin" >> $OUTNAME.metadata;
+echo "InfoKey: CreationDate" >> $OUTNAME.metadata;
+echo "InfoValue: $CREATIONDATE" >> $OUTNAME.metadata;
 
 # run ghostscript
 gs -sOutputFile="$OUTNAME.temp" -sDEVICE=pdfwrite -sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray -dCompatibilityLevel=1.4 -dNOPAUSE -dBATCH "$1"

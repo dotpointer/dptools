@@ -1,2 +1,11 @@
 #!/bin/bash
+
+# vmusbclear
+# virtualbox, clear machine usb devices
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 11:24:33
+# 2018-06-29 17:10:00 - cleanup
+
 VBoxManage usbfilter remove 0 --target $1

@@ -10,9 +10,10 @@
 # 2017-02-01 19:08:00 - domain edit
 # 2017-07-28 12:53:00 - domain edit
 # 2018-06-28 16:59:00 - switching source from dotpointer.ga to gitlab repository
+# 2018-06-29 17:14:00 - moving target directory from /var/scripts to /opt
 
 # target to put files into
-targetdir="/var/scripts/dptools"
+targetdir="/opt/dptools"
 
 # config dir
 configdir="/etc/dptools"
@@ -35,7 +36,7 @@ fi
 
 # does target dir not exist
 if [ ! -d "$targetdir" ]; then
-	git clone https://gitlab.com/dotpointer/dptools.git /var/scripts/dptools
+	git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
 	if [ ! $? -eq 0 ]; then
 		echo "Failed cloning data from git repository.";
 		exit 1;

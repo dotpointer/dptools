@@ -1,8 +1,16 @@
 #!/bin/bash
 
+# vmdel
+# virtualbox, delete machine
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 12:08:46
+# 2018-06-29 16:30:00 - cleanup
+
 if [ -z "$1" ]; then
-    echo "Name of VM must be given";
-    exit 1
+	echo "Name of VM must be given";
+	exit 1
 fi
 
 # list and scan for VM:s
@@ -15,6 +23,5 @@ fi
 echo "This will delete VM $1, press enter to continue..."
 read
 if [ -n "$1" ]; then
-    VBoxManage unregistervm $1 --delete
+	VBoxManage unregistervm $1 --delete
 fi
-

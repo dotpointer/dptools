@@ -1,176 +1,180 @@
 #!/bin/bash
-# 2011-10-30 - VirtualBox VM creation script, by Robert Klebe
-# 2014-04-06 - improved with SATA, IO APIC, chipset ICH9
-# 2014-10-01 - cleanup
+
+# vmnew
+# virtualbox, create a new machine
+# by robert klebe, dotpointer
+
+# changelog
+# 2011-10-30 xx:xx:xx - VirtualBox VM creation script, by Robert Klebe
+# 2014-04-06 xx:xx:xx - improved with SATA, IO APIC, chipset ICH9
+# 2014-10-01 xx:xx:xx - cleanup
 # 2018-06-09 10:52:00 - replacing network interface eth1 with eth0
+# 2018-06-29 16:52:00 - cleanup
 
 # ask for name
-echo "--- Name of the new machine"
-echo -ne "- Name: "
-read NAME
+echo "--- Name of the new machine";
+echo -ne "- Name: ";
+read NAME;
 
 # make sure it is entered
-if [ -z "$NAME" ]; then 
-   echo "Must be given, quitting."
-   exit 1
+if [ -z "$NAME" ]; then
+	echo "Must be given, quitting.";
+	exit 1;
 fi
 
 # list and scan for VM:s
 VMS=$(VBoxManage list vms)
 if [[ $VMS == *"$NAME"* ]]; then
-   echo "VM $NAME already exists, quitting.";
-   exit 1
+	echo "VM $NAME already exists, quitting.";
+	exit 1;
 fi
 
 # ask for OS type
-echo "--- OS type for the new machine"
+echo "--- OS type for the new machine";
 DEFAULT_OSTYPE="Other";
-echo -ne "Must be one of these: "
-VBoxManage list ostypes|grep ID|tr -d 'ID:          '| tr '\n' ", "; 
+echo -ne "Must be one of these: ";
+VBoxManage list ostypes|grep ID|tr -d 'ID:			'| tr '\n' ", ";
 echo
-echo -ne "- OS type ($DEFAULT_OSTYPE): "
+echo -ne "- OS type ($DEFAULT_OSTYPE): ";
 read OSTYPE
 
 # make sure it is entered
-if [ -z "$OSTYPE" ]; then 
-   OSTYPE=$DEFAULT_OSTYPE
+if [ -z "$OSTYPE" ]; then
+	OSTYPE=$DEFAULT_OSTYPE;
 fi
 
 # ask for hardware setup
-echo "--- Hardware"
+echo "--- Hardware";
 
 # RAM
 DEFAULT_MEMORY=256;
-echo -ne "- RAM in MB ($DEFAULT_MEMORY): "
+echo -ne "- RAM in MB ($DEFAULT_MEMORY): ";
 read MEMORY
-if [ -z "$MEMORY" ]; then 
-   MEMORY=$DEFAULT_MEMORY
+if [ -z "$MEMORY" ]; then
+	MEMORY=$DEFAULT_MEMORY;
 fi
 
 # VRAM
 DEFAULT_VRAM=128;
-echo -ne "- VRAM in MB ($DEFAULT_VRAM): "
+echo -ne "- VRAM in MB ($DEFAULT_VRAM): ";
 read VRAM
-if [ -z "$VRAM" ]; then 
-   VRAM=$DEFAULT_VRAM
+if [ -z "$VRAM" ]; then
+	VRAM=$DEFAULT_VRAM;
 fi
 
 # RAM
 DEFAULT_CPUCAP=50;
-echo -ne "- Max CPU% usage ($DEFAULT_CPUCAP): "
+echo -ne "- Max CPU% usage ($DEFAULT_CPUCAP): ";
 read CPUCAP
-if [ -z "$CPUCAP" ]; then 
-   CPUCAP=$DEFAULT_CPUCAP
+if [ -z "$CPUCAP" ]; then
+	CPUCAP=$DEFAULT_CPUCAP;
 fi
 
 # Disk
-echo -ne "- Disk size in MB (leave empty to not create one): "
+echo -ne "- Disk size in MB (leave empty to not create one): ";
 read DISKSIZE
 
 # VRDEPORT
 DEFAULT_VRDEPORT=3390;
 echo -ne "- VRDE port in MB ($DEFAULT_VRDEPORT): "
 read VRDEPORT
-if [ -z "$VRDEPORT" ]; then 
-   VRDEPORT=$DEFAULT_VRDEPORT
+if [ -z "$VRDEPORT" ]; then
+	VRDEPORT=$DEFAULT_VRDEPORT
 fi
 
 echo "--- Ready to create new VM"
-echo "- Name:      $NAME";
-echo "- RAM:       $MEMORY MB";
-echo "- VRAM:      $VRAM MB";
-echo "- CPU-cap:   $CPUCAP%";   
-echo "- OS type:   $OSTYPE";
+echo "- Name:		$NAME";
+echo "- RAM:		$MEMORY MB";
+echo "- VRAM:		$VRAM MB";
+echo "- CPU-cap:	$CPUCAP%";
+echo "- OS type:	$OSTYPE";
 echo "- VRDE port: $VRDEPORT";
 if [ -n "$DISKSIZE" ]; then
-echo "- Disk:      $DISKSIZE MB (will be named $NAME.vdi)";
+echo "- Disk:		$DISKSIZE MB (will be named $NAME.vdi)";
 fi
 read -p "- Press enter to create " -n 1
 
 # try to make machine
-echo "-- Trying to create VM: $NAME..."; 
+echo "-- Trying to create VM: $NAME...";
 VBoxManage createvm --name "$NAME" --ostype $OSTYPE --register
 if [ ! $? -eq 0 ] ; then
-    echo 'Failed';
-    exit 1
+	echo 'Failed';
+	exit 1
 fi
 
 # try to setup machine hardware specs, accelerate 3d = off since 4.2
 echo "-- Trying to set hardware specifications...";
 VBoxManage modifyvm "$NAME" --memory $MEMORY --acpi on --boot1 dvd --nic1 bridged --bridgeadapter1 eth0 --nictype1 "82540EM" --vrde on --vrdeauthtype null --vrdemulticon on --vram $VRAM --accelerate3d off --cpuexecutioncap $CPUCAP --vrdeport $VRDEPORT --pae on --chipset ich9 --ioapic on --firmware bios
 if [ ! $? -eq 0 ] ; then
-    echo 'Failed';
-    exit 1
+	echo 'Failed';
+	exit 1
 fi
 
 # try to add storage controller
 echo "-- Trying to add storage controller...";
 VBoxManage storagectl "$NAME" --name "SATA Controller" --add sata --controller IntelAHCI
 if [ ! $? -eq 0 ] ; then
-   echo 'Failed';
-   exit 1
+	echo 'Failed';
+	exit 1
 fi
 
 # DVD drive
 echo "-- Trying to add DVD drive...";
 VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium emptydrive
 if [ ! $? -eq 0 ] ; then
-   echo 'Failed';
-   exit 1
+	echo 'Failed';
+	exit 1
 fi
 
 # if disk is requested
 if [ -n "$DISKSIZE" ]; then
-    # try to create disk
-    echo "-- Trying to create disk...";
-    VBoxManage createhd --filename "/virtualbox/disks/$NAME/$NAME.vdi" --size $DISKSIZE
-    if [ ! $? -eq 0 ] ; then
-        echo "Failed";
-        exit 1
-    fi
+	# try to create disk
+	echo "-- Trying to create disk...";
+	VBoxManage createhd --filename "/virtualbox/disks/$NAME/$NAME.vdi" --size $DISKSIZE
+	if [ ! $? -eq 0 ] ; then
+		 echo "Failed";
+		 exit 1
+	fi
 
-    # try to attach disk
-    echo "-- Trying to attach disk...";
-    VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "/virtualbox/disks/$NAME/$NAME.vdi"
-    if [ ! $? -eq 0 ] ; then
-        echo "Failed";
-        exit 1
-    fi
+	# try to attach disk
+	echo "-- Trying to attach disk...";
+	VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "/virtualbox/disks/$NAME/$NAME.vdi"
+	if [ ! $? -eq 0 ] ; then
+		 echo "Failed";
+		 exit 1
+	fi
 fi
 
 # AUDIO
 echo "-- Trying to add audio ALSA / AC97";
 VBoxManage modifyvm "$NAME" --audio alsa --audiocontroller ac97
 if [ ! $? -eq 0 ] ; then
-   echo "Failed";
-   exit 1
+	echo "Failed";
+	exit 1
 fi
 
 # USB controller
 echo "-- Trying to enable USB controller";
 VBoxManage modifyvm "$NAME" --usb on
 if [ ! $? -eq 0 ] ; then
-   echo "Failed";
-   exit 1
+	echo "Failed";
+	exit 1
 fi
 
 # USB 2.0 controller
 echo "-- Trying to enable USB 2.0 controller";
 VBoxManage modifyvm "$NAME" --usbehci on
 if [ ! $? -eq 0 ] ; then
-   echo "Failed";
-   exit 1
+	echo "Failed";
+	exit 1
 fi
 
 # USB 3.0 controller
 echo "-- Trying to enable USB 3.0 controller";
 VBoxManage modifyvm "$NAME" --usbxhci on
 if [ ! $? -eq 0 ] ; then
-   echo "Failed";
-   exit 1
+	echo "Failed";
+	exit 1
 fi
-
-
-
 
 echo "--- Creation of $NAME is complete.";

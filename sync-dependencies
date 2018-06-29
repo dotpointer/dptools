@@ -1,109 +1,105 @@
 #!/usr/bin/php
 <?php
-	# dependency synchronization, instead of symbolic links
-	# which cannot be used in git repositories
-	
-	# by robert klebe, dotpointer
 
-	# what it does
-	# ensures that dependency files are synchronized
+# sync-dependencies
+# ensures that dependency files in project directories are
+# equal to the dependency source files
 
-	# usage
-	# fill /etc/dptools/sync-dependencies.conf with config, generate
-	# an example to /etc/dptools/sync-dependencies.example by running
-	# sync-dependencies -e
+# by robert klebe, dotpointer
 
-	# then run sync-dependencies or sync-dependencies -g groupname
-	# to synchronize dependency files
+# usage
+# fill /etc/dptools/sync-dependencies with config, generate
+# an example to /etc/dptools/sync-dependencies.example by running
+# sync-dependencies -e
 
-	# comments can be done in config, by using the bracket (#) character,
-	# only space/tab may exist before it
+# then run sync-dependencies or sync-dependencies -g groupname
+# to synchronize dependency files
 
-	# major dependencies
-	# php5 and rsync (or what you use to transfer)
+# comments can be done in config, by using the bracket (#) character,
+# only space/tab may exist before it
 
-	# changelog
-	# 2018-06-09 21:34:00 - first version
-	# 2018-06-10 16:35:00 - adding system configuration and options from publish
+# major dependencies
+# php5 and rsync (or what you use to transfer)
 
-	# ---
+# changelog
+# 2018-06-09 21:34:00 - first version
+# 2018-06-10 16:35:00 - adding system configuration and options from publish
+# 2018-06-29 15:53:00 - cleanup
 
-	# to remove comments in a string beginning with a # sign
-	function remove_comments($s) {
-		$s = explode("\n", $s);
-
-		foreach ($s as $k => $v) {
-			$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
-		}
-
-		return implode("\n", $s);
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+	$s = explode("\n", $s);
+	foreach ($s as $k => $v) {
+		$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
 	}
+	return implode("\n", $s);
+}
 
-	# config file name
-	$configfile = '/etc/dptools/sync-dependencies.conf';
-	$configfileexample = $configfile.'-example';
-	$dryrun = false;
-	$config = array(
-		'examplegroup' => array(
-			'dependencies' => array(
-				'dependency-file.ext' => array(
-					'path' => '/correct/source/of/dependency-file.ext'
-				)
-			),
-			'directories' => array(
-				array(
-					'exclude_paths' => array(
-						'path/1/to/exclude/from/path',
-						'path/2/to/exclude/from/path'
-					),
-					'path' => '/directory/to/look-for-dependency-file-in-and-update/',
-				)
+# config file name
+$configfile = '/etc/dptools/sync-dependencies';
+$configfileexample = $configfile.'-example';
+$dryrun = false;
+$config = array(
+	'examplegroup' => array(
+		'dependencies' => array(
+			'dependency-file.ext' => array(
+				'path' => '/correct/source/of/dependency-file.ext'
+			)
+		),
+		'directories' => array(
+			array(
+				'exclude_paths' => array(
+					'path/1/to/exclude/from/path',
+					'path/2/to/exclude/from/path'
+				),
+				'path' => '/directory/to/look-for-dependency-file-in-and-update/',
 			)
 		)
-	);
-	$groups = array();
+	)
+);
+$groups = array();
 
-	# get command line options
-	$opt = getopt(
-		'c:deg:h',
-		array(
-			'configfile:',
-			'dryrun',
-			'example-write',
-			'groups::',
-			'help',
-		)
-	);
+# get command line options
+$opt = getopt(
+	'c:deg:h',
+	array(
+		'configfile:',
+		'dryrun',
+		'example-write',
+		'groups::',
+		'help',
+	)
+);
 
-	# walk options
-	foreach ($opt as $k => $v) {
-		switch ($k) {
-			case 'c':
-			case 'configfile':
-				$configfile = $v;
-				$configfileexample = $v.'example';
-				echo 'Using config file: '.$configfile."\n";
-				break;
-			case 'd':
-			case 'dryrun':
-				$dryrun = true;
-				echo 'Dry-run mode activated.'."\n";
-				break;
-			case 'e':
-			case 'example-write':
-				if (file_exists($configfileexample)) {
-					echo 'Configuration file '.$configfileexample.' exists, will not overwrite it.'."\n";
-					die(1);
-				}
-				echo 'Writing example configuration file to '.$configfileexample."\n";
-				file_put_contents($configfileexample, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-				die(0);
-			case 'g':
-			case 'groups':
-				$groups = explode(',', $v);
-				break;
-			case 'h':
-			case 'help':
+# walk options
+foreach ($opt as $k => $v) {
+	switch ($k) {
+		case 'c':
+		case 'configfile':
+			$configfile = $v;
+			$configfileexample = $v.'example';
+			echo 'Using config file: '.$configfile."\n";
+			break;
+		case 'd':
+		case 'dryrun':
+			$dryrun = true;
+			echo 'Dry-run mode activated.'."\n";
+			break;
+		case 'e':
+		case 'example-write':
+			if (file_exists($configfileexample)) {
+				echo 'Configuration file '.$configfileexample.' exists, will not overwrite it.'."\n";
+				die(1);
+			}
+			echo 'Writing example configuration file to '.$configfileexample."\n";
+			file_put_contents($configfileexample, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+			die(0);
+		case 'g':
+		case 'groups':
+			$groups = explode(',', $v);
+			break;
+		case 'h':
+		case 'help':
 ?>
 Usage:
 	-c <file>, --configfile=<file>
@@ -118,89 +114,91 @@ Usage:
 	-h, --help
 		Print help.
 <?php
-				die();
-		}
+			die();
+	}
+}
+
+# no config file specified?
+if (!$configfile) {
+	echo 'Fatal error, no config file found'."\n";
+	die(1);
+}
+
+# try to read config data from file
+if (!file_exists($configfile) || !$config = file_get_contents($configfile)) {
+	echo 'Failed reading config file '.$configfile.', maybe empty or unreadable.'."\n";
+	die(1);
+}
+
+# strip comment lines from config
+$config = remove_comments($config);
+
+# try to decode json
+$config = json_decode($config, true);
+if ($config === NULL) {
+	echo 'Failed decoding JSON from config file '.$configfile.', check config file syntax.'."\n";
+	die(1);
+}
+
+# walk config groups
+foreach ($config as $groupname => $group) {
+	if (count($groups) && !in_array($groupname, $groups)) {
+		continue;
 	}
 
-	# no config file specified?
-	if (!$configfile) {
-		echo 'Fatal error, no config file found'."\n";
-		die(1);
+	# make sure the needed sections are available
+	if (
+		!isset($group['directories'], $group['dependencies']) ||
+		!is_array($group['dependencies']) ||
+		!is_array($group['directories'])
+	) {
+		continue;
 	}
 
-	# try to read config data from file
-	if (!file_exists($configfile) || !$config = file_get_contents($configfile)) {
-		echo 'Failed reading config file '.$configfile.', maybe empty or unreadable.'."\n";
-		die(1);
-	}
+	# walk dirs to fix
+	foreach ($group['directories'] as $dir) {
+		# walk dependencies
+		foreach ($group['dependencies'] as $depfile => $depdata) {
 
-	# strip comment lines from config
-	$config = remove_comments($config);
+			# look for this dependency file in this directory
+			unset($c, $o, $r);
+			$c = 'find '.escapeshellarg($dir['path']).' -name '.escapeshellarg($depfile);
+			exec($c, $o, $r);
+			if ($r !== 0) {
+				echo 'FAILED '.$c."\n";
+				die(1);
+			}
+			$files = $o;
 
-	# try to decode json
-	$config = json_decode($config, true);
-	if ($config === NULL) {
-		echo 'Failed decoding JSON from config file '.$configfile.', check config file syntax.'."\n";
-		die(1);
-	}
+			# walk found dependency target files
+			foreach ($files as $filetarget) {
+				$filetarget = trim($filetarget);
+				$proceed = true;
 
-	# walk config groups
-	foreach ($config as $groupname => $group) {
-		if (count($groups) && !in_array($groupname, $groups)) {
-			continue;
-		}
-
-		# make sure the needed sections are available
-		if (
-			!isset($group['directories'], $group['dependencies']) ||
-			!is_array($group['dependencies']) ||
-			!is_array($group['directories'])
-		) {
-			continue;
-		}
-
-		# walk dirs to fix
-		foreach ($group['directories'] as $dir) {
-			# walk dependencies
-			foreach ($group['dependencies'] as $depfile => $depdata) {
-
-				# look for this dependency file in this directory
-				unset($c, $o, $r);
-				$c = 'find '.escapeshellarg($dir['path']).' -name '.escapeshellarg($depfile);
-				exec($c, $o, $r);
-				if ($r !== 0) {
-					echo 'FAILED '.$c."\n";
-					die(1);
-				}
-				$files = $o;
-
-				# walk found dependency target files
-				foreach ($files as $filetarget) {
-					$filetarget = trim($filetarget);
-					$proceed = true;
-
-					# walk paths to exclude
-					foreach ($dir['exclude_paths'] as $excludepath) {
-						if (strpos($filetarget, $excludepath) !== false) {
-							$proceed = false;
-							break;
-						}
+				# walk paths to exclude
+				foreach ($dir['exclude_paths'] as $excludepath) {
+					if (strpos($filetarget, $excludepath) !== false) {
+						$proceed = false;
+						break;
 					}
+				}
 
-					if (!$proceed) continue;
+				if (!$proceed) {
+					continue;
+				}
 
-					unset($c, $o, $r);
-					$c = 'rsync -a '.escapeshellarg($depdata['path']).' '.escapeshellarg($filetarget);
-					echo $c."\n";
-					if (!$dryrun) {
-						exec($c, $o, $r);
-						if ($r !== 0) {
-							echo 'FAILED '.$c."\n";
-							echo implode("\n", $o)."\n";
-						}
+				unset($c, $o, $r);
+				$c = 'rsync -a '.escapeshellarg($depdata['path']).' '.escapeshellarg($filetarget);
+				echo $c."\n";
+				if (!$dryrun) {
+					exec($c, $o, $r);
+					if ($r !== 0) {
+						echo 'FAILED '.$c."\n";
+						echo implode("\n", $o)."\n";
 					}
 				}
 			}
 		}
 	}
+}
 ?>

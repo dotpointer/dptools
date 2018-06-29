@@ -1,3 +1,11 @@
 #!/bin/bash
-VBoxManage usbfilter add 1 --target $1 --name usbdevice --vendorid 0x$2 --productid 0x$3
 
+# vmaddusb
+# virtualbox, add usb device
+# by robert klebe, dotpointer
+
+# changelog
+# 2014-10-01 11:15:05
+# 2018-06-29 16:11:00 - cleanup
+
+VBoxManage usbfilter add 1 --target $1 --name usbdevice --vendorid 0x$2 --productid 0x$3

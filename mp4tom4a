@@ -1,3 +1,11 @@
 #!/bin/bash
-ffmpeg -i "$1" -c:a copy -vn -sn "$1.m4a"
 
+# mp4tom4a
+# convert a mp4 file to a m4a
+# by robert klebe, dotpointer
+
+# changelog
+# 2016-12-02 20:44:07
+# 2018-06-29 14:11:00 - cleanup
+
+ffmpeg -i "$1" -c:a copy -vn -sn "$1.m4a"

@@ -1,3 +1,11 @@
 #!/bin/bash
+
+# makeutf8
+# convert a file from iso-8859-1 to utf-8
+# by robert klebe, dotpointer
+
+# 2013-04-25 23:01:36
+# 2018-06-28 18:25:00 - cleanup
+
 iconv -f ISO-8859-1 -t UTF-8 "$1" > /var/tmp/utf8-conversion
 mv /var/tmp/utf8-conversion ./$1

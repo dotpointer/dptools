@@ -1,9 +1,9 @@
 #!/usr/bin/php
 <?php
-# photo move and compress script, by robert klebe
 
-# to move files from memory card to desktop and make resized 
-# compressed versions usable for Tradera and other sites
+# photos2
+# move and resize photos from memory cards, useful for auctioning photos
+# by robert klebe, dotpointer
 
 # changelog
 # 2013-09-23 - first version in bash
@@ -12,10 +12,10 @@
 # 2014-06-14 - setting default timezone
 # 2015-05-27 18:19:23 - adding empty directory cleanup
 # 2015-09-02 17:46:27 - imagemagick check
+# 2018-06-29 14:42:00 - cleanup
 
 # to clean an empty directory from folders
 function clear_empty_directories($path) {
-
 	$deleteddirs = 0;
 	do {
 		$deleted_a_dir = false;
@@ -30,12 +30,10 @@ function clear_empty_directories($path) {
 				echo "Deleting empty directory: ".$dir."\n";
 				rmdir($dir);
 				$deleted_a_dir = true;
-				continue;	
-				
-			} 
+				continue;
+			}
 		}
 	} while ($deleted_a_dir);
-
 }
 
 # php whine about timezone if we don't set it
@@ -77,11 +75,13 @@ if (!file_exists($targetdir)) {
 	# make sure the target dir exists
 	$o = array();
 	$cmd = 'mkdir -p '.escapeshellarg($targetdir);
-	exec($cmd, $o, $r);    
-	if ($r !== 0) die('Failed making target root dir: '.$cmd."\n");
-        chmod($targetdir, 0777);
+	exec($cmd, $o, $r);
+	if ($r !== 0) {
+		die('Failed making target root dir: '.$cmd."\n");
+	}
+	chmod($targetdir, 0777);
 } else if (!is_dir($targetdir)) {
-	die('Target root dir is not a dir: '.$targetdir);   
+	die('Target root dir is not a dir: '.$targetdir);
 }
 
 # path to photos
@@ -97,7 +97,9 @@ $o = array();
 $cmd = 'find '.escapeshellarg($srcdir).' -type f \( -iname "*.jpg" -o -iname "*.jpeg" \)';
 exec($cmd, $o, $r);
 $files = $o;
-if ($r !== 0) die('Failed finding source files: '.$cmd."\n");
+if ($r !== 0) {
+	die('Failed finding source files: '.$cmd."\n");
+}
 
 
 # make sure there were source files
@@ -105,13 +107,8 @@ if (!count($files)) {
 	# clear the directory from empty dirs
 	clear_empty_directories($targetrootdir);
 	die('No files on target'."\n");
-}    
+}
 sort($files);
-
-
-
-
-
 
 # path to the target dir + Y-m-d H.i.s
 $targetdir = $targetdir.date('Y-m-d H.i.s').'/';
@@ -120,18 +117,22 @@ if (!file_exists($targetdir)) {
 	# make sure the target dir exists
 	$o = array();
 	$cmd = 'mkdir -p '.escapeshellarg($targetdir);
-	exec($cmd, $o, $r);    
-	if ($r !== 0) die('Failed making target root dir: '.$cmd."\n");
-        chmod($targetdir, 0777);
+	exec($cmd, $o, $r);
+	if ($r !== 0) {
+		die('Failed making target root dir: '.$cmd."\n");
+	}
+	chmod($targetdir, 0777);
 } else if (!is_dir($targetdir)) {
-	die('Target root dir is not a dir: '.$targetdir."\n");   
+	die('Target root dir is not a dir: '.$targetdir."\n");
 }
 
 # make the target dir folder
 $o = array();
 $cmd = 'mkdir -p '.escapeshellarg($targetdir);
 exec($cmd, $o, $r);
-if ($r !== 0 || !file_exists($targetdir)) die('Failed making target dir: '.$cmd."\n");
+if ($r !== 0 || !file_exists($targetdir)) {
+	die('Failed making target dir: '.$cmd."\n");
+}
 chmod($targetdir, 0777);
 # subfolder nr
 $subnr = 0;
@@ -144,79 +145,81 @@ $targetsubdir = false;
 
 # walk the files in source dir
 foreach ($files as $file) {
-    
-    echo "------------------------------------------------\n";
-    
-    echo 'Working '.$file."\n";
-    
-    if (!file_exists($file)) continue;
-    
-    if (strpos($file, 'Trash')) continue;
-    # extract basename, /bla/bla/file.jpg -> file.jpg
-    $name = basename($file);
-    
-    $dirtest1 = substr($file, 0, strlen($srcdir));
-    $dirtest2 = $srcdir;
-    # maker sure we are in src dir, make sure it is .jpg/.jpeg in filename
-    if ($dirtest1 !== $dirtest2) {
-	echo 'Folders do not match:'.$dirtest1. ' !== '.$dirtest2."\n";
-	continue;
-    }
-    
-    $ext = strtolower(substr($name, strrpos($name, '.') + 1, strlen($name)));
-    
-    if (!in_array($ext, array('jpg', 'jpeg'))) {
-    	echo 'Bad file extension: '.$ext."\n";					   
-  	continue; 
-    }
-    
-    # is this file no 1, 6, 12, 18, 24...
-    if ($filenr === 0 || $filenr % 5 === 0) {
-		
-	$subnr += 1;
-	$targetsubdir = $targetdir . 'Auktion-'.$subnr . '/';
-	# make the target dir folder
+	echo "------------------------------------------------\n";
+	echo 'Working '.$file."\n";
+
+	if (!file_exists($file)) {
+		continue;
+	}
+
+	if (strpos($file, 'Trash')) {
+		continue;
+	}
+	# extract basename, /bla/bla/file.jpg -> file.jpg
+	$name = basename($file);
+
+	$dirtest1 = substr($file, 0, strlen($srcdir));
+	$dirtest2 = $srcdir;
+	# maker sure we are in src dir, make sure it is .jpg/.jpeg in filename
+	if ($dirtest1 !== $dirtest2) {
+		echo 'Folders do not match:'.$dirtest1. ' !== '.$dirtest2."\n";
+		continue;
+	}
+
+	$ext = strtolower(substr($name, strrpos($name, '.') + 1, strlen($name)));
+
+	if (!in_array($ext, array('jpg', 'jpeg'))) {
+		echo 'Bad file extension: '.$ext."\n";
+		continue;
+	}
+
+	# is this file no 1, 6, 12, 18, 24...
+	if ($filenr === 0 || $filenr % 5 === 0) {
+		$subnr += 1;
+		$targetsubdir = $targetdir . 'Auktion-'.$subnr . '/';
+		# make the target dir folder
+		$o = array();
+		$cmd = 'mkdir -p '.escapeshellarg($targetsubdir);
+		exec($cmd, $o, $r);
+		if ($r !== 0 || !file_exists($targetsubdir)) {
+			die('Failed making target dir: '.$cmd."\n");
+		}
+		chmod($targetsubdir, 0777);
+
+	}
+
+	# increment file nr
+	$filenr += 1;
+
+	# extract basename without ending, file.jpg -> file
+	# $name = substr($name, 0, strpos($name, '.'));
+
+	# add _1024x768 if not there, to be compatible with gallery
+	# if (strpos($name, '_1024x768') === false) {
+	# 	$name .= '_1024x768';
+	# }
+
+	$name = 'Bild-'.$filenr;
+	$targetfile = $targetsubdir.$name.'.jpg';
+	echo 'Outputting data to '.$targetfile."\n";
+
+	# run convert on it the fastest way
 	$o = array();
-	$cmd = 'mkdir -p '.escapeshellarg($targetsubdir);
+	# 30 is too low
+	# 50 ?
+	# 100 gives 2,7 MB files
+	# 95 gives 1 MB files
+	# 90 gives 700 kB files
+	$cmd = CONVERT_PATH.' '.escapeshellarg($file).' -quality 90 -auto-orient -strip -sample 2048x1536 '.escapeshellarg($targetfile);
 	exec($cmd, $o, $r);
-	if ($r !== 0 || !file_exists($targetsubdir)) die('Failed making target dir: '.$cmd."\n");
-	chmod($targetsubdir, 0777);
-
-    } 
-
-    # increment file nr
-    $filenr += 1;
-    
-    
-    # extract basename without ending, file.jpg -> file
-    # $name = substr($name, 0, strpos($name, '.'));
-
-    # add _1024x768 if not there, to be compatible with gallery
-    # if (strpos($name, '_1024x768') === false) {
-    # 	$name .= '_1024x768';	
-    # }
-    
-    $name = 'Bild-'.$filenr;
-    $targetfile = $targetsubdir.$name.'.jpg'; 
-    echo 'Outputting data to '.$targetfile."\n";
-        
-    # run convert on it the fastest way
-    $o = array();    
-    # 30 is too low
-    # 50 ?
-    # 100 gives 2,7 MB files
-    # 95 gives 1 MB files
-    # 90 gives 700 kB files
-    $cmd = CONVERT_PATH.' '.escapeshellarg($file).' -quality 90 -auto-orient -strip -sample 2048x1536 '.escapeshellarg($targetfile);
-    exec($cmd, $o, $r);
-    if ($r === 0 && file_exists($targetfile)) {
+	if ($r === 0 && file_exists($targetfile)) {
 	chmod($targetfile, 0777);
-    	# remove source file - IDFC_IMG.JPG
-    	unlink($file);
+		# remove source file - IDFC_IMG.JPG
+		unlink($file);
 	echo 'Deleting '.$file."\n";
-    } else {
-        echo 'Failed making resize: '.$cmd."\n";	
-    }
+	} else {
+		echo 'Failed making resize: '.$cmd."\n";
+	}
 }
 
 clear_empty_directories($targetrootdir);

@@ -1,115 +1,120 @@
 #!/usr/bin/php
 <?php
-	# scanned images resizer for stamp auctions
-	# by robert klebe, dotpointer
 
-	# changelog
-	# 2017-03-19 12:45:00 - initial version
-	# 2017-03-19 16:26:21 - improved with annotations
-	# 2017-08-13 15:58:00 - editing for inclusion in dptools
-	# 2017-08-13 23:41:00 - updated to use 2048x1536 instead of 1024x768
+# stampresizer
+# mangler for scanned stamp auction images. resizes, brands and
+# reorganizes the pictures so they become ready to publish on auction sites.
+# by robert klebe, dotpointer
 
-	$time_start = microtime(true);
+# changelog
+# 2017-03-19 12:45:00 - initial version
+# 2017-03-19 16:26:21 - improved with annotations
+# 2017-08-13 15:58:00 - editing for inclusion in dptools
+# 2017-08-13 23:41:00 - updated to use 2048x1536 instead of 1024x768
+# 2018-06-29 15:36:00 - cleanup
 
-	# turn off time limit
-	set_time_limit(0);
+$time_start = microtime(true);
 
-	# make sure imagemagick convert exists
-	if (!file_exists('/usr/bin/convert')) {
-		echo 'ImageMagick not found.'."\n";
-		die(1);
+# turn off time limit
+set_time_limit(0);
+
+# make sure imagemagick convert exists
+if (!file_exists('/usr/bin/convert')) {
+	echo 'ImageMagick not found.'."\n";
+	die(1);
+}
+
+# find PNG:s in current directory
+unset($c, $o, $r);
+$c = 'find . -maxdepth 1 -iname "*.png"';
+exec($c, $o, $r);
+
+$files = $o;
+
+# sort files alphabetically
+sort($files);
+
+# fonts
+$fonts = array(
+	'URW-Bookman-L-Demi-Bold',
+	'Gentium-Basic-Bold',
+	'URW-Gothic-L-Demi-Oblique'
+);
+
+$folderprefix = 'Stamp-Auction-';
+
+# separator for annotations
+$separator = '  ~  ';
+
+# annotations at the bottom
+$annotate = array(
+	0 => '',
+	1 => 'International buyers accepted.',
+	2 => 'Samfraktar gärna om du vinner flera saker.',
+	3 => 'Tips! Läs objektbeskrivningen och kolla bilderna före bud.',
+	4 => 'Lycka till med budgivningen och tack för titten.'
+);
+
+$auctionnumber = 1;
+$counter = 0;
+$fontindex = 0;
+
+# walk files
+foreach ($files as $f) {
+
+	$basedir = substr($f, 0, strrpos($f, '/') + 1);
+	$basedir .= $folderprefix.str_pad($auctionnumber, strlen((string)count($files)), '0', STR_PAD_LEFT).'/';
+
+	# create auction dir
+	if (!is_dir($basedir)) {
+		if (!mkdir($basedir)) {
+			echo 'Failed creating dir: '.$basedir;
+			die(1);
+		}
 	}
 
-	# find PNG:s in current directory
+	# get image size, make sure it's wider than 2048
+	$sizeofit = getimagesize($f);
+	if ($sizeofit[0] <= 2048 || $sizeofit === false) {
+		continue;
+	}
+
+	# set target file
+	$target = $basedir.basename($f);
+
+	# print info
+	echo $f.' -> '.$target."\n";
+
+	# run imagemagick convert
 	unset($c, $o, $r);
-	$c = 'find . -maxdepth 1 -iname "*.png"';
+	# $c = 'convert '.escapeshellarg($f).' -rotate -90 -resize 1025x768^ '.escapeshellarg($f.'.resized.png');
+	# 1024: pointsize 13 - 745
+	$c = 'convert '.escapeshellarg($f).' -rotate -90 -resize 2048x1536 -background white -compose Copy -gravity north -extent 2048x1536 -pointsize 39 -font '.escapeshellarg($fonts[$fontindex]).' -annotate +5+1480 '.escapeshellarg($annotate[$counter]).' '.escapeshellarg($target);
 	exec($c, $o, $r);
 
-	$files = $o;
-
-	# sort files alphabetically
-	sort($files);
-
-	# fonts
-	$fonts = array(
-		'URW-Bookman-L-Demi-Bold',
-		'Gentium-Basic-Bold',
-		'URW-Gothic-L-Demi-Oblique'
-	);
-
-	$folderprefix = 'Stamp-Auction-';
-
-	# separator for annotations
-	$separator = '  ~  ';
-
-	# annotations at the bottom
-	$annotate = array(
-		0 => '',
-		1 => 'International buyers accepted.',
-		2 => 'Samfraktar gärna om du vinner flera saker.',
-		3 => 'Tips! Läs objektbeskrivningen och kolla bilderna före bud.',
-		4 => 'Lycka till med budgivningen och tack för titten.'
-	);
-
-	$auctionnumber=1;
-	$counter=0;
-	$fontindex=0;
-
-	# walk files
-	foreach ($files as $f) {
-
-		$basedir = substr($f, 0, strrpos($f, '/') + 1);
-		$basedir .= $folderprefix.str_pad($auctionnumber, strlen((string)count($files)), '0', STR_PAD_LEFT).'/';
-
-		# create auction dir
-		if (!is_dir($basedir)) {
-			if (!mkdir($basedir)) {
-				echo 'Failed creating dir: '.$basedir;
-				die(1);
-			}
-		}
-
-
-		# get image size, make sure it's wider than 2048
-		$sizeofit = getimagesize($f);
-		if ($sizeofit[0] <= 2048 || $sizeofit===false) continue;
-
-		# set target file
-		$target = $basedir.basename($f);
-
-		# print info
-		echo $f.' -> '.$target."\n";
-
-		# run imagemagick convert
-		unset($c, $o, $r);
-		# $c = 'convert '.escapeshellarg($f).' -rotate -90 -resize 1025x768^ '.escapeshellarg($f.'.resized.png');
-		# 1024: pointsize 13 - 745
-		$c = 'convert '.escapeshellarg($f).' -rotate -90 -resize 2048x1536 -background white -compose Copy -gravity north -extent 2048x1536 -pointsize 39 -font '.escapeshellarg($fonts[$fontindex]).' -annotate +5+1480 '.escapeshellarg($annotate[$counter]).' '.escapeshellarg($target);
-		exec($c, $o, $r);
-
-		if ($r !== 0) {
-			echo 'Warning: Failed '.$target."\n";
-			var_dump($o);
-		}
-
-		# manage counters
-		if ($counter === 4) {
-			$counter=0;
-			if ($fontindex < count($fonts)-1) {
-				$fontindex++;
-			} else {
-				$fontindex=0;
-			}
-			$auctionnumber++;
-		} else {
-			$counter++;
-		}
-
+	if ($r !== 0) {
+		echo 'Warning: Failed '.$target."\n";
+		var_dump($o);
 	}
 
-	$time_end = microtime(true);
+	# manage counters
+	if ($counter === 4) {
+		$counter = 0;
+		if ($fontindex < count($fonts)-1) {
+			$fontindex++;
+		} else {
+			$fontindex = 0;
+		}
+		$auctionnumber++;
+	} else {
+		$counter++;
+	}
 
-	$execution_time = ($time_end - $time_start)/60;
+}
 
-	echo 'Completed in '.$execution_time.' mins'."\n";
+$time_end = microtime(true);
+
+$execution_time = ($time_end - $time_start)/60;
+
+echo 'Completed in '.$execution_time.' mins'."\n";
 ?>

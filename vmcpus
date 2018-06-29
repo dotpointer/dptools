@@ -1,31 +1,35 @@
 #!/bin/bash
-# to set the cpu count of virtual boxes
+
+# vmcpus
+# virtualbox, get and set the number of machine cpu:s
+# by robert klebe, dotpointer
 
 # changelog
 # 2014-10-01 12:08:02 - vmcap
 # 2015-07-19 00:03:00 - vmcap, adding listing when no name is given
 # 2018-01-16 18:03:00 - converting vmcap to vpcpus
+# 2018-06-29 16:27:00 - cleanup
 
 NAME=$1
 PARAM=$2
 
 # is name given?
 if [ -z "$NAME" ]; then
-    # echo "Name of VM must be given, path to disk can be given.";
-    
-    VMS=$(VBoxManage list vms);
-    
-    # list the vms, cut out the name of the vms and then sort the strings
-    arr=$(VBoxManage list vms|sed -rn 's/^\"(.*)\"( \{[a-z0-9\-]+\})/\1  /p'|sort)
-    
-    # walk the lines
-    for x in $arr
-    do
-        # print the lines
-        echo $x $(vminfo "$x"|grep "Number of CPUs")
-    done;
-    
-    exit 1
+	# echo "Name of VM must be given, path to disk can be given.";
+
+	VMS=$(VBoxManage list vms);
+
+	# list the vms, cut out the name of the vms and then sort the strings
+	arr=$(VBoxManage list vms|sed -rn 's/^\"(.*)\"( \{[a-z0-9\-]+\})/\1  /p'|sort)
+
+	# walk the lines
+	for x in $arr
+	do
+		# print the lines
+		echo $x $(vminfo "$x"|grep "Number of CPUs")
+	done;
+
+	exit 1
 fi
 
 # no parameter given?
@@ -37,7 +41,7 @@ fi
 # list and scan for VM:s
 VMS=$(VBoxManage list vms)
 if [[ ! $VMS == *"$1"* ]]; then
-echo "VM $1 not found.";
+	echo "VM $1 not found.";
 fi
 
 echo "Setting $NAME:s number of CPUs to $PARAM";

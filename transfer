@@ -72,6 +72,8 @@
 #	2017-05-24 20:43:58 - adding action action_remove_older_than
 #	2017-08-28 20:28:00 - switching to passive mode for ftp transfers
 #	2018-06-11 20:10:04 - adding action action_pingtest
+#	2018-06-28 15:57:53
+#	2018-06-29 16:03:00 - cleanup
 #
 # legend p-t/t-p = photo-transfer/transfer-phone1, t = transfer
 #
@@ -192,7 +194,7 @@ function action_clean_dir($jobname, $parameters /* dir, match_date_format */) {
 		# check if escheck tmp file removal is enabled
 		if (isset($parameters['remove_escheck']) && $parameters['remove_escheck']) {
 			$files_in_dir = scandir($fullpath);
-			
+
 			foreach ($files_in_dir as $file_in_dir) {
 				if ($file_in_dir === '.escheck.tmp') {
 					cl($jobname, 'Removing: '.$fullpath .'/.escheck.tmp', VERBOSE_DEBUG);
@@ -1610,7 +1612,7 @@ Made by dotpointer, 2012-2016.
 			file_put_contents($v, json_encode($config_opt, JSON_PRETTY_PRINT));
 			die(0);
 	}
-	
+
 	# make sure the config from parameters override all
 	$config = array_merge_recursive_distinct($config, $config_opt);
 }

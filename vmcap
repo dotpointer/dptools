@@ -1,30 +1,34 @@
 #!/bin/bash
-# to set the cpu exec cap of virtual boxes
+
+# vmcap
+# virtualbox, get and set machine cpu cap
+# by robert klebe, dotpointer
 
 # changelog
 # 2014-10-01 12:08:02
 # 2015-07-19 00:03:00 - adding listing when no name is given
+# 2018-06-29 16:12:00 - cleanup
 
 NAME=$1
 PARAM=$2
 
 # is name given?
 if [ -z "$NAME" ]; then
-    # echo "Name of VM must be given, path to disk can be given.";
-    
-    VMS=$(VBoxManage list vms);
-    
-    # list the vms, cut out the name of the vms and then sort the strings
-    arr=$(VBoxManage list vms|sed -rn 's/^\"(.*)\"( \{[a-z0-9\-]+\})/\1  /p'|sort)
-    
-    # walk the lines
-    for x in $arr
-    do
-        # print the lines
-        echo $x $(vminfo "$x"|grep "exec cap")
-    done;
-    
-    exit 1
+	# echo "Name of VM must be given, path to disk can be given.";
+
+	VMS=$(VBoxManage list vms);
+
+	# list the vms, cut out the name of the vms and then sort the strings
+	arr=$(VBoxManage list vms|sed -rn 's/^\"(.*)\"( \{[a-z0-9\-]+\})/\1  /p'|sort)
+
+	# walk the lines
+	for x in $arr
+	do
+		# print the lines
+		echo $x $(vminfo "$x"|grep "exec cap")
+	done;
+
+	exit 1
 fi
 
 # no parameter given?

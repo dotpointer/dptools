@@ -1,30 +1,32 @@
 #!/usr/bin/php
 <?php
 
-	# find all files
-	$c = "find -iname '*.pdf'";
-	exec($c, $o, $r);
+# pdfgreyscaleall
+# convert all pdf files in a directory to greyscale recursively
+# by robert klebe, dotpointer
+
+# 2017-03-05 14:32:00
+# 2018-06-29 14:20:00 - cleanup
+
+# find all files
+$c = "find -iname '*.pdf'";
+exec($c, $o, $r);
+if ($r !== 0) {
+	echo 'Failed finding PDF files.'."\n";
+	die(1);
+}
+$files = $o;
+
+foreach ($files as $file) {
+	if (strpos($file, 'greyscale.pdf')!== false) continue;
+	unset($c, $o, $r);
+	$c = 'pdfgreyscale '.escapeshellarg($file);
+	exec($c,$o, $r);
 	if ($r !== 0) {
-		echo 'Failed finding PDF files.'."\n";
+		echo 'Failed running command.'."\n";
+		var_dump($o);
 		die(1);
 	}
-	$files = $o;
-	
-	foreach ($files as $file) {
-		if (strpos($file, 'greyscale.pdf')!== false) continue;
-		unset($c, $o, $r);
-		$c = 'pdfgreyscale '.escapeshellarg($file);
-
-		echo $c."\n";
-		# continue;
-		exec($c,$o, $r);
-		if ($r !== 0) {
-			echo 'Failed running command.'."\n";
-			var_dump($o);
-			die(1);
-		}
-
-
-	}
+}
 
 ?>
