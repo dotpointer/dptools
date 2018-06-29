@@ -10,6 +10,19 @@
 # 2014-10-01 xx:xx:xx - cleanup
 # 2018-06-09 10:52:00 - replacing network interface eth1 with eth0
 # 2018-06-29 16:52:00 - cleanup
+# 2018-06-29 18:39:00 - bugfix, disk storage location was hardcoded
+
+if [ ! -f /etc/dptools/virtualbox ]; then
+	echo 'Please create /etc/dptools/virtualbox and add VIRTUALBOX_ROOT_DIR="/where/to/store/harddrives/"';
+	exit 1;
+fi
+
+source /etc/dptools/virtualbox
+
+if [ -z ${VIRTUALBOX_ROOT_DIR+x} ]; then
+	echo 'Please add VIRTUALBOX_ROOT_DIR="/where/to/store/harddrives/" to /etc/dptools/virtualbox';
+	exit 1;
+fi
 
 # ask for name
 echo "--- Name of the new machine";
@@ -130,7 +143,7 @@ fi
 if [ -n "$DISKSIZE" ]; then
 	# try to create disk
 	echo "-- Trying to create disk...";
-	VBoxManage createhd --filename "/virtualbox/disks/$NAME/$NAME.vdi" --size $DISKSIZE
+	VBoxManage createhd --filename "$VIRTUALBOX_ROOT_DIR$NAME/$NAME.vdi" --size $DISKSIZE
 	if [ ! $? -eq 0 ] ; then
 		 echo "Failed";
 		 exit 1
@@ -138,7 +151,7 @@ if [ -n "$DISKSIZE" ]; then
 
 	# try to attach disk
 	echo "-- Trying to attach disk...";
-	VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "/virtualbox/disks/$NAME/$NAME.vdi"
+	VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "$VIRTUALBOX_ROOT_DIR$NAME/$NAME.vdi"
 	if [ ! $? -eq 0 ] ; then
 		 echo "Failed";
 		 exit 1
