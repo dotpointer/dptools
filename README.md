@@ -49,7 +49,7 @@ Console formatter with a lot of aliases. Made in Bash.
 
 ### dptools-update
 
-Update dptools. Made in Bash.
+Update dptools and add dptools-console-init to user profiles. Made in Bash.
 
 ### dynamichost-updater
 
@@ -268,11 +268,12 @@ local machine for usage, development and testing purposes.
 
 ### Prerequisites
 
-The following is necessary to run the software:
+The following is necessary to install and run the software:
 
 ```
 - Debian Linux 9 or similar system
 - Bash shell
+- Git
 - PHP
 - PHP-cURL
 - PHP-MySQLi
@@ -287,33 +288,36 @@ Bash is usually installed by default.
 The rest can be installed using apt-get:
 
 ```
-sudo apt-get install php php-curl php-mysqli rsync zenity
+sudo apt-get install git php php-curl php-mysqli rsync zenity
 ```
 
 ### Installing
 
-Go root
-```
-sudo bash
-```
+The installation process involves git cloning and adding
+dptools-console-init to user profiles.
 
-Clone the repository
+Install for all users running as root installing to`/opt/dptools`:
+
 ```
 git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
+/opt/dptools/dptools-update -a
 ```
 
-Make all executable
-```
-chmod 755 /opt/dptools
-chmod -x /opt/dptools/README
-```
-
-Open ~/.bashrc and ~/.profile for all users that you want to have
-the dptools available for and put this line at the bottom of each of them:
+If you want to add dptools to more users, then do this for each user:
 
 ```
-. /opt/dptools/dptools-console-init
+/opt/dptools/dptools-update -a username
 ```
+
+Single user install in home directory at `opt/dptools/`.
+```
+git clone https://gitlab.com/dotpointer/dptools.git ~/opt/dptools
+~/opt/dptools/dptools-update -a
+```
+
+The install directories suggested above can be altered.
+Some commands require a configuration in `/etc/dptools` and
+are therefore not supporting single user installs.
 
 ## Updating
 
