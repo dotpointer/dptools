@@ -299,6 +299,7 @@ dptools-console-init to user profiles.
 Install for all users running as root installing to`/opt/dptools`:
 
 ```
+apt-get install git
 git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
 /opt/dptools/dptools-update -a
 ```
@@ -311,6 +312,7 @@ If you want to add dptools to more users, then do this for each user:
 
 Single user install in home directory at `opt/dptools/`.
 ```
+apt-get install git
 git clone https://gitlab.com/dotpointer/dptools.git ~/opt/dptools
 ~/opt/dptools/dptools-update -a
 ```

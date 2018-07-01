@@ -14,13 +14,15 @@
 # 2018-06-29 17:14:00 - moving target directory from /var/scripts to /opt
 # 2018-06-29 19:20:00 - bugfix, update failed to run
 # 2018-06-30 02:25:00 - adding support for arguments and user profile files editing
+# 2018-07-01 14:11:00 - adding git installer
 
 ACTION_ADD="";
 ACTION_UPDATE="";
+PARAM_FORCE_YES=""
 CURRENTUSER=$(whoami);
 TARGETDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)";
 
-while getopts ":ahu" opt; do
+while getopts ":ahuy" opt; do
 	case $opt in
 		a) # add to provided or current user
 
@@ -40,7 +42,7 @@ while getopts ":ahu" opt; do
 cat << EOF
 Update dptools.
 
-Usage: dptools-update [-a [user]][-u][-h]
+Usage: dptools-update [-a [user]][-h][-u][-y]
 
 -a [username - defaults to current user]
 	Add dptools-console-init call to .bashrc and .profile
@@ -53,6 +55,9 @@ Usage: dptools-update [-a [user]][-u][-h]
 	Update dptools. Uses git pull. This is the default action
 	unless any other parameter is given.
 
+-y
+	Answer yes on confirmation questions.
+
 EOF
 			exit 0;
 			;;
@@ -61,6 +66,9 @@ EOF
 			ACTION_UPDATE="1";
 			;;
 
+		y) # param force yes
+			PARAM_FORCE_YES="1";
+			;;
 		\?)
 			echo "Error: invalid option -$OPTARG" >&2;
 			exit 1;
@@ -77,8 +85,33 @@ fi
 # action: update
 if [[ "$ACTION_UPDATE" == "1" ]]; then
 	if ! [ -x "$(command -v git)" ]; then
-		echo 'Error: git is not installed.' >&2;
-		exit 1;
+		if [[ ! $CURRENTUSER == "root" ]]; then
+			echo "Error: git is not installed and you are not root, so cannot try to install either. Try again as root." >&2;
+			exit 1;
+		fi
+
+		if [ ! -x "$(command -v 'apt-get')" ]; then
+			echo "Error: git is not installed, cannot install because apt-get command is not available. Install git and retry.";
+			exit 1;
+		fi
+
+		if [[ $PARAM_FORCE_YES != "1" ]]; then
+			read -p "Git is not installed and it is needed, install it? [y or n]: " -n 1 -r
+			if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+				exit 1;
+			fi
+		fi
+
+		apt-get install -y git
+		if [ ! $? -eq 0 ]; then
+			echo 'Error: failed to install git.' >&2;
+			exit 1;
+		fi
+
+		if [ ! -x "$(command -v 'apt-get')" ]; then
+			echo "Error: git is still not installed.";
+			exit 1;
+		fi
 	fi
 
 	if [[ -z $TARGETDIR	]]; then
