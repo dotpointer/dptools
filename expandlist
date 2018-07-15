@@ -1,0 +1,98 @@
+#!/usr/bin/php
+<?php
+
+  # 2018-07-13 19:31:17
+
+	if (!file_exists('expandlist.txt')) {
+		echo "No expandlist, generating it";
+		# $list = shell_exec('find . -type f \( -iname "*.js" -o -iname "*.php" -o -iname "*.css" -o -iname "*.htm" -o -iname "*.html" \)');
+		$list = shell_exec('find . -type f');
+		$list = explode("\n", $list);
+
+		asort($list);
+
+		$ignore = array(
+			"/.git/",
+			".min.",
+			"/exporting.js",
+			"/highcharts.js",
+			"/base.php",
+			"/fonts/"
+		);
+
+		$endings = array(
+			"js",
+			"php",
+			"htm",
+			"html",
+			"css"
+		);
+
+		$files = array();
+		foreach ($list as $file) {
+
+			$file = trim($file);
+
+
+			$next = false;
+			$endingfound = false;
+
+			foreach ($ignore as $badword) {
+				if (strpos($file, $badword) !== false) {
+					$next = true;
+					break;
+				}
+			}
+
+			foreach ($endings as $ending) {
+				if (strtolower(substr($file, strrpos($file, '.'))) === '.'.strtolower($ending)) {
+					$endingfound = true;
+				}
+			}
+
+			if ($next || !$endingfound) {
+				$file = '# '.$file;
+			}
+			$files[] = $file;
+
+		}
+
+		file_put_contents('expandlist.txt', implode("\n", $files));
+		echo 'expandlist.txt generated, have a look and rerun to run changes on files listed.'."\n";
+		die();
+	}
+
+
+	$lines = file_get_contents('expandlist.txt');
+	if ($lines === false) die('FAIL, expandlist.txt'."\n");
+	$lines = explode("\n", $lines);
+	$files = array();
+	foreach ($lines as $line) {
+		$line = trim($line);
+		# skip commented out lines
+		if (substr($line, 0, 1) === '#') continue;
+		if (!strlen($line)) continue;
+		echo "Will expand: ".$line."\n";
+		$files[] = $line;
+	}
+
+	$c = readline("Press [y/Y] to continue: ");
+
+	if (strtolower($c) !== "y") die();
+
+	$result = array();
+	foreach ($files as $file) {
+		$file = trim($file);
+		$date = date('Y-m-d H:i:s', filemtime($file));
+
+
+		$result[] = $date.' '.$file;
+		echo $date.' '.$file."\n";
+
+		$cmd = 'expand -i -t 2 '.escapeshellarg($file).'| sponge '.escapeshellarg($file);
+		echo $cmd."\n";
+		shell_exec($cmd);
+	}
+
+	file_put_contents('expandlist-result.txt', implode("\n", $result));
+?>
