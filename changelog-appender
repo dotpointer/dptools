@@ -7,6 +7,7 @@
 
 # changelog
 # 2018-07-15 18:56:00 - first version
+# 2018-07-16 22:21:00
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -22,8 +23,10 @@ $config = array(
   'date' => time(),
   'input' => false,
   'line' => false,
+  'linewidth' => 80,
   'linelimit' => 200,
   'logfile' => '/var/log/'.basename(__FILE__),
+  'logwidth' => 80,
   'loglevel' => VERBOSE_OFF,
   'minimumdiff' => 60 * 15,
   'output' => false,
@@ -48,7 +51,47 @@ function cl($s, $level=1) {
       $l = 'D';
       break;
   }
-  $s = ''.date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
+
+  if (is_array($s)) {
+    $tmp = '';
+    $s = array_merge(
+      array(
+        array(
+          'text' => date('Y-m-d H:i:s').' '.$l.' '
+        )
+      ),
+      $s
+    );
+
+    # get log width
+    $left = $config['logwidth'];
+    foreach ($s as $item) {
+      # is this not a cut item
+      if (!isset($item['cut']) || $item['cut'] === false) {
+        # decrease the usable log width
+        $left -= strlen(is_array($item) ? $item['text'] : $item);
+      }
+    }
+
+    foreach ($s as $item) {
+      # is this not a cut item
+      if (!isset($item['cut']) || $item['cut'] === false) {
+        $tmp .= is_array($item) ? $item['text'] : $item;
+        # decrease the usable log width
+        $left -= strlen(is_array($item) ? $item['text'] : $item);
+      # cut item
+      } else {
+        # is the text lesser than or same as what is left, or the maximum left used
+        $maxlength = strlen($item['text']) <= $left ? strlen($item['text']) : $left;
+        $tmp .= substr($item['text'], 0, $maxlength);
+        # remove used width
+        $left -= $maxlength;
+      }
+    }
+    $s = $tmp."\n";
+  } else {
+    $s = date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
+  }
 
   # is verbosity on and level is enough?
   if (
@@ -83,6 +126,7 @@ $opts = getopt(
     'input:',
     'line:',
     'linelimit:',
+    'linewidth:',
     'minimumdiff:',
     'output:',
     'write',
@@ -127,6 +171,9 @@ foreach ($opts as $opt => $value) {
     case 'linelimit':
       $config['linelimit'] = (int)$value;
       break;
+    case 'linewidth': # line width limit
+      $config['linewidth'] = (int)$value;
+      break;
     case 'config':
       $config['config'] = strtotime($value);
       break;
@@ -169,6 +216,12 @@ Options:
   -l <line>, --line=<line>
     The line to add to the changelog in the file.
     Defaults to empty.
+
+  --linewidth=<number>
+    Sets line column width and make new lines when limit reached.
+    Set to 0 to disable limitation.
+    Defaults to 80 characters.
+
   --logfile=<file>
     Sets logfile.
     Defaults to /var/log/<?php echo basename(__FILE__) ?>.
@@ -289,11 +342,12 @@ $append = array();
 $appendcharacter = false; # false = new line, number, substring into line
 $appendlinenr = false;
 $appendmodtime = true;
+$appendwrap = false;
 $continue = true;
 $lastdate = false;
 $lastlinedateline = false;
 $mime = mime_content_type($config['input']);
-$mode = 0;
+$appendlevel = 0;
 $modtime = filemtime($config['input']);
 $prefix = '';
 $shebang = false;
@@ -302,12 +356,12 @@ cl('Input file: '.$config['input'].'.', VERBOSE_INFO);
 cl('Output file: '.$config['output'].'.', VERBOSE_INFO);
 cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
 cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
-cl('Extension: "'.$extension.'".', VERBOSE_DEBUG);
-cl('MIME: '.$mime, VERBOSE_DEBUG);
+cl('MIME: '.$mime.'.', VERBOSE_DEBUG);
 cl('Modified: '.date('Y-m-d H:i:s', $modtime).'.', VERBOSE_DEBUG);
 cl('Line limit: '.$config['linelimit'].'.', VERBOSE_DEBUG);
+cl('Line width: '.($config['linewidth'] !== 0 ? $config['linewidth'] : 'no').'.', VERBOSE_DEBUG);
 
-# walk lines to find append point - changelog
+# walk lines to find append point
 foreach ($lines as $linenr => $line) {
 
   # check line limit
@@ -316,13 +370,29 @@ foreach ($lines as $linenr => $line) {
     break;
   }
 
-  # clean the line from spaces, tabs and new lines
-  # $line = trim($line);
-
-  # first line and this is a shebang?
-  if ($linenr === 0 && substr($line, 0, 2) === '#!') {
-    cl('Line '.linenrprefix($linenr, $linecount).': shebang, '.$line, VERBOSE_DEBUG_DEEP);
-    $shebang = $linenr;
+  # append level < 1, first line and this is a shebang?
+  if (
+    $appendlevel < 1 &&
+    $linenr === 0 &&
+    substr($line, 0, 2) === '#!'
+  ) {
+    $appendlevel = 1;
+    cl(
+      array(
+        'L.'.linenrprefix($linenr, $linecount).' [level '.$appendlevel.']: shebang, "',
+        array(
+          'text' => trim($line),
+          'cut' => true
+        ),
+        '"'
+      ),
+      VERBOSE_DEBUG
+    );
+    # is there a shebang, then begin after that, no append char but wrap needed
+    $appendlinenr = 1;
+    $appendcharacter = false;
+    $appendwrap = true;
+    $prefix = '#  ';
     continue;
   }
 
@@ -330,21 +400,70 @@ foreach ($lines as $linenr => $line) {
   switch ($mime) {
     case 'text/x-php':
     case 'text/x-shellscript':
-      # mode 0 = looking for changelog
-      # mode 1 = looking for dateline
 
-      unset($matches);
-      # mode 0 + changelog
+      # append level levels:
+      # 1 = shebang
+      # 2 = php tag
+      # 3 = changelog
+      # 4 = changelog empty line
+      # 4 = changelog datelines
+
+      # append level < 2, no position found, this is PHP and a PHP opening tag
+      # continue looking on same append level but keep append position
+      # for possible use
       if (
-        $mode === 0 &&
+        $appendlevel < 2 &&
+        $mime === 'text/x-php' &&
+        preg_match("/^.*<\?php.*$/i", $line)
+      ) {
+        $prefix = '#  ';
+        $appendlinenr = $linenr;
+        $appendcharacter = strpos($line, '<?php');
+        $appendwrap = true;
+        $prefix = '#  ';
+        $appendlevel = 2;
+        cl(array(
+            'L.',
+            linenrprefix($linenr, $linecount),
+            ' [level ',
+            $appendlevel,
+            ']: PHP tag opening, : "',
+            array(
+              'text' => trim($line),
+              'cut' => true
+            ),
+            '".'
+          ),
+          VERBOSE_DEBUG
+        );
+      }
+
+      # append level < 3, changelog
+      unset($matches);
+      if (
+        $appendlevel < 3 &&
         preg_match("/^\s*(\#*\s*)?changelog\s*$/i", $line, $matches)
       ) {
-        # engage mode 1
-        $mode = 1;
+
+        # next line is append line, no append char and no wrap
         $appendlinenr = $linenr + 1;
+        $appendcharacter = false;
+        $appendwrap = false;
+        $appendlevel = 3;
+
         cl(
-          'Line '.linenrprefix($linenr, $linecount).
-          ': "changelog" found: '.$line,
+          array(
+            'L.',
+            linenrprefix($linenr, $linecount),
+            ' [level ',
+            $appendlevel,
+            ']: "changelog" found: "',
+            array(
+              'text' => $line,
+              'cut' => true
+            ),
+            '".'
+          ),
           VERBOSE_DEBUG_DEEP
         );
 
@@ -355,31 +474,40 @@ foreach ($lines as $linenr => $line) {
         break;
       }
 
-      # mode 1 + empty line - can be something
+      # append level 3-4 + empty line after change log or date,
+      # keep reading, a date may come afterwards
       if (
-        $mode === 1 &&
+        ($appendlevel === 3 || $appendlevel == 4) &&
         (!strlen($line) || preg_match("/^\s*\#+\s*$/", $line))
       ) {
         $lastlinedateline = false;
-        $appendlinenr = $linenr + 1;
-        break;
+        continue;
       }
 
-      # mode 0-1 + "# xxxx-xx-xx xx:xx:xx - possibly something"
+      # append level < 4 + "# xxxx-xx-xx xx:xx:xx - possibly something"
       unset($matches);
-      $regex  = "/^\s*(?P<prefix>\#*\s*)?";
-      $regex .= "(?P<year>[\d|x]{4,})\-";
-      $regex .= "(?P<month>[\d|x]{2})\-";
-      $regex .= "(?P<day>[\d|x]{2})";
-      $regex .= "(\s+(?P<hour>[\d|x]{2,})\:";
-      $regex .= "(?P<minute>[\d|x]{2})";
-      $regex .= "(\:(?P<second>[\d|x]{2}))?)?.*.*$/i";
-      if (preg_match($regex, $line, $matches)) {
+      if (
+        $appendlevel <= 4 &&
+        preg_match(
+          "/^\s*(?P<prefix>\#*\s*)?".
+          "(?P<year>[\d|x]{4,})\-".
+          "(?P<month>[\d|x]{2})\-".
+          "(?P<day>[\d|x]{2})".
+          "(\s+(?P<hour>[\d|x]{2,})\:".
+          "(?P<minute>[\d|x]{2})".
+          "(\:(?P<second>[\d|x]{2}))?)?.*.*$/i",
+          $line,
+          $matches
+        )
+      ) {
 
-        # we are now in mode 1
-        $mode = 1;
+        # we are now in append level 4
+        $appendlevel = 4;
 
+        # remove non alphabetic keys from matches
         $matches = array_filter($matches, "is_string", ARRAY_FILTER_USE_KEY);
+
+        # set prefix
         $prefix = isset($matches['prefix']) ? $matches['prefix'] : $prefix;
 
         $lastdate = false;
@@ -391,7 +519,7 @@ foreach ($lines as $linenr => $line) {
           checkdate($matches['month'], $matches['day'], $matches['year'])
         ) {
 
-          $lastdate = $matches['year'].'-'.$matches['month'].'-'-$matches['day'];
+          $lastdate = $matches['year'].'-'.$matches['month'].'-'.$matches['day'];
 
           # hour-minute
           if (
@@ -402,7 +530,7 @@ foreach ($lines as $linenr => $line) {
             (int)$matches['minute'] >= 0 &&
             (int)$matches['minute'] <= 59
           ) {
-            $lastdate .= $matches['hour'].'-'.$matches['minute'];
+            $lastdate .= ' '.$matches['hour'].':'.$matches['minute'];
 
             # second
             if (
@@ -410,20 +538,51 @@ foreach ($lines as $linenr => $line) {
               (int)$matches['second'] >= 0 &&
               (int)$matches['second'] <= 59
             ) {
-              $lastdate .= $matches['second'];
+              $lastdate .= ':'.$matches['second'];
             }
           }
         }
 
         # any unfilled positions in this date? then it is unusable
         if ($lastdate === false) {
-          cl('Line '.linenrprefix($linenr, $linecount).': dateline, unusable: '.$line, VERBOSE_DEBUG_DEEP);
+          cl(
+            array(
+              'L.',
+              linenrprefix($linenr, $linecount),
+              ' [level ',
+              $appendlevel,
+              ']: dateline, unusable: "',
+              array(
+                'text' => trim($line),
+                'cut' => true
+              ),
+              '".'
+            ),
+            VERBOSE_DEBUG_DEEP
+          );
         } else {
-          cl('Line '.linenrprefix($linenr, $linecount).': dateline, usable: '.strtotime('Y-m-d H:i:s', strtotime($lastdate)).': '.$line, VERBOSE_DEBUG_DEEP);
+          cl(
+            array(
+              'L.',
+              linenrprefix($linenr, $linecount),
+              ' [level ',
+              $appendlevel,
+              ']: dateline, usable: ',
+              date('Y-m-d H:i:s', strtotime($lastdate)).', "',
+              array(
+                'text' => trim($line),
+                'cut' => true
+              ),
+              '".'
+            ),
+            VERBOSE_DEBUG
+          );
         }
 
         # append on next line
         $appendlinenr = $linenr + 1;
+        $appendcharacter = false;
+        $appendwrap = false;
 
         # last line was a date line
         $lastlinedateline = true;
@@ -432,21 +591,52 @@ foreach ($lines as $linenr => $line) {
 
       # was last line a date line and there is an indented line?
       # then go next, this can go on for a while
-      if ($mode === 1 && $lastlinedateline && preg_match("/^\s*#*\s*.*$/", $line)) {
-        cl('Line '.linenrprefix($linenr, $linecount).': dateline, possible continuation.', VERBOSE_DEBUG_DEEP);
+      if (
+        $appendlevel === 4 &&
+        $lastlinedateline &&
+        preg_match("/^\s*".preg_quote(trim($prefix))."+\s*.*$/", $line)
+      ) {
+        cl(
+          array(
+            'L.',
+            linenrprefix($linenr, $linecount),
+            ' [level ',
+            $appendlevel,
+            ']: dateline, possible continuation: ',
+            array(
+              'text' => trim($line),
+              'cut' => true
+            )
+          ),
+          VERBOSE_DEBUG
+        );
+        $appendlinenr++;
         break;
       }
 
       # obviously last line was not a date line
       $lastlinedateline = false;
 
-      # mode 1 and passed dateline checks and so on
-      if ($mode === 1) {
-        cl('Line '.linenrprefix($linenr, $linecount).': read stop, unknown data found: '.$line, VERBOSE_DEBUG_DEEP);
+      # append level 1 and passed dateline checks and so on
+      if ($appendlevel === 4) {
+        cl(
+          array(
+            'L.',
+            linenrprefix($linenr, $linecount),
+            ': read stop, unknown data found: "',
+            array(
+              'text' => trim($line),
+              'cut' => true
+            ),
+            '".'
+          ),
+          VERBOSE_DEBUG
+        );
         # something else, stop here
         $continue = false;
         break;
       }
+
   } # mime
   # for-each stopper
   if (!$continue) {
@@ -454,14 +644,9 @@ foreach ($lines as $linenr => $line) {
   }
 }
 
-# still no linenr - set default prefix
 if ($appendlinenr === false) {
-  switch ($mime) {
-    case 'text/x-php':
-    case 'text/x-shellscript':
-      $prefix = '#  ';
-      break;
-  }
+  cl('No suitable append line nr found, exiting.', VERBOSE_INFO);
+  exit;
 }
 
 # has last date been found?
@@ -469,7 +654,7 @@ if ($lastdate) {
   $lastdate = strtotime($lastdate);
   cl('Last changelog date: '.date('Y-m-d H:i:s', $lastdate), VERBOSE_DEBUG);
   $diff = $modtime - $lastdate;
-  cl('Diff between changelog last date and file modification date: '.$diff.' s.', VERBOSE_DEBUG);
+  cl('Difference changelog and modification date: '.$diff.' s.', VERBOSE_DEBUG);
   # is date within interval?
   if ($diff < $config['minimumdiff']) {
     $appendmodtime = false;
@@ -479,43 +664,104 @@ if ($lastdate) {
 # should mod time be included in list?
 if ($appendmodtime) {
   cl('Appending file modification date to changelog.', VERBOSE_DEBUG);
-  $append[] = $prefix.date('Y-m-d H:i:s', $modtime);
+  $append[] = array(
+    'prefix' => true,
+    'line' => date('Y-m-d H:i:s', $modtime)
+  );
 } else {
   cl('Not appending file modification date to changelog.', VERBOSE_DEBUG);
 }
 
-# compose the actual line to append
-$append[] = $prefix.date('Y-m-d H:i:s', $config['date']).(strlen($config['line']) ? ' - '.$config['line'] : '');
+# line width limitation
+if ($config['linewidth'] !== 0) {
+  $linetext = $config['line'];
+  $i = 0;
+  while (strlen($linetext)) {
+    # the current part to append
+    $linepart = '';
+    # first line
+    if ($i === 0) {
+      # add date to current part
+      $linepart = date('Y-m-d H:i:s', $config['date']);
+    }
 
-# still no linenr - find out how to insert anyway
-if ($appendlinenr === false) {
+    # text left to add
+    if (strlen($linetext)) {
+      # first line - add separator, if not first line, add tab to current part
+      $linepart .= $i === 0 ? ' - ' : '  ';
+      # calculate length left of the line minus prefix, minus current line text
+      $linespaceleft = $config['linewidth'] - strlen($prefix) - strlen($linepart);
+      # no line space left even before adding something?
 
-  switch ($mime) {
-    case 'text/x-php':
-    case 'text/x-shellscript':
-      # is there a shebang, then begin after that
-      $appendlinenr = $shebang ? 1 : 0;
-      $appendcharacter = $shebang !== false ? false : 0;
-      break;
+      if (
+        # less than 0 space left, that is wrong
+        $linespaceleft < 0 ||
+        # passed beyond first line and still no left, also wrong
+        ($linespaceleft === 0 && $i > 0)
+      ) {
+        cl('Fatal error, line width '.$config['linewidth'].' is too small, cannot fit line data within it.', VERBOSE_ERROR);
+        die(1);
+      # no space left but this is first line?
+      } else if ($linespaceleft === 0 && $i === 0) {
+        # add it, it contains date and so on
+        $append[] = array(
+          'prefix' => true,
+          'line' => $linepart
+        );
+        # do not cut in line text
+      # line space is left and whatever line
+      } else {
+        # add it, it contains date and so on
+        $append[] = array(
+          'prefix' => true,
+          'line' => $linepart.substr($linetext, 0, $linespaceleft)
+        );
+        $linetext = substr($linetext, $linespaceleft);
+      }
+    }
+    $i++;
   }
+# no line width limitation
+} else {
+  # compose the actual line to append
+  $append[] = array(
+    'prefix' => true,
+    'line' => date('Y-m-d H:i:s', $config['date']).(strlen($config['line']) ? ' - '.$config['line'] : '')
+  );
+}
 
+# if wrapping is needed
+if ($appendwrap === true) {
+  # make some default lines
   switch ($mime) {
     case 'text/x-php':
       $append = array_merge(
         array(
-          '<?php',
-          $prefix.'changelog'
+          array(
+            'prefix' => false,
+            'line' => '<?php'
+          ),
+          array(
+            'prefix' => true,
+            'line' => 'changelog'
+          )
         ),
         $append,
         array(
-          '?>'
+          array(
+            'prefix' => false,
+            'line' => '?>'
+          )
         )
       );
       break;
     case 'text/x-shellscript':
       $append = array_merge(
         array(
-          $prefix.'changelog'
+          array(
+            'prefix' => true,
+            'line' => changelog
+          )
         ),
         $append
       );
@@ -526,11 +772,6 @@ if ($appendlinenr === false) {
 cl('Prefix: "'.$prefix.'".', VERBOSE_DEBUG);
 cl('Append line nr: '.($appendlinenr !== false ? $appendlinenr : 'none found').'.', VERBOSE_DEBUG);
 cl('Append character nr: '.$appendcharacter.'.', VERBOSE_DEBUG);
-
-if ($appendlinenr === false) {
-  cl('No suitable append line nr found, exiting.', VERBOSE_INFO);
-  exit;
-}
 
 # recalculate line count, if append character is on,
 # then one existing line will be edited, reducing the
@@ -584,32 +825,91 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
     # append in character in line?
     if ($appendcharacter !== false) {
 
-      # beginning and end of the line
+      # cut out beginning and end of the current line
       $begin = substr($line, 0, $appendcharacter);
       $end = substr($line, $appendcharacter);
 
       # walk the lines to append
+      $appendcomposed = array();
       foreach ($append as $k => $v) {
-        # first index?
+        # prefix the line if necessary
+        $appendline = ($v['prefix'] ? $prefix : '').$v['line'];
+
+        # first append line?
         if ($k === 0) {
-          # add the line from the start to the character in line
-          $append[$k] = $begin.$v;
-        }
-        # last index?
-        if ($k === count($append)-1) {
-          # add the ending of the line
-          $append[$k] = $v.$end;
+
+          # no line width or begin + line width ok, add it
+          if ($config['linewidth'] === 0 || strlen($begin.$appendline) <= $config['linewidth']) {
+            $appendcomposed[] = $begin.$appendline;
+          # if not, make a separate line of begin and the append line
+          } else {
+            $appendcomposed[] = $begin;
+            $appendcomposed[] = $appendline;
+          }
+        # last append line?
+        } else if ($k === count($append) - 1) {
+          # is begin + line within width, add it
+          if (
+            $config['linewidth'] === 0 ||
+            strlen($appendline.$end) <= $config['linewidth']
+          ) {
+            $appendcomposed[] = $appendline.$end;
+          # if not, make a separate line of it
+          } else {
+            $appendcomposed[] = $appendline;
+            $appendcomposed[] = $end;
+          }
+        # some other append line
+        } else {
+          $appendcomposed[] = $appendline;
         }
       }
-    }
-    # walk lines to append and do it
-    foreach ($append as $k => $appendline) {
-      cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($appendline), VERBOSE_DEBUG);
-      if ($config['write']) {
-        fputs($f, $appendline."\n");
+
+      # walk lines to append and do it
+      foreach ($appendcomposed as $k => $appendline) {
+        cl(
+          array(
+            'L.',
+            linenrprefix($linenr + $linenrsadded, $linecount),
+            '+: "',
+            array(
+              'text' => trim($appendline),
+              'cut' => true
+            ),
+            '".'
+          ),
+          VERBOSE_DEBUG
+        );
+        if ($config['write']) {
+          fputs($f, $appendline."\n");
+        }
+        # above merged append line 0 or append character is off
+        if ($k > 0) {
+          # increment lines added
+          $linenrsadded++;
+        }
       }
-      # above append line 0 or append character is off
-      if ($k > 0 || ($k === 0 && $appendcharacter === false)) {
+    # not appending on character
+    } else {
+      # walk regular append lines to append and do it
+      foreach ($append as $k => $v) {
+        $appendline = ($v['prefix'] ? $prefix : '').$v['line'];
+        cl(
+          array(
+            'L.',
+            linenrprefix($linenr + $linenrsadded, $linecount),
+            '+: "',
+            array(
+              'text' => trim($appendline),
+              'cut' => true
+            ),
+            '".'
+          ),
+          VERBOSE_DEBUG
+        );
+        if ($config['write']) {
+          fputs($f, $appendline."\n");
+        }
         # increment lines added
         $linenrsadded++;
       }
@@ -622,14 +922,38 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
       $linenr < count($lines)
     ) {
       # then print original line afterwards
-      cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($line), VERBOSE_DEBUG);
+      cl(
+        array(
+          'L.',
+          linenrprefix($linenr + $linenrsadded, $linecount),
+          '+: "',
+          array(
+            'text' => trim($line),
+            'cut' => true
+          ),
+          '".'
+        ),
+        VERBOSE_DEBUG
+      );
       if ($config['write']) {
         fputs($f, $line);
       }
     }
   } else {
     # write regular line
-    cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).' : '.trim($line), VERBOSE_DEBUG_DEEP);
+    cl(
+      array(
+        'L.',
+        linenrprefix($linenr + $linenrsadded, $linecount),
+        ' : "',
+        array(
+          'text' => trim($line),
+          'cut' => true
+        ),
+        '".'
+      ),
+      VERBOSE_DEBUG_DEEP
+    );
     if ($config['write']) {
       fputs($f, $line);
     }
