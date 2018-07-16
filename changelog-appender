@@ -8,33 +8,12 @@
 # changelog
 # 2018-07-15 18:56:00 - first version
 
-# get argument options
-$opts = getopt(
-  'bc:d:hi:l:m:o:qwv:',
-  array(
-    'config:',
-    'config-write:',
-    'date:',
-    'help:',
-    'input:',
-    'line:',
-    'linelimit:',
-    'minimumdiff:',
-    'output:',
-    'quiet',
-    'write',
-    'verbose:',
-    'loglevel:',
-    'logfile:'
-  )
-);
-
 # verbosity levels
-define('VERBOSE_OFF', 0);		# no info at all
-define('VERBOSE_ERROR', 1);		# only errors
-define('VERBOSE_INFO', 2);		# above and things that changes
-define('VERBOSE_DEBUG', 3);		# above and verbose info
-define('VERBOSE_DEBUG_DEEP', 4);		# above and exec outputs
+define('VERBOSE_OFF', 0);    # no info at all
+define('VERBOSE_ERROR', 1);    # only errors
+define('VERBOSE_INFO', 2);    # above and things that changes
+define('VERBOSE_DEBUG', 3);    # above and verbose info
+define('VERBOSE_DEBUG_DEEP', 4);    # above and exec outputs
 
 # default config
 $config = array(
@@ -52,6 +31,67 @@ $config = array(
   'write' => false
 );
 
+# debug printing
+function cl($s, $level=1) {
+    global $config;
+
+  # find out level of verbosity
+  switch ($level) {
+    case VERBOSE_ERROR:
+      $l = 'E';
+      break;
+    case VERBOSE_INFO:
+      $l = 'I';
+      break;
+    case VERBOSE_DEBUG:
+    case VERBOSE_DEBUG_DEEP:
+      $l = 'D';
+      break;
+  }
+  $s = ''.date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
+
+  # is verbosity on and level is enough?
+  if (
+      $config['verbose'] &&
+      $config['verbose'] >= $level
+    ) {
+    echo $s;
+  }
+
+  # is loglevel on and level is enough - the try to append to log
+  if (
+      $config['loglevel'] &&
+      $config['loglevel'] >= $level &&
+      $f = fopen($config['logfile'], 'a')
+    ) {
+    fwrite($f, $s);
+    fclose($f);
+  }
+
+  return true;
+}
+
+# get argument options
+$opts = getopt(
+  'b:c:d:hi:l:m:o:wv:',
+  array(
+    'backup:',
+    'config:',
+    'config-write',
+    'date:',
+    'help',
+    'input:',
+    'line:',
+    'linelimit:',
+    'minimumdiff:',
+    'output:',
+    'write',
+    'verbose:',
+    'loglevel:',
+    'logfile:'
+  )
+);
+
 # override default config if it has been set
 if (isset($opts['config'])) {
   $config['config'] = $opts['config'];
@@ -60,55 +100,28 @@ if (isset($opts['config'])) {
 # try to read global config
 if (file_exists($config['config'])) {
   if (!$tmp = file_get_contents($config['config'])) {
-    cl('Failed reading config file '.$config['config'].'.');
+    cl('Failed reading config file '.$config['config'].'.', VERBOSE_ERROR);
     die(1);
   }
-  if (!$tmp = json_decode($config['config'])) {
-    cl('Failed JSON decoding config file '.$config['config'].'.');
+  # strip config comments
+  $tmp = explode("\n", $tmp);
+  foreach ($tmp as $k => $v) {
+      $tmp[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+  $tmp = implode("\n", $tmp);
+  if (!$tmp = json_decode($tmp, true)) {
+    cl('Failed JSON decoding config file '.$config['config'].'.', VERBOSE_ERROR);
     die(1);
   }
   $config = array_merge($config, $tmp);
-}
-
-# debug printing
-function cl($s, $level=1) {
-    global $config;
-
-	# find out level of verbosity
-	switch ($level) {
-		case VERBOSE_ERROR:
-			$l = 'E';
-			break;
-		case VERBOSE_INFO:
-			$l = 'I';
-			break;
-		case VERBOSE_DEBUG:
-		case VERBOSE_DEBUG_DEEP:
-			$l = 'D';
-			break;
-	}
-	$s = ''.date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
-
-	# is verbosity on and level is enough?
-	if ($config['verbose'] && $config['verbose'] >= $level) {
-		echo $s;
-	}
-
-	# is loglevel on and level is enough - the try to append to log
-	if ($config['loglevel'] && $config['loglevel'] >= $level && $f = fopen($config['logfile'], 'a')) {
-		fwrite($f, $s);
-		fclose($f);
-	}
-
-	return true;
 }
 
 # walk argument options
 foreach ($opts as $opt => $value) {
   switch ($opt) {
     case 'b':
-    case 'no-backup':
-      $config['backup'] = false;
+    case 'backup':
+      $config['backup'] = (int)$value === 1;
       break;
     case 'c': # quantity of lines to check
     case 'linelimit':
@@ -122,7 +135,7 @@ foreach ($opts as $opt => $value) {
       $json_indented_by_4 = json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
       $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
       file_put_contents($config['config'], $json_indented_by_2);
-      cl('Writing config to '.$config['config'].'.'."\n", VERBOSE_INFO);
+      cl('Writing config to '.$config['config'].'.', VERBOSE_INFO);
       die();
     case 'date':
       $config['date'] = strtotime($value);
@@ -135,39 +148,49 @@ Changelog appender
 Usage: <?php echo basename(__FILE__)?> <options>
 
 Options:
-  -b, --no-backup
-    Turn off backup.
-    Defaults to make backup named input.backup-date
+  -b <0/1>, --backup
+    Turn backup on or off.
+    Defaults to make backup named input.backup-date.
+
   -c <number>, --linelimit=<number>
     Sets the amount of lines to check.
     Defaults to 200.
+
   -d <date [time]>, --date="date [time]"
     Date and time to set on line.
     Defaults to current date and time.
+
   -i <file>, --input=<file>
     The file to edit.
+
   -h, --help
     Print this information.
+
   -l <line>, --line=<line>
     The line to add to the changelog in the file.
     Defaults to empty.
   --logfile=<file>
     Sets logfile.
     Defaults to /var/log/<?php echo basename(__FILE__) ?>.
+
   --loglevel=<0-4>
     Sets loglevel.
     0 = off, 1 = errors, 2 = info, 3-4 debug.
     Defaults to 0.
+
   -m <seconds>, --minimumdiff=<seconds>
     Minimum time in seconds between last changelog date and
     file modification date before it appends the file modification date
     to the changelog before the line to insert.
     Defaults to 15 minutes.
+
   -o <file>, --output=<file>
     File to output changes to.
+
   -w, --write
     Actually write the changes.
     Defaults to not writing changes.
+
   -v <0-4>, --verbose=<0-4>
     Sets verbosity level.
     0 = off, 1 = errors, 2 = info, 3-4 debug.
@@ -183,10 +206,10 @@ Options:
       $config['line'] = $value;
       break;
     case 'logfile':
-      $config['logfile'] = $v;
+      $config['logfile'] = $value;
       break;
     case 'loglevel':
-      $config['loglevel'] = (int)$v;
+      $config['loglevel'] = (int)$value;
       break;
     case 'm': # minimum seconds in diff before appding file modification date
     case 'minimumdiff':
@@ -207,8 +230,9 @@ Options:
   }
 }
 
+# increment zero-starting line number and prefix with zeros
 function linenrprefix($linenr, $linecount) {
-  return str_pad($linenr, strlen((string)$linecount), '0', STR_PAD_LEFT);
+  return str_pad($linenr + 1, strlen((string)$linecount), '0', STR_PAD_LEFT);
 }
 
 # make sure input file is set
@@ -223,13 +247,13 @@ if (!$config['output']) {
   die(1);
 }
 
-# make sure file exists
+# make sure input file exists
 if (!file_exists($config['input'])) {
   cl('Input file '.$config['input'].' does not exist.');
   die(1);
 }
 
-# open the file
+# open the input file
 if (!$f = fopen($config['input'], 'r')) {
   cl('Error: failed opening '.$config['input'].'.');
   die(1);
@@ -238,8 +262,8 @@ if (!$f = fopen($config['input'], 'r')) {
 # get the first x lines
 # do it without head + grep to avoid potential uncacheable
 # errors from head and reuse the read
-$lines = array();
 $linenr = 0;
+$lines = array();
 while (($line = fgets($f)) !== false) {
   $lines[] = $line;
   $linenr++;
@@ -252,12 +276,12 @@ if (!feof($f)) {
   die(1);
 }
 
-# close file
+# close input file
 fclose($f);
 
 # make sure there are lines
 if (!count($lines)) {
-  cl('No lines', VERBOSE_DEBUG);
+  cl('No lines in input file.', VERBOSE_DEBUG);
   die();
 }
 
@@ -265,9 +289,7 @@ $append = array();
 $appendcharacter = false; # false = new line, number, substring into line
 $appendlinenr = false;
 $appendmodtime = true;
-$changelog = false;
 $continue = true;
-$filetype = false;
 $lastdate = false;
 $lastlinedateline = false;
 $mime = mime_content_type($config['input']);
@@ -276,17 +298,14 @@ $modtime = filemtime($config['input']);
 $prefix = '';
 $shebang = false;
 
-$extension = basename($config['input']);
-$extension = strpos($extension, '.') !== false ? strtolower(substr($extension, strrpos($extension, '.') + 1)) : false;
-
-cl('Input file: '.$config['input'], VERBOSE_INFO);
-cl('Output file: '.$config['output'], VERBOSE_INFO);
-cl('Backup file: '.($config['backup'] ? 'yes' : 'no'), VERBOSE_DEBUG);
-cl('Write changes: '.($config['write'] ? 'yes' : 'no'), VERBOSE_DEBUG);
-cl('Extension: '.$extension, VERBOSE_DEBUG);
+cl('Input file: '.$config['input'].'.', VERBOSE_INFO);
+cl('Output file: '.$config['output'].'.', VERBOSE_INFO);
+cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
+cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
+cl('Extension: "'.$extension.'".', VERBOSE_DEBUG);
 cl('MIME: '.$mime, VERBOSE_DEBUG);
-cl('Modified: '.date('Y-m-d H:i:s', $modtime), VERBOSE_DEBUG);
-cl('Line limit: '.$config['linelimit'], VERBOSE_DEBUG);
+cl('Modified: '.date('Y-m-d H:i:s', $modtime).'.', VERBOSE_DEBUG);
+cl('Line limit: '.$config['linelimit'].'.', VERBOSE_DEBUG);
 
 # walk lines to find append point - changelog
 foreach ($lines as $linenr => $line) {
@@ -298,12 +317,13 @@ foreach ($lines as $linenr => $line) {
   }
 
   # clean the line from spaces, tabs and new lines
-  $line = trim($line);
+  # $line = trim($line);
 
   # first line and this is a shebang?
   if ($linenr === 0 && substr($line, 0, 2) === '#!') {
     cl('Line '.linenrprefix($linenr, $linecount).': shebang, '.$line, VERBOSE_DEBUG_DEEP);
     $shebang = $linenr;
+    continue;
   }
 
   # check mime
@@ -313,76 +333,120 @@ foreach ($lines as $linenr => $line) {
       # mode 0 = looking for changelog
       # mode 1 = looking for dateline
 
-      # find out current mode
-      switch ($mode) {
-        case 0: # looking for changelog
-          # find "# changelog"
-          unset($matches);
-          if (preg_match("/^\s*(\#*\s*)?changelog\s*$/i", $line, $matches)) {
-            $mode = 1;
-            $changelog = $linenr;
-            cl('Line '.linenrprefix($linenr, $linecount).': "changelog" found: '.$line, VERBOSE_DEBUG_DEEP);
+      unset($matches);
+      # mode 0 + changelog
+      if (
+        $mode === 0 &&
+        preg_match("/^\s*(\#*\s*)?changelog\s*$/i", $line, $matches)
+      ) {
+        # engage mode 1
+        $mode = 1;
+        $appendlinenr = $linenr + 1;
+        cl(
+          'Line '.linenrprefix($linenr, $linecount).
+          ': "changelog" found: '.$line,
+          VERBOSE_DEBUG_DEEP
+        );
 
-            # is there a prefix
-            if (isset($matches[1])) {
-              $prefix = $matches[1];
-            }
-          }
-          break;
-        case 1: # find date line
-          # empty line - can be something
-          if (!strlen($line)) {
-            $lastlinedateline = false;
-            $appendlinenr = $linenr;
-            break;
-          }
-
-          # just an empty commented line?
-          if (preg_match("/^\#+$/", $line)) {
-            $lastlinedateline = false;
-            $appendlinenr = $linenr;
-            break;
-          }
-
-          # find "# xxxx-xx-xx xx:xx:xx - possibly something"
-          unset($matches);
-          $regex = "/^\s*(\#*\s*)?([\d|x]{4,}\-[\d|x]{2}\-[\d|x]{2})(\s+[\d|x]{2,}\:[\d|x]{2}(\:[\d|x]{2})?)?.*.*$/i";
-          if (preg_match($regex, $line, $matches)) {
-
-            # is there a prefix?
-            if (strpos($matches[1], '#') !== false) {
-              $prefix = $matches[1];
-              $lastdate = $matches[2].(isset($matches[3]) ? $matches[3] : '');
-            } else {
-              $lastdate = $matches[1].(isset($matches[2]) ? $matches[2] : '');
-            }
-
-            # any unfilled positions in this date? then it is unusable
-            if (strpos($lastdate, 'x')) {
-              $lastdate = false;
-              cl('Line '.linenrprefix($linenr, $linecount).': dateline, unusable: '.$line, VERBOSE_DEBUG_DEEP);
-            } else {
-              cl('Line '.linenrprefix($linenr, $linecount).': dateline, usable: '.strtotime('Y-m-d H:i:s', strtotime($lastdate)).': '.$line, VERBOSE_DEBUG_DEEP);
-            }
-
-            $lastlinedateline = true;
-            break;
-          }
-
-          # was last line a date line and there is an indented line?
-          # then go next, this can go on for a while
-          if ($lastlinedateline && preg_match("/^\s*#*\s*.*$/", $line)) {
-              cl('Line '.linenrprefix($linenr, $linecount).': dateline, possible continuation.', VERBOSE_DEBUG_DEEP);
-            break;
-          }
-          $lastlinedateline = false;
-
-          cl('Line '.linenrprefix($linenr, $linecount).': read stop, unknown data found: '.$line, VERBOSE_DEBUG_DEEP);
-          # something else, stop here
-          $continue = false;
-          break;
+        # is there a prefix
+        if (isset($matches[1])) {
+          $prefix = $matches[1];
+        }
+        break;
       }
-      break;
+
+      # mode 1 + empty line - can be something
+      if (
+        $mode === 1 &&
+        (!strlen($line) || preg_match("/^\s*\#+\s*$/", $line))
+      ) {
+        $lastlinedateline = false;
+        $appendlinenr = $linenr + 1;
+        break;
+      }
+
+      # mode 0-1 + "# xxxx-xx-xx xx:xx:xx - possibly something"
+      unset($matches);
+      $regex  = "/^\s*(?P<prefix>\#*\s*)?";
+      $regex .= "(?P<year>[\d|x]{4,})\-";
+      $regex .= "(?P<month>[\d|x]{2})\-";
+      $regex .= "(?P<day>[\d|x]{2})";
+      $regex .= "(\s+(?P<hour>[\d|x]{2,})\:";
+      $regex .= "(?P<minute>[\d|x]{2})";
+      $regex .= "(\:(?P<second>[\d|x]{2}))?)?.*.*$/i";
+      if (preg_match($regex, $line, $matches)) {
+
+        # we are now in mode 1
+        $mode = 1;
+
+        $matches = array_filter($matches, "is_string", ARRAY_FILTER_USE_KEY);
+        $prefix = isset($matches['prefix']) ? $matches['prefix'] : $prefix;
+
+        $lastdate = false;
+        # year-month-day
+        if (
+          isset($matches['year']) && is_numeric($matches['year']) &&
+          isset($matches['month']) && is_numeric($matches['month']) &&
+          isset($matches['day']) && is_numeric($matches['day']) &&
+          checkdate($matches['month'], $matches['day'], $matches['year'])
+        ) {
+
+          $lastdate = $matches['year'].'-'.$matches['month'].'-'-$matches['day'];
+
+          # hour-minute
+          if (
+            isset($matches['hour']) && is_numeric($matches['hour']) &&
+            isset($matches['minute']) && is_numeric($matches['minute']) &&
+            (int)$matches['hour'] >= 0 &&
+            (int)$matches['hour'] <= 23 &&
+            (int)$matches['minute'] >= 0 &&
+            (int)$matches['minute'] <= 59
+          ) {
+            $lastdate .= $matches['hour'].'-'.$matches['minute'];
+
+            # second
+            if (
+              isset($matches['second']) && is_numeric($matches['second']) &&
+              (int)$matches['second'] >= 0 &&
+              (int)$matches['second'] <= 59
+            ) {
+              $lastdate .= $matches['second'];
+            }
+          }
+        }
+
+        # any unfilled positions in this date? then it is unusable
+        if ($lastdate === false) {
+          cl('Line '.linenrprefix($linenr, $linecount).': dateline, unusable: '.$line, VERBOSE_DEBUG_DEEP);
+        } else {
+          cl('Line '.linenrprefix($linenr, $linecount).': dateline, usable: '.strtotime('Y-m-d H:i:s', strtotime($lastdate)).': '.$line, VERBOSE_DEBUG_DEEP);
+        }
+
+        # append on next line
+        $appendlinenr = $linenr + 1;
+
+        # last line was a date line
+        $lastlinedateline = true;
+        break;
+      }
+
+      # was last line a date line and there is an indented line?
+      # then go next, this can go on for a while
+      if ($mode === 1 && $lastlinedateline && preg_match("/^\s*#*\s*.*$/", $line)) {
+        cl('Line '.linenrprefix($linenr, $linecount).': dateline, possible continuation.', VERBOSE_DEBUG_DEEP);
+        break;
+      }
+
+      # obviously last line was not a date line
+      $lastlinedateline = false;
+
+      # mode 1 and passed dateline checks and so on
+      if ($mode === 1) {
+        cl('Line '.linenrprefix($linenr, $linecount).': read stop, unknown data found: '.$line, VERBOSE_DEBUG_DEEP);
+        # something else, stop here
+        $continue = false;
+        break;
+      }
   } # mime
   # for-each stopper
   if (!$continue) {
@@ -390,7 +454,7 @@ foreach ($lines as $linenr => $line) {
   }
 }
 
-# still no linenr - detect default prefix
+# still no linenr - set default prefix
 if ($appendlinenr === false) {
   switch ($mime) {
     case 'text/x-php':
@@ -403,7 +467,7 @@ if ($appendlinenr === false) {
 # has last date been found?
 if ($lastdate) {
   $lastdate = strtotime($lastdate);
-    cl('Last changelog date: '.date('Y-m-d H:i:s', $lastdate), VERBOSE_DEBUG);
+  cl('Last changelog date: '.date('Y-m-d H:i:s', $lastdate), VERBOSE_DEBUG);
   $diff = $modtime - $lastdate;
   cl('Diff between changelog last date and file modification date: '.$diff.' s.', VERBOSE_DEBUG);
   # is date within interval?
@@ -415,19 +479,25 @@ if ($lastdate) {
 # should mod time be included in list?
 if ($appendmodtime) {
   cl('Appending file modification date to changelog.', VERBOSE_DEBUG);
-  $append[] = $prefix.date('Y-m-d H:i:s', $modtime)."\n";
+  $append[] = $prefix.date('Y-m-d H:i:s', $modtime);
 } else {
   cl('Not appending file modification date to changelog.', VERBOSE_DEBUG);
 }
 
 # compose the actual line to append
-$append[] = $prefix.date('Y-m-d H:i:s', $config['date']).(strlen($config['line']) ? ' - '.$config['line'] : '')."\n";
+$append[] = $prefix.date('Y-m-d H:i:s', $config['date']).(strlen($config['line']) ? ' - '.$config['line'] : '');
 
 # still no linenr - find out how to insert anyway
 if ($appendlinenr === false) {
-  # is there a shebang, then begin after that
-  $appendlinenr = $shebang ? 1 : 0;
-  $appendcharacter = $shebang !== false ? false : 0;
+
+  switch ($mime) {
+    case 'text/x-php':
+    case 'text/x-shellscript':
+      # is there a shebang, then begin after that
+      $appendlinenr = $shebang ? 1 : 0;
+      $appendcharacter = $shebang !== false ? false : 0;
+      break;
+  }
 
   switch ($mime) {
     case 'text/x-php':
@@ -455,7 +525,7 @@ if ($appendlinenr === false) {
 
 cl('Prefix: "'.$prefix.'".', VERBOSE_DEBUG);
 cl('Append line nr: '.($appendlinenr !== false ? $appendlinenr : 'none found').'.', VERBOSE_DEBUG);
-cl('Append character: "'.$appendcharacter.'".', VERBOSE_DEBUG);
+cl('Append character nr: '.$appendcharacter.'.', VERBOSE_DEBUG);
 
 if ($appendlinenr === false) {
   cl('No suitable append line nr found, exiting.', VERBOSE_INFO);
@@ -500,7 +570,14 @@ if ($config['write']) {
 
 # walk lines
 $linenrsadded = 0;
-foreach ($lines as $linenr => $line) {
+
+# run while within the quantity of lines
+# or within the append line number
+$linenr=0;
+while ($linenr < count($lines) || $linenr <= $appendlinenr) {
+
+  # still within lines range?
+  $line = $linenr < count($lines) ? $lines[$linenr] : '';
 
   # line to append in?
   if ($linenr === $appendlinenr) {
@@ -527,9 +604,9 @@ foreach ($lines as $linenr => $line) {
     }
     # walk lines to append and do it
     foreach ($append as $k => $appendline) {
-      cl('Out '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($appendline), VERBOSE_DEBUG);
+      cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($appendline), VERBOSE_DEBUG);
       if ($config['write']) {
-        fputs($f, $appendline);
+        fputs($f, $appendline."\n");
       }
       # above append line 0 or append character is off
       if ($k > 0 || ($k === 0 && $appendcharacter === false)) {
@@ -538,21 +615,27 @@ foreach ($lines as $linenr => $line) {
       }
     }
 
-    # not appending on character?
-    if ($appendcharacter === false) {
+    # not appending on character
+    # and within range for original lines
+    if (
+      $appendcharacter === false &&
+      $linenr < count($lines)
+    ) {
       # then print original line afterwards
-      cl('Out '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($line), VERBOSE_DEBUG);
+      cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).'+: '.trim($line), VERBOSE_DEBUG);
       if ($config['write']) {
         fputs($f, $line);
       }
     }
   } else {
     # write regular line
-    cl('Out '.linenrprefix($linenr + $linenrsadded, $linecount).' : '.trim($line), VERBOSE_DEBUG_DEEP);
+    cl('Line '.linenrprefix($linenr + $linenrsadded, $linecount).' : '.trim($line), VERBOSE_DEBUG_DEEP);
     if ($config['write']) {
       fputs($f, $line);
     }
   }
+
+  $linenr++;
 }
 
 # close file
