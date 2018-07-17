@@ -8,6 +8,7 @@
 # changelog
 # 2018-07-15 18:56:00 - first version
 # 2018-07-16 22:21:00
+# 2018-07-17 18:19:00 - making log entries multiline
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -52,46 +53,30 @@ function cl($s, $level=1) {
       break;
   }
 
-  if (is_array($s)) {
-    $tmp = '';
-    $s = array_merge(
-      array(
-        array(
-          'text' => date('Y-m-d H:i:s').' '.$l.' '
-        )
-      ),
-      $s
-    );
-
-    # get log width
-    $left = $config['logwidth'];
-    foreach ($s as $item) {
-      # is this not a cut item
-      if (!isset($item['cut']) || $item['cut'] === false) {
-        # decrease the usable log width
-        $left -= strlen(is_array($item) ? $item['text'] : $item);
-      }
-    }
-
-    foreach ($s as $item) {
-      # is this not a cut item
-      if (!isset($item['cut']) || $item['cut'] === false) {
-        $tmp .= is_array($item) ? $item['text'] : $item;
-        # decrease the usable log width
-        $left -= strlen(is_array($item) ? $item['text'] : $item);
-      # cut item
+  $s = date('Y-m-d H:i:s').' '.$l.' '.$s;
+  $sublines = array();
+  $i=0;
+  $textleft = $s;
+  if ($config['logwidth'] > 0) {
+    # run while there is text left
+    while (strlen($textleft)) {
+      # is this first loop turn
+      if ($i === 0) {
+        # no indent, take whole line to limit
+        $indent = '';
+        $sublines[] = substr($textleft, 0, $config['logwidth']);
+        $textleft = substr($textleft, $config['logwidth']);
       } else {
-        # is the text lesser than or same as what is left, or the maximum left used
-        $maxlength = strlen($item['text']) <= $left ? strlen($item['text']) : $left;
-        $tmp .= substr($item['text'], 0, $maxlength);
-        # remove used width
-        $left -= $maxlength;
+        # make space for indent and add the left
+        $indent = str_repeat(' ', $config['logwidth'] > 2 ? 2 : $config['logwidth'] - 1);
+        $sublines[] = $indent.substr($textleft, 0, $config['logwidth'] - strlen($indent));
+        $textleft = substr($textleft, $config['logwidth'] - strlen($indent));
       }
+      $i++;
     }
-    $s = $tmp."\n";
-  } else {
-    $s = date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
+    $s = implode("\n", $sublines);
   }
+  $s = $s."\n";
 
   # is verbosity on and level is enough?
   if (
@@ -127,6 +112,7 @@ $opts = getopt(
     'line:',
     'linelimit:',
     'linewidth:',
+    'logwidth:',
     'minimumdiff:',
     'output:',
     'write',
@@ -173,6 +159,9 @@ foreach ($opts as $opt => $value) {
       break;
     case 'linewidth': # line width limit
       $config['linewidth'] = (int)$value;
+      break;
+    case 'logwidth': # line width limit
+      $config['logwidth'] = (int)$value;
       break;
     case 'config':
       $config['config'] = strtotime($value);
@@ -378,14 +367,9 @@ foreach ($lines as $linenr => $line) {
   ) {
     $appendlevel = 1;
     cl(
-      array(
-        'L.'.linenrprefix($linenr, $linecount).' [level '.$appendlevel.']: shebang, "',
-        array(
-          'text' => trim($line),
-          'cut' => true
-        ),
-        '"'
-      ),
+      'L.'.linenrprefix($linenr, $linecount).
+      ' [level '.$appendlevel.']: shebang, "'.
+      trim($line).'"',
       VERBOSE_DEBUG
     );
     # is there a shebang, then begin after that, no append char but wrap needed
@@ -422,18 +406,14 @@ foreach ($lines as $linenr => $line) {
         $appendwrap = true;
         $prefix = '#  ';
         $appendlevel = 2;
-        cl(array(
-            'L.',
-            linenrprefix($linenr, $linecount),
-            ' [level ',
-            $appendlevel,
-            ']: PHP tag opening, : "',
-            array(
-              'text' => trim($line),
-              'cut' => true
-            ),
-            '".'
-          ),
+        cl(
+          'L.'.
+          linenrprefix($linenr, $linecount).
+          ' [level '.
+          $appendlevel.
+          ']: PHP tag opening, : "'.
+          trim($line).
+          '".',
           VERBOSE_DEBUG
         );
       }
@@ -452,18 +432,11 @@ foreach ($lines as $linenr => $line) {
         $appendlevel = 3;
 
         cl(
-          array(
-            'L.',
-            linenrprefix($linenr, $linecount),
-            ' [level ',
-            $appendlevel,
-            ']: "changelog" found: "',
-            array(
-              'text' => $line,
-              'cut' => true
-            ),
-            '".'
-          ),
+          'L.'.
+          linenrprefix($linenr, $linecount).
+          ' [level '.$appendlevel.']: "changelog" found: "'.
+          $line.
+          '".',
           VERBOSE_DEBUG_DEEP
         );
 
@@ -546,35 +519,21 @@ foreach ($lines as $linenr => $line) {
         # any unfilled positions in this date? then it is unusable
         if ($lastdate === false) {
           cl(
-            array(
-              'L.',
-              linenrprefix($linenr, $linecount),
-              ' [level ',
-              $appendlevel,
-              ']: dateline, unusable: "',
-              array(
-                'text' => trim($line),
-                'cut' => true
-              ),
-              '".'
-            ),
+            'L.'.
+            linenrprefix($linenr, $linecount).
+            ' [level '.$appendlevel.']: dateline, unusable: "'.
+            trim($line).
+            '".',
             VERBOSE_DEBUG_DEEP
           );
         } else {
           cl(
-            array(
-              'L.',
-              linenrprefix($linenr, $linecount),
-              ' [level ',
-              $appendlevel,
-              ']: dateline, usable: ',
-              date('Y-m-d H:i:s', strtotime($lastdate)).', "',
-              array(
-                'text' => trim($line),
-                'cut' => true
-              ),
-              '".'
-            ),
+            'L.'.
+            linenrprefix($linenr, $linecount).
+            ' [level '.$appendlevel.']: dateline, usable: '.
+            date('Y-m-d H:i:s', strtotime($lastdate)).', "'.
+            trim($line).
+            '".',
             VERBOSE_DEBUG
           );
         }
@@ -597,17 +556,11 @@ foreach ($lines as $linenr => $line) {
         preg_match("/^\s*".preg_quote(trim($prefix))."+\s*.*$/", $line)
       ) {
         cl(
-          array(
-            'L.',
-            linenrprefix($linenr, $linecount),
-            ' [level ',
-            $appendlevel,
-            ']: dateline, possible continuation: ',
-            array(
-              'text' => trim($line),
-              'cut' => true
-            )
-          ),
+          'L.'.
+          linenrprefix($linenr, $linecount).
+          ' [level '.$appendlevel.']: dateline, cont.: "'.
+          trim($line).
+          '"',
           VERBOSE_DEBUG
         );
         $appendlinenr++;
@@ -620,16 +573,11 @@ foreach ($lines as $linenr => $line) {
       # append level 1 and passed dateline checks and so on
       if ($appendlevel === 4) {
         cl(
-          array(
-            'L.',
-            linenrprefix($linenr, $linecount),
-            ': read stop, unknown data found: "',
-            array(
-              'text' => trim($line),
-              'cut' => true
-            ),
-            '".'
-          ),
+          'L.'.
+          linenrprefix($linenr, $linecount).
+          ': stop, unknown data found: "'.
+          trim($line).
+          '".',
           VERBOSE_DEBUG
         );
         # something else, stop here
@@ -868,16 +816,11 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
       # walk lines to append and do it
       foreach ($appendcomposed as $k => $appendline) {
         cl(
-          array(
-            'L.',
-            linenrprefix($linenr + $linenrsadded, $linecount),
-            '+: "',
-            array(
-              'text' => trim($appendline),
-              'cut' => true
-            ),
-            '".'
-          ),
+          'L.'.
+          linenrprefix($linenr + $linenrsadded, $linecount).
+          '+: "'.
+          trim($appendline).
+          '".',
           VERBOSE_DEBUG
         );
         if ($config['write']) {
@@ -895,16 +838,11 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
       foreach ($append as $k => $v) {
         $appendline = ($v['prefix'] ? $prefix : '').$v['line'];
         cl(
-          array(
-            'L.',
-            linenrprefix($linenr + $linenrsadded, $linecount),
-            '+: "',
-            array(
-              'text' => trim($appendline),
-              'cut' => true
-            ),
-            '".'
-          ),
+          'L.'.
+          linenrprefix($linenr + $linenrsadded, $linecount).
+          '+: "'.
+          trim($appendline).
+          '".',
           VERBOSE_DEBUG
         );
         if ($config['write']) {
@@ -923,16 +861,11 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
     ) {
       # then print original line afterwards
       cl(
-        array(
-          'L.',
-          linenrprefix($linenr + $linenrsadded, $linecount),
-          '+: "',
-          array(
-            'text' => trim($line),
-            'cut' => true
-          ),
-          '".'
-        ),
+        'L.'.
+        linenrprefix($linenr + $linenrsadded, $linecount).
+        '+: "'.
+        trim($line).
+        '".',
         VERBOSE_DEBUG
       );
       if ($config['write']) {
@@ -942,16 +875,11 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
   } else {
     # write regular line
     cl(
-      array(
-        'L.',
-        linenrprefix($linenr + $linenrsadded, $linecount),
-        ' : "',
-        array(
-          'text' => trim($line),
-          'cut' => true
-        ),
-        '".'
-      ),
+      'L.'.
+      linenrprefix($linenr + $linenrsadded, $linecount).
+      ' : "'.
+      trim($line).
+      '".',
       VERBOSE_DEBUG_DEEP
     );
     if ($config['write']) {
