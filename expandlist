@@ -4,6 +4,7 @@
 # changelog
 # 2018-07-13 19:31:17 - first version
 # 2018-07-15 22:17:49 - logging
+# 2018-08-18 19:06:00 - editing inclusion/exclusion, adding actions
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -14,27 +15,43 @@ define('VERBOSE_DEBUG_DEEP', 4);    # above and exec outputs
 
 # default config
 $config = array(
+  'action' => false,
+  'backup' => true,
   'config' => '/etc/dptools/'.basename(__FILE__),
-  'endings' => array(
-    "js",
-    "php",
-    "htm",
-    "html",
-    "css"
+  'path' => getcwd(),
+  'includeextensions' => array(
+    'css',
+    'htm',
+    'html',
+    'js',
+    'php',
+    'txt'
   ),
-  'ignore' => array(
-    "/.git/",
-    ".min.",
-    "/exporting.js",
-    "/highcharts.js",
-    "/base.php",
-    "/base2.php",
-    "/base3.php",
-    "/fonts/"
+  'includemimes' => array(
+    'text/plain',
+    'text/shellscript',
+    'text/x-php'
+  ),
+  'expandlist' => 'expandlist.txt',
+  'ignorenames' => array(
+    '.min.',
+    '/.git/',
+    '/base.php',
+    '/base2.php',
+    '/base3.php',
+    '/exporting.js',
+    '/fonts/',
+    '/highcharts.js'
+  ),
+  'ignoremimes' => array(
+    'image/',
+    'audio/',
+    'video/'
   ),
   'logfile' => '/var/log/'.basename(__FILE__),
   'loglevel' => VERBOSE_OFF,
-  'verbose' => VERBOSE_ERROR,
+  'write' => false,
+  'verbose' => VERBOSE_INFO,
 );
 
 # debug printing
@@ -43,18 +60,45 @@ function cl($s, $level=1) {
 
   # find out level of verbosity
   switch ($level) {
-      case VERBOSE_ERROR:
-          $l = 'E';
-          break;
-      case VERBOSE_INFO:
-          $l = 'I';
-          break;
-      case VERBOSE_DEBUG:
-      case VERBOSE_DEBUG_DEEP:
-          $l = 'D';
-          break;
+    case VERBOSE_ERROR:
+      $l = 'E';
+      break;
+    case VERBOSE_INFO:
+      $l = 'I';
+      break;
+    case VERBOSE_DEBUG:
+    case VERBOSE_DEBUG_DEEP:
+      $l = 'D';
+      break;
   }
-  $s = ''.date('Y-m-d H:i:s').' '.$l.' '.$s."\n";
+
+  $s = date('Y-m-d H:i:s').' '.$l.' '.$s;
+  $sublines = array();
+  $i=0;
+  $textleft = $s;
+  if (
+    isset($config['logwidth']) &&
+    $config['logwidth'] > 0
+  ) {
+    # run while there is text left
+    while (strlen($textleft)) {
+      # is this first loop turn
+      if ($i === 0) {
+        # no indent, take whole line to limit
+        $indent = '';
+        $sublines[] = substr($textleft, 0, $config['logwidth']);
+        $textleft = substr($textleft, $config['logwidth']);
+      } else {
+        # make space for indent and add the left
+        $indent = str_repeat(' ', $config['logwidth'] > 2 ? 2 : $config['logwidth'] - 1);
+        $sublines[] = $indent.substr($textleft, 0, $config['logwidth'] - strlen($indent));
+        $textleft = substr($textleft, $config['logwidth'] - strlen($indent));
+      }
+      $i++;
+    }
+    $s = implode("\n", $sublines);
+  }
+  $s = $s."\n";
 
   # is verbosity on and level is enough?
   if (
@@ -77,14 +121,61 @@ function cl($s, $level=1) {
   return true;
 }
 
+# copy with rights by using the system copy command
+function copy2($src, $dst) {
+  unset($c, $o, $r);
+  $c = 'cp '.escapeshellarg($src).' '.escapeshellarg($dst);
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    cl('Failed copying "'.$src.'" to "'.$dst.'": '.implode(" ", $o).' ('.$r.')', VERBOSE_ERROR);
+    die(1);
+  }
+  return true;
+}
+
+function extractpath($file) {
+  if (!file_exists($file)) {
+    cl('Resource not found "'.$file.'".', VERBOSE_ERROR);
+  }
+
+  if (!$tmp = realpath($file)) {
+    cl('Failed extracting path "'.$file.'".', VERBOSE_ERROR);
+  }
+  $file = $tmp;
+
+  if (!file_exists($file)) {
+    cl('Extracted resource path not found "'.$file.'".', VERBOSE_ERROR);
+  }
+  return $file;
+}
+
 # check if file has tabs
 function hastabs($file) {
   # run command
   unset($c, $o, $r);
-  $c = 'cat '.escapeshellarg($file).'|grep -P "^\t"';
+  $c = 'cat '.escapeshellarg($file).'|grep -P "^\s*\t\s*"';
   exec($c, $o, $r);
   return count($o) ? true : false;
 }
+
+# get argument options
+$opts = getopt(
+  'a:b:p:e:hwv:',
+  array(
+    'action:',
+    'path:',
+    'expandlist:',
+    'backup:',
+    'config:',
+    'config-write',
+    'help',
+    'write',
+    'verbose:',
+    'loglevel:',
+    'logfile:',
+    'logwidth:'
+  )
+);
 
 # try to read global config
 if (file_exists($config['config'])) {
@@ -103,51 +194,63 @@ if (file_exists($config['config'])) {
     die(1);
   }
   $config = array_merge($config, $tmp);
-} else {
-  cl('No config file, writing one to '.$config['config'].'.', VERBOSE_INFO);
-  # make json and indentation by 2
-  $json_indented_by_4 = json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
-  $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
-  file_put_contents($config['config'], $json_indented_by_2);
-  die();
+} else if (!isset($opts['config-write'])) {
+  cl('No config file, run again with --config-write to generate it.', VERBOSE_INFO);
+  die(1);
 }
-
-# get argument options
-$opts = getopt(
-  'b:c:d:hi:l:m:o:wv:',
-  array(
-    'backup:',
-    'config:',
-    'config-write',
-    'date:',
-    'help',
-    'input:',
-    'line:',
-    'linelimit:',
-    'minimumdiff:',
-    'output:',
-    'write',
-    'verbose:',
-    'loglevel:',
-    'logfile:'
-  )
-);
 
 # walk argument options
 foreach ($opts as $opt => $value) {
   switch ($opt) {
+    case 'a':
+    case 'action':
+      # spell out short versions
+      switch ($value) {
+        case 'g':
+          $value = 'generate';
+          break;
+        case 'e':
+          $value = 'expand';
+          break;
+      }
+      $config['action'] = $value;
+      break;
+
+    case 'b':
+    case 'backup':
+      $config['backup'] = (int)$value === 1;
+      break;
     case 'config':
-      $config['config'] = strtotime($value);
+      $config['config'] = $value;
       break;
     case 'config-write':
+      # remove items not applicable in config
+      $tmp = array();
+      foreach ($config as $k => $v) {
+        if (
+          !in_array(
+            $k,
+            array(
+              'action'
+            )
+          )
+        ) {
+          $tmp[$k] = $v;
+        }
+      }
       # make json and indentation by 2
-      $json_indented_by_4 = json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+      $json_indented_by_4 = json_encode($tmp, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
       $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
       file_put_contents($config['config'], $json_indented_by_2);
       cl('Writing config to '.$config['config'].'.', VERBOSE_INFO);
       die();
-    case 'date':
-      $config['date'] = strtotime($value);
+    case 'p':
+    case 'path':
+      $config['path'] = $value;
+      break;
+    case 'e':
+    case 'expandlist':
+      $config['expandlist'] = $value;
       break;
     case 'h': # print help
     case 'help':
@@ -157,6 +260,19 @@ Changelog appender
 Usage: <?php echo basename(__FILE__)?> <options>
 
 Options:
+  -a <action>, --action=<action>
+    What to do. May be:
+      generate or g, to generate a expandlist.
+      expand or e, to run through the expandlist.
+
+  -b <0/1>, --backup
+    Turn backup on or off.
+    Note that this also affects changelog-appender backup.
+    Defaults to make backup named input.<?php echo basename(__FILE__)?>-backup-date.
+
+  -e <file>, --expandlist=<file>
+    The expandlist to write and read.
+    Defaults to expandlist.txt
 
   -h, --help
     Print this information.
@@ -170,6 +286,14 @@ Options:
     0 = off, 1 = errors, 2 = info, 3-4 debug.
     Defaults to 0.
 
+  -p <path>, --path=<path>
+    Path to work on.
+    Defaults to current directory.
+
+  -w, --write
+    Actually write the changes.
+    Defaults to not writing changes.
+
   -v <0-4>, --verbose=<0-4>
     Sets verbosity level.
     0 = off, 1 = errors, 2 = info, 3-4 debug.
@@ -182,6 +306,13 @@ Options:
     case 'loglevel':
       $config['loglevel'] = (int)$value;
       break;
+    case 'logwidth': # line width limit
+      $config['logwidth'] = (int)$value;
+      break;
+    case 'w':
+    case 'write':
+      $config['write'] = true;
+      break;
     case 'v':
     case 'verbose':
       $config['verbose'] = (int)$value;
@@ -189,158 +320,242 @@ Options:
   }
 }
 
-# read expandlist
-if (!file_exists('expandlist.txt')) {
-  # find files
-  cl("No expandlist, generating it.", VERBOSE_INFO);;
-  unset($c, $o, $r);
-  $c = 'find . -type f';
-  exec($c, $o, $r);
-  if ($r !== 0) {
-    cl('Failed running '.$c.': '.implode("\n", $o).' ('.$r.')', VERBOSE_INFO);
-    die(1);
-  }
-  $list = explode("\n", $o);
+if ($config['action'] === false || !strlen($config['action'])) {
+  cl('Action must be specified.', VERBOSE_ERROR);
+  die(1);
+}
 
-  # sort list
-  asort($list);
+# try to get correct fullpath
+$config['path'] = extractpath($config['path']);
 
-  # print legend
-  $files = array(
-    '# Legend:',
-    '# IG = ignored by word',
-    '# WE = wrong extension',
-    '# OK = already correct',
-    '',
-  );
+# check and spell out the work directory
+if (
+  !is_dir($config['path'])
+) {
+  cl('Work path "'.$config['path'].'" is invalid.', VERBOSE_ERROR);
+  die(1);
+}
 
-  foreach ($list as $file) {
+cl('Work path: "'.$config['path'].'"', VERBOSE_DEBUG);
+# change work directory if needed
+if (!chdir($config['path'])) {
+  cl('Failed switching work path to "'.$config['path'].'".', VERBOSE_ERROR);
+  die(1);
+}
 
-    $file = trim($file);
+cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_INFO);
 
-    # empty line, go next
-    if (!strlen($file)) {
-      continue;
+switch ($config['action']) {
+  case 'generate':
+  # read expandlist
+
+    # find files
+    cl('Generating expandlist: "'.$config['path'].'/'.$config['expandlist'].'".', VERBOSE_INFO);
+    unset($c, $o, $r);
+    # $c = 'find '.escapeshellarg($config['path']).' -type f';
+    $c = 'find . -type f';
+   cl('Run: "'.$c.'".', VERBOSE_DEBUG_DEEP);
+    exec($c, $o, $r);
+    if ($r !== 0) {
+      cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.').', VERBOSE_INFO);
+      die(1);
     }
+    $list = $o;
 
-    $skipreason = false;
+    # sort list
+    asort($list);
 
-    # check for bad words in filename
-    foreach ($config['ignore'] as $badword) {
-      if (strpos($file, $badword) !== false) {
-        $skipreason = 'IG';
-        break;
+    # print legend
+    $files = array(
+      '# Path: '.$config['path'],
+      '# ?? = unknown file',
+      '# IM = ignored by MIME',
+      '# IN = ignored by filename',
+      '# OK = already correct',
+      '# ?? = unknown, tabs found',
+      '# .. = unknown, no tabs found'
+    );
+
+    # walk files
+    foreach ($list as $file) {
+      $file = trim($file);
+
+      $include = false;
+
+      # empty line, go next
+      if (!strlen($file)) {
+        continue;
       }
-    }
 
-    if ($skipreason === false) {
-      # make sure ending is someone desired
-      $tmp = false;
-      foreach ($config['endings'] as $ending) {
-        if (strtolower(substr($file, strrpos($file, '.'))) === '.'.strtolower($ending)) {
-          $tmp = true;
+      # skip - check for bad words in filename
+      $skip = false;
+      foreach ($config['ignorenames'] as $badword) {
+        if (strpos($file, $badword) !== false) {
+          $skip = true;
           break;
         }
       }
-      if ($tmp === false) {
-        $skipreason = 'WE';
+      if ($skip) {
+        $files[] = '# IN '.$file;
+        continue;
+      }
+
+      $filemime = mime_content_type($file);
+
+      # skip - check for bad words in mime
+      $skip = false;
+      foreach ($config['ignoremimes'] as $badword) {
+        if (strpos($filemime, $badword) !== false) {
+          $skip = true;
+          break;
+        }
+      }
+      if ($skip) {
+        $files[] = '# IM '.$file;
+        continue;
+      }
+
+      # no reason to include? check endings
+      if (!$include) {
+        foreach ($config['includeextensions'] as $ending) {
+          if (strtolower(substr($file, strrpos($file, '.'))) === '.'.strtolower($ending)) {
+            $include = true;
+            break;
+          }
+        }
+      }
+
+      # no reason to include? check mime
+      if (!$include) {
+        # include check for wanted endings
+        $include = false;
+        foreach ($config['includemimes'] as $mime) {
+          if (strtolower($filemime) === strtolower($mime)) {
+            $include = true;
+            break;
+          }
+        }
+      }
+
+      # should file be included?
+      if ($include) {
+        # include - does it have tabs?
+        if (hastabs($file)) {
+          $files[] = $file;
+        } else {
+          $files[] = '# OK '.$file;
+        }
+      # or not included
+      } else {
+        if (hastabs($file)) {
+          $files[] = '# ?? '.$file;
+        } else {
+          $files[] = '# ..'.$file;
+        }
       }
     }
 
-    if ($skipreason === false && !hastabs($file)) {
-      $skipreason = 'OK';
+    if ($config['write']) {
+      file_put_contents($config['expandlist'], implode("\n", $files));
     }
 
-    if ($skipreason) {
-      $file = '# '.$skipreason.' - '.$file;
+    die();
+  case 'expand':
+
+    # make sure expand list exists
+    if (!file_exists($config['expandlist'])) {
+      cl('Expandlist file '.$config['expandlist'].' not found.', VERBOSE_ERROR);
+      die(1);
     }
-    $files[] = $file;
-  }
 
-  file_put_contents('expandlist.txt', implode("\n", $files));
-  cl('expandlist.txt generated, have a look and rerun to run changes on files listed.', VERBOSE_INFO);
-  die();
+    # try to extract fullpath
+    # $config['expandlist'] = extractpath($config['expandlist']);
+
+    # read expandlist
+    $files = file($config['expandlist']);
+    if ($files === false) {
+      cl('Could not read "'.$config['expandlist'].'".', VERBOSE_ERROR);
+      die(1);
+    }
+
+    cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
+
+    # walk files
+    foreach ($files as $file) {
+
+      # skip commented out lines
+      if (substr($file, 0, 1) === '#' || !strlen(trim($file))) {
+        continue;
+      }
+
+      $file = trim($file);
+      # $file = extractpath($file);
+      if (!file_exists($file)) {
+        cl('File not found, "'.$file.'".', VERBOSE_ERROR);
+        die(1);
+      }
+
+      $date = date('Y-m-d H:i:s', filemtime($file));
+
+      cl('Expanding "'.$file.'" ('.$date.')', VERBOSE_INFO);
+
+      # make backup?
+      if ($config['backup']) {
+
+        # find suitable backup name
+        $i = '';
+        do {
+          $copytarget = $file.'.'.basename(__FILE__).'-backup-'.date('Y-m-d_His').$i;
+          if (file_exists($copytarget)) {
+            $i = is_numeric($i) ? $i + 1 : 1;
+          }
+        } while(file_exists($copytarget));
+
+        # do backup
+        cl('Backing up "'.$file. '" to "'.$copytarget.'".', VERBOSE_INFO);
+        if ($config['write']) {
+          if (!copy2($file, $copytarget)) {
+            cl('Failed backing up "'.$file.'" to "'.$copytarget.'".', VERBOSE_ERROR);
+            die(1);
+          }
+        }
+      }
+
+      # run command
+      unset($c, $o, $r);
+      $c = 'expand -i -t 2 '.escapeshellarg($file).'| sponge '.escapeshellarg($file);
+      cl('Run: "'.$c.'".', VERBOSE_DEBUG_DEEP);
+      if ($config['write']) {
+        exec($c, $o, $r);
+        if ($r !== 0) {
+          cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.').', VERBOSE_INFO);
+          die(1);
+        }
+      }
+
+      cl('Changelog-appending in "'.$file.'".', VERBOSE_INFO);
+      # run command
+      unset($c, $o, $r);
+      $c = implode(' ', array(
+        '/usr/bin/php',
+        '/opt/dptools/changelog-appender',
+        '--input='.escapeshellarg($file),
+        '--output='.escapeshellarg($file),
+        '--backup='.escapeshellarg($config['backup']),
+        '--line="indentation change, tab to 2 spaces"',
+        '-w'
+      ));
+      cl('Run: "'.$c.'"', VERBOSE_DEBUG_DEEP);
+      if ($config['write']) {
+        exec($c, $o, $r);
+        if ($r !== 0) {
+          cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.')', VERBOSE_ERROR);
+          die(1);
+        }
+      }
+    }
+    break;
+  default:
+    cl('Unknown action "'.$config['action'].'"', VERBOSE_ERROR);
 }
-
-# read expandlist
-$lines = file('expandlist.txt');
-if ($lines === false) {
-  cl('Could not read expandlist.txt.', VERBOSE_ERROR);
-  die(1);
-}
-
-# walk files in expandlist
-foreach ($lines as $line) {
-  $line = trim($line);
-  # skip commented out lines
-  if (substr($line, 0, 1) === '#' || !strlen($line)) {
-    continue;
-  }
-  echo "Will expand: ".$line."\n";
-  $files[] = $line;
-}
-
-# confirm
-$c = readline("Press [y/Y] to continue: ");
-if (strtolower($c) !== "y") {
-  die(1);
-}
-
-# result list of files changes
-$result = array(
-  '# '.date('Y-m-d H:i:s').' - Expandlist result',
-  ''
-);
-
-# walk files
-foreach ($files as $file) {
-  $file = trim($file);
-  $date = date('Y-m-d H:i:s', filemtime($file));
-  $result[] = $date.' '.$file;
-  cl($date.' '.$file, VERBOSE_INFO);
-
-  # run command
-  unset($c, $o, $r);
-  $c = 'expand -i -t 2 '.escapeshellarg($file).'| sponge '.escapeshellarg($file);
-  exec($c, $o, $r);
-  #if ($r !== 0) {
-  #  cl('Failed running '.$c.': '.implode("\n", $o).' ('.$r.')', VERBOSE_ERROR);
-  #  die(1);
-  #}
-
-  # run command
-  unset($c, $o, $r);
-  $c = implode(' ', array(
-    '/usr/bin/php',
-    '/opt/dptools/changelog-appender',
-    '--input='.escapeshellarg($file),
-    '--output='.escapeshellarg($file),
-    '--backup=1',
-    '--line="indentation change, tab to 2 spaces"'
-  ));
-  exec($c, $o, $r);
-  echo $c."\n";
-  if ($r !== 0) {
-    cl('Failed running '.$c.': '.implode("\n", $o).' ('.$r.')', VERBOSE_ERROR);
-    die(1);
-  }
-}
-
-# check if there is a previous expandlist-result, then read it
-$expandlistresult = array();
-if (file_exists('expandlist-result.txt')) {
-  $expandlistresult = file('expandlist-result.txt');
-  if ($expandlistresult === false) {
-    cl('Warning: failed reading expandlist-result.txt for appending.', VERBOSE_ERROR);
-  }
-  # new line between results
-  $expandlistresult = array_merge($expandlistresult, array(''));
-  # merge the previous and new results
-  $expandlistresult = array_merge($expandlistresult, $result);
-} else {
-  $expandlistresult = $result;
-}
-
-# print result
-file_put_contents('expandlist-result.txt', implode("\n", $expandlistresult));
 ?>

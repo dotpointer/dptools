@@ -9,6 +9,7 @@
 # 2018-07-15 18:56:00 - first version
 # 2018-07-16 22:21:00
 # 2018-07-17 18:19:00 - making log entries multiline
+# 2018-07-18 19:05:00 - using system command to backup, adding mime check
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -35,6 +36,17 @@ $config = array(
   'write' => false
 );
 
+function copy2($src, $dst) {
+  unset($c, $o, $r);
+  $c = 'cp '.escapeshellarg($src).' '.escapeshellarg($dst);
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    cl('Failed copying "'.$src.'" to "'.$dst.'": '.implode(" ", $o).' ('.$r.')', VERBOSE_ERROR);
+    die(1);
+  }
+  return true;
+}
+
 # debug printing
 function cl($s, $level=1) {
     global $config;
@@ -57,7 +69,7 @@ function cl($s, $level=1) {
   $sublines = array();
   $i=0;
   $textleft = $s;
-  if ($config['logwidth'] > 0) {
+  if (isset($config['logwidth']) && $config['logwidth'] > 0) {
     # run while there is text left
     while (strlen($textleft)) {
       # is this first loop turn
@@ -164,11 +176,25 @@ foreach ($opts as $opt => $value) {
       $config['logwidth'] = (int)$value;
       break;
     case 'config':
-      $config['config'] = strtotime($value);
+      $config['config'] = $value;
       break;
     case 'config-write':
+      # remove items not applicable in config
+      $tmp = array();
+      foreach ($config as $k => $v) {
+        if (
+          !in_array(
+            $k,
+            array(
+              'config', 'date', 'input', 'line', 'output'
+            )
+          )
+        ) {
+          $tmp[$k] = $v;
+        }
+      }
       # make json and indentation by 2
-      $json_indented_by_4 = json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+      $json_indented_by_4 = json_encode($tmp, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
       $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
       file_put_contents($config['config'], $json_indented_by_2);
       cl('Writing config to '.$config['config'].'.', VERBOSE_INFO);
@@ -186,7 +212,7 @@ Usage: <?php echo basename(__FILE__)?> <options>
 Options:
   -b <0/1>, --backup
     Turn backup on or off.
-    Defaults to make backup named input.backup-date.
+    Defaults to make backup named input.<?php echo basename(__FILE__)?>-backup-date.
 
   -c <number>, --linelimit=<number>
     Sets the amount of lines to check.
@@ -228,6 +254,7 @@ Options:
 
   -o <file>, --output=<file>
     File to output changes to.
+    Defaults to input file.
 
   -w, --write
     Actually write the changes.
@@ -285,8 +312,10 @@ if (!$config['input']) {
 
 # make sure output file is set
 if (!$config['output']) {
-  cl('No output file specified.', VERBOSE_ERROR);
-  die(1);
+  #cl('No output file specified.', VERBOSE_ERROR);
+  #die(1);
+  # set to input file
+  $config['output'] = $config['input'];
 }
 
 # make sure input file exists
@@ -342,10 +371,23 @@ $prefix = '';
 $shebang = false;
 
 cl('Input file: '.$config['input'].'.', VERBOSE_INFO);
+cl('MIME: '.$mime.'.', VERBOSE_DEBUG);
+
+if (
+  !in_array(
+    $mime,
+    array(
+      'text/x-php', 'text/shellscript'
+    )
+  )
+) {
+  cl('MIME not matching, exiting.', VERBOSE_INFO);
+  exit;
+}
+
 cl('Output file: '.$config['output'].'.', VERBOSE_INFO);
 cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
-cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
-cl('MIME: '.$mime.'.', VERBOSE_DEBUG);
+cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_INFO);
 cl('Modified: '.date('Y-m-d H:i:s', $modtime).'.', VERBOSE_DEBUG);
 cl('Line limit: '.$config['linelimit'].'.', VERBOSE_DEBUG);
 cl('Line width: '.($config['linewidth'] !== 0 ? $config['linewidth'] : 'no').'.', VERBOSE_DEBUG);
@@ -593,7 +635,7 @@ foreach ($lines as $linenr => $line) {
 }
 
 if ($appendlinenr === false) {
-  cl('No suitable append line nr found, exiting.', VERBOSE_INFO);
+  cl('Append line not found, exiting.', VERBOSE_INFO);
   exit;
 }
 
@@ -732,7 +774,7 @@ if ($config['backup']) {
   # find suitable backup name
   $i = '';
   do {
-    $copytarget = $config['input'].'.backup-'.date('Y-m-d_His').$i;
+    $copytarget = $config['input'].'.'.basename(__FILE__).'-backup-'.date('Y-m-d_His').$i;
     if (file_exists($copytarget)) {
       $i = is_numeric($i) ? $i + 1 : 1;
     }
@@ -741,7 +783,7 @@ if ($config['backup']) {
   # do backup
   cl('Backing up '.$config['input']. ' to '.$copytarget.'.', VERBOSE_INFO);
   if ($config['write']) {
-    if (!copy($config['input'], $copytarget)) {
+    if (!copy2($config['input'], $copytarget)) {
       cl('Error, failed doing backup of '.$config['input'].' to '.$copytarget.'.', VERBOSE_DEBUG);
       die(1);
     }
