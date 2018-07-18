@@ -4,7 +4,8 @@
 # changelog
 # 2018-07-13 19:31:17 - first version
 # 2018-07-15 22:17:49 - logging
-# 2018-08-18 19:06:00 - editing inclusion/exclusion, adding actions
+# 2018-07-18 19:06:00 - editing inclusion/exclusion, adding actions
+# 2018-07-18 21:32:00 - adding copy preserve, review and delete actions
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -122,9 +123,9 @@ function cl($s, $level=1) {
 }
 
 # copy with rights by using the system copy command
-function copy2($src, $dst) {
+function copy_preserve($src, $dst) {
   unset($c, $o, $r);
-  $c = 'cp '.escapeshellarg($src).' '.escapeshellarg($dst);
+  $c = 'cp --preserve '.escapeshellarg($src).' '.escapeshellarg($dst);
   exec($c, $o, $r);
   if ($r !== 0) {
     cl('Failed copying "'.$src.'" to "'.$dst.'": '.implode(" ", $o).' ('.$r.')', VERBOSE_ERROR);
@@ -156,6 +157,55 @@ function hastabs($file) {
   $c = 'cat '.escapeshellarg($file).'|grep -P "^\s*\t\s*"';
   exec($c, $o, $r);
   return count($o) ? true : false;
+}
+
+function getlinecount($file) {
+  # run command
+  unset($c, $o, $r);
+  $c = 'wc -l '.escapeshellarg($file);
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.').', VERBOSE_INFO);
+    die(1);
+  }
+  if (!isset($o[0])) {
+    cl('Failed extracting line amount for "'.$file.'".', VERBOSE_INFO);
+    die(1);
+  }
+  return (int)substr($o[0], 0, strpos($o[0], ' '));
+}
+
+
+function getexpandlist($expandlistpath) {
+    # make sure expand list exists
+    if (!file_exists($expandlistpath)) {
+      cl('Expandlist file '.$expandlistpath.' not found.', VERBOSE_ERROR);
+      die(1);
+    }
+
+    # try to extract fullpath
+    # $expandlistpath = extractpath($expandlistpath);
+
+    # read expandlist
+    $files = file($expandlistpath);
+    if ($files === false) {
+      cl('Could not read "'.$expandlistpath.'".', VERBOSE_ERROR);
+      die(1);
+    }
+
+    $tmp = array();
+    # walk files
+    foreach ($files as $file) {
+      $file = trim($file);
+      # skip commented out lines
+      if (substr($file, 0, 1) === '#' || !strlen($file)) {
+        continue;
+      }
+      $tmp[] = $file;
+    }
+    $files = $tmp;
+
+    return $files;
 }
 
 # get argument options
@@ -206,11 +256,20 @@ foreach ($opts as $opt => $value) {
     case 'action':
       # spell out short versions
       switch ($value) {
+        case 'a':
+          $value = 'apply';
+          break;
         case 'g':
           $value = 'generate';
           break;
         case 'e':
           $value = 'expand';
+          break;
+        case 'dr':
+          $value = 'delete-reviews';
+          break;
+        case 'db':
+          $value = 'delete-backups';
           break;
       }
       $config['action'] = $value;
@@ -231,7 +290,7 @@ foreach ($opts as $opt => $value) {
           !in_array(
             $k,
             array(
-              'action'
+              'action', 'config', 'path'
             )
           )
         ) {
@@ -263,11 +322,15 @@ Options:
   -a <action>, --action=<action>
     What to do. May be:
       generate or g, to generate a expandlist.
-      expand or e, to run through the expandlist.
+      expand or e, to run through the expandlist and generate
+        filename.el-review files.
+      apply or a, to run through the expandlist and move the
+        filename.el-review-files over the originals.
+      delete-backups or db, to delete filename.el-backup files.
+      delete-reviews or dr, to delete filename.el-review files.
 
   -b <0/1>, --backup
     Turn backup on or off.
-    Note that this also affects changelog-appender backup.
     Defaults to make backup named input.<?php echo basename(__FILE__)?>-backup-date.
 
   -e <file>, --expandlist=<file>
@@ -462,68 +525,28 @@ switch ($config['action']) {
     die();
   case 'expand':
 
-    # make sure expand list exists
-    if (!file_exists($config['expandlist'])) {
-      cl('Expandlist file '.$config['expandlist'].' not found.', VERBOSE_ERROR);
-      die(1);
-    }
-
-    # try to extract fullpath
-    # $config['expandlist'] = extractpath($config['expandlist']);
-
-    # read expandlist
-    $files = file($config['expandlist']);
-    if ($files === false) {
-      cl('Could not read "'.$config['expandlist'].'".', VERBOSE_ERROR);
-      die(1);
-    }
-
-    cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
+    $files = getexpandlist($config['expandlist']);
 
     # walk files
     foreach ($files as $file) {
 
-      # skip commented out lines
-      if (substr($file, 0, 1) === '#' || !strlen(trim($file))) {
-        continue;
-      }
-
-      $file = trim($file);
+      $file = $file;
       # $file = extractpath($file);
       if (!file_exists($file)) {
         cl('File not found, "'.$file.'".', VERBOSE_ERROR);
-        die(1);
+        continue;
       }
 
-      $date = date('Y-m-d H:i:s', filemtime($file));
+      $filetarget = $file.'.el-review';
 
-      cl('Expanding "'.$file.'" ('.$date.')', VERBOSE_INFO);
+      $linecountoriginal = getlinecount($file);
+      cl('Line count in "'.$file.'": '.$linecountoriginal.'.', VERBOSE_INFO);
 
-      # make backup?
-      if ($config['backup']) {
-
-        # find suitable backup name
-        $i = '';
-        do {
-          $copytarget = $file.'.'.basename(__FILE__).'-backup-'.date('Y-m-d_His').$i;
-          if (file_exists($copytarget)) {
-            $i = is_numeric($i) ? $i + 1 : 1;
-          }
-        } while(file_exists($copytarget));
-
-        # do backup
-        cl('Backing up "'.$file. '" to "'.$copytarget.'".', VERBOSE_INFO);
-        if ($config['write']) {
-          if (!copy2($file, $copytarget)) {
-            cl('Failed backing up "'.$file.'" to "'.$copytarget.'".', VERBOSE_ERROR);
-            die(1);
-          }
-        }
-      }
+      cl('Expanding "'.$file.'" to "'.$filetarget.'".', VERBOSE_INFO);
 
       # run command
       unset($c, $o, $r);
-      $c = 'expand -i -t 2 '.escapeshellarg($file).'| sponge '.escapeshellarg($file);
+      $c = 'expand -i -t 2 '.escapeshellarg($file).'| sponge '.escapeshellarg($filetarget);
       cl('Run: "'.$c.'".', VERBOSE_DEBUG_DEEP);
       if ($config['write']) {
         exec($c, $o, $r);
@@ -533,15 +556,27 @@ switch ($config['action']) {
         }
       }
 
-      cl('Changelog-appending in "'.$file.'".', VERBOSE_INFO);
+      if ($config['write']) {
+        $linecounttarget = getlinecount($file);
+      } else {
+        $linecounttarget = $linecountoriginal;
+      }
+      cl('Line count in "'.$filetarget.'": '.$linecounttarget.'.', VERBOSE_INFO);
+
+      if ($linecountoriginal != $linecounttarget) {
+        cl('Line count differ after expand, "'.$file.'", '.$linecountoriginal.' versus ."'.$filetarget.'", '.$linecounttarget.'.', VERBOSE_ERROR);
+      }
+
+      cl('Changelog-appending "'.$filetarget.'".', VERBOSE_INFO);
       # run command
       unset($c, $o, $r);
       $c = implode(' ', array(
         '/usr/bin/php',
         '/opt/dptools/changelog-appender',
-        '--input='.escapeshellarg($file),
-        '--output='.escapeshellarg($file),
-        '--backup='.escapeshellarg($config['backup']),
+        '--input='.escapeshellarg($filetarget),
+        '--output='.escapeshellarg($filetarget),
+        '--modifiedfile='.escapeshellarg($file),
+        '--backup=0',
         '--line="indentation change, tab to 2 spaces"',
         '-w'
       ));
@@ -553,9 +588,101 @@ switch ($config['action']) {
           die(1);
         }
       }
+
+      if ($config['write']) {
+        $linecounttarget = getlinecount($file);
+      } else {
+        $linecounttarget = $linecountoriginal;
+      }
+      cl('Line count in "'.$filetarget.'": '.$linecounttarget.'.', VERBOSE_INFO);
+
+      # lines may get more with append, but not less
+      if ($linecountoriginal > $linecounttarget) {
+        cl('Line count differ after changelog-append, "'.$file.'", '.$linecountoriginal.' versus ."'.$filetarget.'", '.$linecounttarget.'.', VERBOSE_ERROR);
+      }
+
+
     }
     break;
+  case 'apply':
+
+    $files = getexpandlist($config['expandlist']);
+
+    # walk files
+    foreach ($files as $file) {
+
+      $file = $file;
+      $filesource = $file.'.el-review';
+      if (!file_exists($filesource)) {
+        cl('File not found, "'.$filesource.'".', VERBOSE_ERROR);
+        continue;
+      }
+
+      # make backup?
+      if ($config['backup']) {
+
+        $copytarget = $file.'.el-backup';
+        if (file_exists($copytarget)) {
+          cl('Backup file exists, "'.$copytarget.'".', VERBOSE_ERROR);
+          die(1);
+        }
+
+        # do backup
+        cl('Backup: "'.$copytarget.'".', VERBOSE_INFO);
+        if ($config['write']) {
+          if (!copy_preserve($file, $copytarget)) {
+            cl('Failed backing up "'.$file.'" to "'.$copytarget.'".', VERBOSE_ERROR);
+            die(1);
+          }
+        }
+      }
+
+      cl('Replacing "'.$file.'" with "'.$filesource.'".', VERBOSE_INFO);
+
+      # run command
+      unset($c, $o, $r);
+      $c = 'mv '.escapeshellarg($filesource).' '.escapeshellarg($file);
+      cl('Run: "'.$c.'".', VERBOSE_DEBUG_DEEP);
+      if ($config['write']) {
+        exec($c, $o, $r);
+        if ($r !== 0) {
+          cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.').', VERBOSE_INFO);
+          die(1);
+        }
+      }
+    }
+    break;
+  case 'delete-backups':
+  case 'delete-reviews':
+    $files = getexpandlist($config['expandlist']);
+
+    # walk files
+    foreach ($files as $file) {
+      switch ($config['action']) {
+        case 'delete-backups':
+          $filesource = $file.'.el-backup';
+          break;
+        case 'delete-reviews':
+          $filesource = $file.'.el-review';
+          break;
+        default:
+          cl('Unknown action "'.$config['action'].'".', VERBOSE_ERROR);
+          die(1);
+      }
+      if (!file_exists($filesource)) {
+        cl('File does not exist, "'.$filesource.'".', VERBOSE_DEBUG);
+        continue;
+      }
+      cl('Deleting "'.$filesource.'"', VERBOSE_INFO);
+      if ($config['write']) {
+        if (!unlink($filesource)) {
+          cl('Failed deleting "'.$filesource.'".', VERBOSE_ERROR);
+        }
+      }
+    }
+    die(1);
   default:
     cl('Unknown action "'.$config['action'].'"', VERBOSE_ERROR);
+    die(1);
 }
 ?>

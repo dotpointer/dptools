@@ -10,6 +10,7 @@
 # 2018-07-16 22:21:00
 # 2018-07-17 18:19:00 - making log entries multiline
 # 2018-07-18 19:05:00 - using system command to backup, adding mime check
+# 2018-07-18 21:32:00 - adding copy preserve, modified date, line count check
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -31,14 +32,16 @@ $config = array(
   'logwidth' => 80,
   'loglevel' => VERBOSE_OFF,
   'minimumdiff' => 60 * 15,
+  'modifieddate' => false,
+  'modifiedfile' => false,
   'output' => false,
   'verbose' => VERBOSE_ERROR,
   'write' => false
 );
 
-function copy2($src, $dst) {
+function copy_preserve($src, $dst) {
   unset($c, $o, $r);
-  $c = 'cp '.escapeshellarg($src).' '.escapeshellarg($dst);
+  $c = 'cp --preserve '.escapeshellarg($src).' '.escapeshellarg($dst);
   exec($c, $o, $r);
   if ($r !== 0) {
     cl('Failed copying "'.$src.'" to "'.$dst.'": '.implode(" ", $o).' ('.$r.')', VERBOSE_ERROR);
@@ -111,6 +114,22 @@ function cl($s, $level=1) {
   return true;
 }
 
+function getlinecount($file) {
+  # run command
+  unset($c, $o, $r);
+  $c = 'wc -l '.escapeshellarg($file);
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    cl('Failed running "'.$c.'": '.implode(' ', $o).' ('.$r.').', VERBOSE_INFO);
+    die(1);
+  }
+  if (!isset($o[0])) {
+    cl('Failed extracting line amount for "'.$file.'".', VERBOSE_INFO);
+    die(1);
+  }
+  return (int)substr($o[0], 0, strpos($o[0], ' '));
+}
+
 # get argument options
 $opts = getopt(
   'b:c:d:hi:l:m:o:wv:',
@@ -126,6 +145,8 @@ $opts = getopt(
     'linewidth:',
     'logwidth:',
     'minimumdiff:',
+    'modifieddate:',
+    'modifiedfile:',
     'output:',
     'write',
     'verbose:',
@@ -246,6 +267,14 @@ Options:
     0 = off, 1 = errors, 2 = info, 3-4 debug.
     Defaults to 0.
 
+  --modifieddate=<date>
+    Use another file modification date for comparison than the one from the
+    input file.
+
+  --modifiedfile=<file>
+    Use another file modification date for comparison than the one from the
+    input file.
+
   -m <seconds>, --minimumdiff=<seconds>
     Minimum time in seconds between last changelog date and
     file modification date before it appends the file modification date
@@ -283,6 +312,12 @@ Options:
     case 'm': # minimum seconds in diff before appding file modification date
     case 'minimumdiff':
       $config['minimumdiff'] = $value;
+      break;
+    case 'modifieddate':
+      $config['modifieddate'] = strtotime($value);
+      break;
+    case 'modifiedfile':
+      $config['modifiedfile'] = $value;
       break;
     case 'o': # file to work on
     case 'output':
@@ -323,6 +358,9 @@ if (!file_exists($config['input'])) {
   cl('Input file '.$config['input'].' does not exist.');
   die(1);
 }
+
+# get input line count
+$linecountinput = getlinecount($config['input']);
 
 # open the input file
 if (!$f = fopen($config['input'], 'r')) {
@@ -366,7 +404,6 @@ $lastdate = false;
 $lastlinedateline = false;
 $mime = mime_content_type($config['input']);
 $appendlevel = 0;
-$modtime = filemtime($config['input']);
 $prefix = '';
 $shebang = false;
 
@@ -386,9 +423,7 @@ if (
 }
 
 cl('Output file: '.$config['output'].'.', VERBOSE_INFO);
-cl('Backup file: '.($config['backup'] ? 'yes' : 'no').'.', VERBOSE_DEBUG);
 cl('Write changes: '.($config['write'] ? 'yes' : 'no').'.', VERBOSE_INFO);
-cl('Modified: '.date('Y-m-d H:i:s', $modtime).'.', VERBOSE_DEBUG);
 cl('Line limit: '.$config['linelimit'].'.', VERBOSE_DEBUG);
 cl('Line width: '.($config['linewidth'] !== 0 ? $config['linewidth'] : 'no').'.', VERBOSE_DEBUG);
 
@@ -464,7 +499,7 @@ foreach ($lines as $linenr => $line) {
       unset($matches);
       if (
         $appendlevel < 3 &&
-        preg_match("/^\s*(\#*\s*)?changelog\s*$/i", $line, $matches)
+        preg_match("/^(\s*\#*\s*)?changelog\s*$/i", $line, $matches)
       ) {
 
         # next line is append line, no append char and no wrap
@@ -504,7 +539,7 @@ foreach ($lines as $linenr => $line) {
       if (
         $appendlevel <= 4 &&
         preg_match(
-          "/^\s*(?P<prefix>\#*\s*)?".
+          "/^(?P<prefix>\s*\#*\s*)?".
           "(?P<year>[\d|x]{4,})\-".
           "(?P<month>[\d|x]{2})\-".
           "(?P<day>[\d|x]{2})".
@@ -639,14 +674,40 @@ if ($appendlinenr === false) {
   exit;
 }
 
+# no modification date given
+if (!$config['modifieddate']) {
+  # get it from the file
+  $config['modifieddate'] = filemtime($config['input']);
+  if ($config['modifieddate'] === false) {
+    cl('Failed getting modification date from "'.$config['modifiedfile'].'".', VERBOSE_ERROR);
+    die(1);
+  }
+}
+
+# is there a file modification date file specified
+if ($config['modifiedfile']) {
+  cl('Reading modification date from "'.$config['modifiedfile'].'".', VERBOSE_INFO);
+  if (!file_exists($config['modifiedfile'])) {
+    cl('File modification date file does not exist, "'.$config['modifiedfile'].'".', VERBOSE_ERROR);
+    die(1);
+  }
+  $config['modifieddate'] = filemtime($config['modifiedfile']);
+  if ($config['modifieddate'] === false) {
+    cl('Failed getting modification date from "'.$config['modifiedfile'].'".', VERBOSE_ERROR);
+    die(1);
+  }
+}
+
+cl('Modified: '.date('Y-m-d H:i:s', $config['modifieddate']).'.', VERBOSE_DEBUG);
+
 # has last date been found?
 if ($lastdate) {
   $lastdate = strtotime($lastdate);
   cl('Last changelog date: '.date('Y-m-d H:i:s', $lastdate), VERBOSE_DEBUG);
-  $diff = $modtime - $lastdate;
+  $diff = $config['modifieddate'] - $lastdate;
   cl('Difference changelog and modification date: '.$diff.' s.', VERBOSE_DEBUG);
   # is date within interval?
-  if ($diff < $config['minimumdiff']) {
+  if ($diff < $config['minimumdiff'] && $diff >= 0) {
     $appendmodtime = false;
   }
 }
@@ -656,7 +717,7 @@ if ($appendmodtime) {
   cl('Appending file modification date to changelog.', VERBOSE_DEBUG);
   $append[] = array(
     'prefix' => true,
-    'line' => date('Y-m-d H:i:s', $modtime)
+    'line' => date('Y-m-d H:i:s', $config['modifieddate'])
   );
 } else {
   cl('Not appending file modification date to changelog.', VERBOSE_DEBUG);
@@ -783,7 +844,7 @@ if ($config['backup']) {
   # do backup
   cl('Backing up '.$config['input']. ' to '.$copytarget.'.', VERBOSE_INFO);
   if ($config['write']) {
-    if (!copy2($config['input'], $copytarget)) {
+    if (!copy_preserve($config['input'], $copytarget)) {
       cl('Error, failed doing backup of '.$config['input'].' to '.$copytarget.'.', VERBOSE_DEBUG);
       die(1);
     }
@@ -935,6 +996,20 @@ while ($linenr < count($lines) || $linenr <= $appendlinenr) {
 # close file
 if ($config['write']) {
   fclose($f);
+}
+
+# check line count
+cl('Line count in input "'.$config['input'].'": '.$linecountinput.'.', VERBOSE_INFO);
+if ($config['write']) {
+  $linecountoutput = getlinecount($config['output']);
+} else {
+  $linecountoutput = $linecountinput;
+}
+cl('Line count in output "'.$config['output'].'": '.$linecountoutput.'.', VERBOSE_INFO);
+# line count should be equal or more in output
+if ($linecountinput > $linecountoutput) {
+  cl('Line count differ after expand, "'.$config['input'].'", '.$linecountinput.' versus ."'.$config['output'].'", '.$linecountoutput.'.', VERBOSE_ERROR);
+  die(1);
 }
 
 ?>
