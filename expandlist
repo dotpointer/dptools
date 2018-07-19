@@ -6,6 +6,7 @@
 # 2018-07-15 22:17:49 - logging
 # 2018-07-18 19:06:00 - editing inclusion/exclusion, adding actions
 # 2018-07-18 21:32:00 - adding copy preserve, review and delete actions
+# 2018-07-19 18:14:00 - bugfix, unknown files missed space in prefix name
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -513,7 +514,7 @@ switch ($config['action']) {
         if (hastabs($file)) {
           $files[] = '# ?? '.$file;
         } else {
-          $files[] = '# ..'.$file;
+          $files[] = '# .. '.$file;
         }
       }
     }
