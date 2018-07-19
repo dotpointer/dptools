@@ -11,6 +11,7 @@
 # 2018-07-17 18:19:00 - making log entries multiline
 # 2018-07-18 19:05:00 - using system command to backup, adding mime check
 # 2018-07-18 21:32:00 - adding copy preserve, modified date, line count check
+# 2018-07-19 19:25:00 - bugfix, wrong shellscript mime
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -414,7 +415,7 @@ if (
   !in_array(
     $mime,
     array(
-      'text/x-php', 'text/shellscript'
+      'text/x-php', 'text/x-shellscript'
     )
   )
 ) {
