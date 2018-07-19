@@ -21,6 +21,7 @@
 # 2018-06-29 - 16:37:00 - adding commands present in the dptools directory, cleanup
 # 2018-06-29 - 17:45:00 - rename from dp console setup.sh to dptools-console-init
 # 2018-07-18 - 22:27:00 - updating colors and prompt
+# 2018-07-19 - 17:13:00 - editing aliases, colors, prompt, setup script place
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -64,7 +65,6 @@ alias dnsreload='killall dnsmasq -s SIGHUP';
 alias dos2unix='dos2unix -k'
 alias edit='jed';
 alias edt='edit';
-# aliases
 alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
 # alias funk="function gd() { echo $1; } gd;";
 alias glance='glances';
@@ -105,8 +105,8 @@ alias q='exit';
 alias reboot='reboot';
 alias reprofile='source ~/.profile';
 alias restart='reboot';
-alias ssh='ssh -C';
 alias smesg='cat /var/log/syslog';
+alias ssh='ssh -C';
 alias tail='tail -n30';
 # alias time='date +"%n DATE: %Y-%m-%d%n TIME: %H:%M:%S%n"';
 alias tlist='ps';
@@ -121,7 +121,6 @@ alias vmlistusb='vboxmanage list usbhost';
 alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vwdial="wvdial";
-
 
 # this will not work when xsession/mdm tries to read the config
 # it does not understand functions
@@ -141,112 +140,219 @@ else
 	# fallback to red
 	COLOR_MARKER_TEMP_NUMBER=13;
 fi
-:
 
-# color constants for the prompt, beware, here are escaped special characters
-#COLOR_BLK="\[[0;30m\]";
-#COLOR_RED="\[[0;31m\]";
-#COLOR_GRE="\[[0;32m\]";
-#COLOR_YEL="\[[0;33m\]";
-#COLOR_BLU="\[[0;34m\]";
-#COLOR_MAG="\[[0;35m\]";
-#COLOR_CYA="\[[0;36m\]";
-#COLOR_BLD="\[[0;37m\]";
-#COLOR_WHT="\[[1;30m\]";
-#COLOR_HBK="\[[1;31m\]";
-#COLOR_HGR="\[[1;32m\]";
-#COLOR_HYE="\[[1;33m\]";
-#COLOR_HBL="\[[1;34m\]";
-#COLOR_HMA="\[[1;35m\]";
-#COLOR_HCY="\[[1;36m\]";
-#COLOR_HWH="\[[1;37m\]";
-
+# color constants with special characters
+# these work almost, but it messes up red on root
+#PCOLOR_BLK="\[[0;30m\]";
+#PCOLOR_BRD="\[[0;31m\]";
+#PCOLOR_BGN="\[[0;32m\]";
+#PCOLOR_BYW="\[[0;33m\]";
+#PCOLOR_BBE="\[[0;34m\]";
+#PCOLOR_BPE="\[[0;35m\]";
+#PCOLOR_BCN="\[[0;36m\]";
+#PCOLOR_BWT="\[[0;37m\]";
+#PCOLOR_BWT="\[[1;30m\]";
+#PCOLOR_HBK="\[[1;31m\]";
+#PCOLOR_BGN="\[[1;32m\]";
+#PCOLOR_BYW="\[[1;33m\]";
+#PCOLOR_BBK="\[[1;34m\]";
+#PCOLOR_BPE="\[[1;35m\]";
+#PCOLOR_BCN="\[[1;36m\]";
+#PCOLOR_BWT="\[[1;37m\]";
 
 # more color constants
-#COLOR_BLK='\033[30m'
-#COLOR_WHT='\033[0;30;1m'
-#COLOR_RED='\033[31m'
+# unescaped, makes prompt longer than it is with wrapping
+#PCOLOR_BLK='\033[30m'
+#PCOLOR_BWT='\033[0;30;1m'
+#PCOLOR_BRD='\033[31m'
 #COLOR_HBK='\033[0;31;1m'
-#COLOR_GRE='\033[32m'
-#COLOR_HGR='\033[0;32;1m'
-#COLOR_YEL='\033[33m'
-#COLOR_HYE='\033[0;33;1m'
-#COLOR_BLU='\033[34m'
-#COLOR_HBL='\033[0;34;1m'
-#COLOR_MAG='\033[35m'
-#COLOR_HMA='\033[0;35;1m'
-#COLOR_CYA='\033[36m'
-#COLOR_HCY='\033[0;36;1m'
-#COLOR_BLD='\033[37m'
-#COLOR_HWH='\033[0;37;1m'
+#PCOLOR_BGN='\033[32m'
+#PCOLOR_BGN='\033[0;32;1m'
+#PCOLOR_BYW='\033[33m'
+#PCOLOR_BYW='\033[0;33;1m'
+#PCOLOR_BBE='\033[34m'
+#PCOLOR_BBK='\033[0;34;1m'
+#PCOLOR_BPE='\033[35m'
+#PCOLOR_BPE='\033[0;35;1m'
+#PCOLOR_BCN='\033[36m'
+#PCOLOR_BCN='\033[0;36;1m'
+#PCOLOR_BWT='\033[37m'
+#PCOLOR_BWT='\033[0;37;1m'
 
-# yet more color constants
-COLOR_BLK="[0;30m"
-COLOR_RED="[0;31m"
-COLOR_GRE="[0;32m"
-COLOR_YEL="[0;33m"
-COLOR_BLU="[0;34m"
-COLOR_MAG="[0;35m"
-COLOR_CYA="[0;36m"
-COLOR_BLD="[0;37m"
-COLOR_WHT="[1;30m"
-COLOR_HBK="[1;31m"
-COLOR_HGR="[1;32m"
-COLOR_HYE="[1;33m"
-COLOR_HBL="[1;34m"
-COLOR_HMA="[1;35m"
-COLOR_HCY="[1;36m"
-COLOR_HWH="[1;37m"
+# color constants
+# these are unescaped and makes bash believe that
+# the prompt is longer than it is
+#PCOLOR_BLK="[0;30m"
+#PCOLOR_BRD="[0;31m"
+#PCOLOR_BGN="[0;32m"
+#PCOLOR_BYW="[0;33m"
+#PCOLOR_BBE="[0;34m"
+#PCOLOR_BPE="[0;35m"
+#PCOLOR_BCN="[0;36m"
+#PCOLOR_BWT="[0;37m"
+#PCOLOR_BWT="[1;30m"
+#PCOLOR_HBK="[1;31m"
+#PCOLOR_BGN="[1;32m"
+#PCOLOR_BYW="[1;33m"
+#PCOLOR_BBK="[1;34m"
+#PCOLOR_BPE="[1;35m"
+#PCOLOR_BCN="[1;36m"
+#PCOLOR_BWT="[1;37m"
+
+#PCOLOR_BLK="\001\033[00;30m\002";
+#PCOLOR_BRD="\001\033[00;31m\002";
+#PCOLOR_BGN="\001\033[00;32m\002";
+#PCOLOR_BYW="\001\033[00;33m\002";
+#PCOLOR_BBE="\001\033[00;34m\002";
+#PCOLOR_BPE="\001\033[00;35m\002";
+#PCOLOR_BCN="\001\033[00;36m\002";
+#PCOLOR_BWT="\001\033[00;37m\002";
+#PCOLOR_BWT="\001\033[01;30m\002";
+#PCOLOR_BRD="\001\033[01;31m\002";
+#PCOLOR_BGN="\001\033[01;32m\002";
+#PCOLOR_BYW="\001\033[01;33m\002";
+#PCOLOR_BBK="\001\033[01;34m\002";
+#PCOLOR_BPE="\001\033[01;35m\002";
+#PCOLOR_BCN="\001\033[01;36m\002";
+#PCOLOR_BWT="\001\033[01;37m\002";
+
+# black 30
+# red 31
+# green 32
+# yellow 33
+# blue 34
+# purple 35
+# cyan 36
+# white 37
+
+# use \001 instead of \[, and \033 instead of \e (escape)
+# when echoing in scripts, do unescaped, when echoing in prompt
+# do escaped
+# 001-002 is needed within PS1 and within functions for prompt
+# but prints garbage when echoing in scripts
+
+# normal unescaped colors for echo
+COLOR_NBK="\033[00;30m";
+COLOR_NRD="\033[00;31m";
+COLOR_NGN="\033[00;32m";
+COLOR_NYW="\033[00;33m";
+COLOR_NBE="\033[00;34m";
+COLOR_NPE="\033[00;35m";
+COLOR_NCN="\033[00;36m";
+COLOR_NWT="\033[00;37m";
+
+# bold unescaped colors for echo
+COLOR_BBK="\033[01;30m";
+COLOR_BRD="\033[01;31m";
+COLOR_BGN="\033[01;32m";
+COLOR_BYW="\033[01;33m";
+COLOR_BBE="\033[01;34m";
+COLOR_BPE="\033[01;35m";
+COLOR_BCN="\033[01;36m";
+COLOR_BWT="\033[01;37m";
+
+# normal prompt colors
+PCOLOR_NBK="\001\033[00;30m\002";
+PCOLOR_NRD="\001\033[00;31m\002";
+PCOLOR_NGN="\001\033[00;32m\002";
+PCOLOR_NYW="\001\033[00;33m\002";
+PCOLOR_NBE="\001\033[00;34m\002";
+PCOLOR_NPE="\001\033[00;35m\002";
+PCOLOR_NCN="\001\033[00;36m\002";
+PCOLOR_NWT="\001\033[00;37m\002";
+
+# bold prompt colors
+PCOLOR_BBK="\001\033[01;30m\002";
+PCOLOR_BRD="\001\033[01;31m\002";
+PCOLOR_BGN="\001\033[01;32m\002";
+PCOLOR_BYW="\001\033[01;33m\002";
+PCOLOR_BBE="\001\033[01;34m\002";
+PCOLOR_BPE="\001\033[01;35m\002";
+PCOLOR_BCN="\001\033[01;36m\002";
+PCOLOR_BWT="\001\033[01;37m\002";
+RESET="\001\033[0;00m\002"
+
+# color test
+#echo -e "${COLOR_NBK}normal black"
+#echo -e "${COLOR_NRD}normal red"
+#echo -e "${COLOR_NGN}normal green"
+#echo -e "${COLOR_NYW}normal yellow"
+#echo -e "${COLOR_NBE}normal blue"
+#echo -e "${COLOR_NCN}normal cyan"
+#echo -e "${COLOR_NWT}normal white"
+
+#echo -e "${COLOR_BBK}bold black"
+#echo -e "${COLOR_BRD}bold red"
+#echo -e "${COLOR_BGN}bold green"
+#echo -e "${COLOR_BYW}bold yellow"
+#echo -e "${COLOR_BBE}bold blue"
+#echo -e "${COLOR_BCN}bold cyan"
+#echo -e "${COLOR_BWT}bold white"
 
 # translate selected marker color number to real color
 case $COLOR_MARKER_TEMP_NUMBER in
 	0 )
-		COLOR_MARKER="$COLOR_WHT" # black shows nothing
+		COLOR_MARKER="$PCOLOR_BWT"; # black shows nothing
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	1 )
-		COLOR_MARKER="$COLOR_BLD"
+		COLOR_MARKER="$PCOLOR_BWT";
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	2 )
-		COLOR_MARKER="$COLOR_GRE"
+		COLOR_MARKER="$PCOLOR_BGN";
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	3 )
-		COLOR_MARKER="$COLOR_YEL"
+		COLOR_MARKER="$PCOLOR_BYW";
+		COLOR_NOTICE="$PCOLOR_BBE";
 		;;
 	4 )
-		COLOR_MARKER="$COLOR_BLU"
+		COLOR_MARKER="$PCOLOR_BBE";
+		COLOR_NOTICE="$PCOLOR_BYW";
 		;;
 	5 )
-		COLOR_MARKER="$COLOR_MAG"
+		COLOR_MARKER="$PCOLOR_BPE";
+		COLOR_NOTICE="$PCOLOR_BCN";
 		;;
 	6 )
-		COLOR_MARKER="$COLOR_CYA"
+		COLOR_MARKER="$PCOLOR_BCN";
+		COLOR_NOTICE="$PCOLOR_BPE";
 		;;
 	7 )
-		COLOR_MARKER="$COLOR_RED"
+		COLOR_MARKER="$PCOLOR_BRD";
+		COLOR_NOTICE="$PCOLOR_BGN";
 		;;
 	8 )
-		COLOR_MARKER="$COLOR_WHT"
+		COLOR_MARKER="$PCOLOR_BWT";
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	9 )
-		COLOR_MARKER="$COLOR_HBK"
+		COLOR_MARKER="$PCOLOR_BRD";
+		COLOR_NOTICE="$PCOLOR_BGN";
 		;;
 	10 )
-		COLOR_MARKER="$COLOR_HGR"
+		COLOR_MARKER="$PCOLOR_BGN";
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	11 )
-		COLOR_MARKER="$COLOR_HYE"
+		COLOR_MARKER="$PCOLOR_BYW";
+		COLOR_NOTICE="$PCOLOR_BBE";
 		;;
 	12 )
-		COLOR_MARKER="$COLOR_HBL"
+		COLOR_MARKER="$PCOLOR_BBK";
+		COLOR_NOTICE="$PCOLOR_BRD";
 		;;
 	13 )
-		COLOR_MARKER="$COLOR_HMA"
+		COLOR_MARKER="$PCOLOR_BPE";
+		COLOR_NOTICE="$PCOLOR_BCN";
 		;;
 	14 )
-		COLOR_MARKER="$COLOR_HCY"
+		COLOR_MARKER="$PCOLOR_BCN";
+		COLOR_NOTICE="$PCOLOR_BPE";
 		;;
 	15 )
-		COLOR_MARKER="$COLOR_HWH"
+		COLOR_MARKER="$PCOLOR_BWT"
 		;;
 esac
 
@@ -257,31 +363,57 @@ parse_git_branch() {
 	# not empty?
 	if [[ ! -z $DATA ]]; then
 		# write branch
-		# color not working in here, breaks prompt
-		echo ":${COLOR_HWH}${DATA}";
+		# important for colors is -e
+		# \001-\002 escape gives garbage on numeric branch names
+		# no escape makes bash think prompt is longer than it is
+		# \[-\] escape adds \[\[ to the beginning of the string
+		echo -e "${DATA}";
+	else
+		echo "\$";
 	fi
 }
 
-getuser() {
+getu() {
 	if [[ $USER == "root" ]]; then
-		echo "$COLOR_RED$USER";
+		# prompt color gives garbage on numeric texts
+		# same here, a numeric username will give garbage characters
+		# around the username
+		echo -e "${COLOR_NOTICE}${USER}";
 	else
-		echo "$USER";
+		echo -e "${USER}";
+	fi
+}
+
+
+getw() {
+	if [[ ${#PWD} -ge 30 ]]; then
+		TMP=$(echo $PWD|rev);
+		TMP=$(echo ${TMP:0:27}|rev);
+		TMP="...$TMP";
+		echo $TMP;
+	else
+		echo $PWD;
 	fi
 }
 
 # setup the prompt with colors, slash at $() is very important, otherwise
 # it won't run it every time
-PS1="${COLOR_MARKER}<${COLOR_HWH}\t${COLOR_MARKER}|${COLOR_HWH}\$(getuser)";
-PS1+="${COLOR_MARKER}@${COLOR_HWH}\h${COLOR_MARKER}:${COLOR_HWH}\w${COLOR_MARKER}";
-PS1+="\$(parse_git_branch)";
-PS1+="${COLOR_MARKER}>${COLOR_HWH} ";
+PS1="${COLOR_MARKER}<${PCOLOR_BWT}\t${COLOR_MARKER}|${PCOLOR_BWT}\$(getu)";
+PS1+="${COLOR_MARKER}@${PCOLOR_BWT}\h${COLOR_MARKER}:${PCOLOR_BWT}\$(getw)${COLOR_MARKER}";
+PS1+=":${PCOLOR_BWT}\$(parse_git_branch)";
+PS1+="${COLOR_MARKER}>${PCOLOR_BWT} ";
 export PS1=$PS1
-
 
 # is there a customization script to run too?
 # -x for executable did not work when /var/scripts is a symlink
 # so we try -e
-if [ -e /var/scripts/dp_console_setup_customization.sh ]; then
-	. /var/scripts/dp_console_setup_customization.sh
+
+# global version
+if [ -e /etc/dptools/dptools-console-init ]; then
+	. /etc/dptools/dptools-console-init
+fi
+
+# single user version
+if [ -e $HOME/.dptools-console-init ]; then
+        . $HOME/.dptools-console-init
 fi
