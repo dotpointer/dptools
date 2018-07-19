@@ -18,7 +18,7 @@
 #{
 #        "publish": {
 #                "source": "/source/",
-#                "target": "/target/",
+#                "target": "/target/ - or set to false if not applicable",
 #                "checks": {
 ##                       check for non-UNIX line endings
 #                        "lineendingunix": {
@@ -83,6 +83,7 @@
 # 2017-02-12 02:12:57 - rewriting checks, adding checks part to config
 # 2017-02-12 19:51:24
 # 2018-06-29 15:28:00 - cleanup
+# 2018-07-19 17:28:00 - adding support for empty target directory
 
 function progressbar($part, $total) {
 
@@ -251,17 +252,27 @@ if (!isset(
 # make sure source and target dir is filled in and ends with slashes
 if (
 	!strlen($config['publish']['source']) ||
-	!strlen($config['publish']['target']) ||
-	substr($config['publish']['source'], -1) !== '/' ||
-	substr($config['publish']['target'], -1) !== '/'
+	substr($config['publish']['source'], -1) !== '/'
 ) {
-	echo 'Source or target dir is not entered or does not end with / slash in config file '.$configfile."\n";
+	echo 'Source dir is empty or does not end with / slash in config file '.$configfile."\n";
+	die(1);
+}
+
+if (
+    $config['publish']['target'] !== false &&
+	(
+      !strlen($config['publish']['target']) ||
+      substr($config['publish']['target'], -1) !== '/'
+    )
+) {
+	echo 'Target dir is entered (not false) and is empty or does not end with / slash in config file '.$configfile."\n";
 	die(1);
 }
 
 # make sure source and target are dirs
 if (
-	!is_dir($config['publish']['source'])||
+	!is_dir($config['publish']['source']) ||
+	$config['publish']['target'] !== false &&
 	!is_dir($config['publish']['target'])
 ) {
 	echo 'Source dir or target dir is not a full dir path in config file '.$configfile.'.'."\n";
@@ -308,7 +319,7 @@ if (isset($config['publish']['checks'])) {
 
 	# if line ending non-unix checks are enabled
 	if ($lineendingunix) {
-		$lineendingunix['fileextensions'] = explode(',', $lineendingunix['fileextensions']);
+		$lineendingunix['fileextensions'] = isset($lineendingunix['fileextensions']) ? explode(',', $lineendingunix['fileextensions']) : array();
 		$lineendingunix['ignorepatterns'] = isset($lineendingunix['ignorepatterns']) ? explode(',', $lineendingunix['ignorepatterns']) : array();
 		echo 'Check enabled, non-UNIX line endings: '.implode(', ', $lineendingunix['fileextensions'])."\n";
 
@@ -396,14 +407,18 @@ if (isset($config['publish']['checks'])) {
 		echo 'Check enabled, git dirty files'."\n";
 	}
 
-	echo 'Finding files with extensions matching '.implode(', ', $exts).'...';
+	if (count($exts)) {
+      echo 'Finding files with extensions matching '.implode(', ', $exts).'...';
 
-	foreach ($exts as $k => $v) {
-		$exts[$k] = escapeshellarg('*.'.$v);
-	}
+      foreach ($exts as $k => $v) {
+          $exts[$k] = escapeshellarg('*.'.$v);
+      }
 
-	$c = 'find '.escapeshellarg($config['publish']['source']).' -type f \( -iname '.implode(' -o -iname ',$exts ).' \)';
-
+      $c = 'find '.escapeshellarg($config['publish']['source']).' -type f \( -iname '.implode(' -o -iname ',$exts ).' \)';
+    } else {
+      echo 'Finding files matching anything except ignore pattern...';
+      $c = 'find '.escapeshellarg($config['publish']['source']).' -type f';
+    }
 	$files = shell_exec($c);
 	if (!$files) {
 		echo 'No files found.';
@@ -678,7 +693,9 @@ echo 'Publishing '.$config['publish']['source'].' -> '.$config['publish']['targe
 foreach ($config['publish']['commands'] as $c) {
 	# fill placeholders in the command
 	$c = str_replace('$SOURCE$', escapeshellarg($config['publish']['source']), $c);
-	$c = str_replace('$TARGET$', escapeshellarg($config['publish']['target']), $c);
+	if ($config['publish']['target'] !== false) {
+      $c = str_replace('$TARGET$', escapeshellarg($config['publish']['target']), $c);
+    }
 
 	# run the command
 	unset($r);
