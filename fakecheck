@@ -9,49 +9,51 @@
 # 2017-09-29 23:40:00
 # 2017-09-30 00:28:12
 # 2018-06-28 17:12:00 - cleanup
+# 2018-06-28 18:08:27
+# 2018-07-19 19:29:31 - indentation change, tab to 2 spaces
 
 function progressbar($part, $total) {
 
-	# character length for progress bar
-	$pb_length = 10;
+  # character length for progress bar
+  $pb_length = 10;
 
-	# calculate the part
-	$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
-	# calculate the total
-	$pb_total = $pb_length;
+  # calculate the part
+  $pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
+  # calculate the total
+  $pb_total = $pb_length;
 
-	return
-		'['.
-		str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
+  return
+    '['.
+    str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
 
-		($part < $total && $pb_part > 0 ? '>' : '').
+    ($part < $total && $pb_part > 0 ? '>' : '').
 
-		str_repeat('.', $pb_total - $pb_part).
-		'] '.
-		# the first number is the actual amount of characters in the
-		# resulting string, and we want 000.000, so that's 7
-		sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
-		'% '.
-		str_pad($part, strlen($total), '0', STR_PAD_LEFT).
-		'/'.
-		$total.
-		' '
-		;
+    str_repeat('.', $pb_total - $pb_part).
+    '] '.
+    # the first number is the actual amount of characters in the
+    # resulting string, and we want 000.000, so that's 7
+    sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
+    '% '.
+    str_pad($part, strlen($total), '0', STR_PAD_LEFT).
+    '/'.
+    $total.
+    ' '
+    ;
 }
 
 $file = isset($argv[1]) ? $argv[1] : false;
 
 if ($file === false) {
-	fwrite(STDERR, 'File must be specified.'."\n");
-	die(1);
+  fwrite(STDERR, 'File must be specified.'."\n");
+  die(1);
 }
 
 $size = filesize($file);
 
 $f = fopen($file, 'r');
 if (!$f) {
-	fwrite(STDERR, 'Failed opening: '.$file."\n");
-	die(1);
+  fwrite(STDERR, 'Failed opening: '.$file."\n");
+  die(1);
 }
 
 $chars_read = 0;
@@ -59,27 +61,27 @@ $chars_read = 0;
 $line = '';
 while (false !== ($c = fgets($f, 4096))) {
 
-	$line = progressbar($chars_read, $size).'scanning "'.$file.'"';
-	fwrite(STDERR, $line."\r");
+  $line = progressbar($chars_read, $size).'scanning "'.$file.'"';
+  fwrite(STDERR, $line."\r");
 
-	$found = false;
-	for ($i = 0; $i < strlen($c); $i++){
-		if ($c[$i] !== chr(0)) {
-			$found = true;
-			break;
-		}
-	}
+  $found = false;
+  for ($i = 0; $i < strlen($c); $i++){
+    if ($c[$i] !== chr(0)) {
+      $found = true;
+      break;
+    }
+  }
 
-	if (!$found) {
-		$chars_read += strlen($c);
-		continue;
-	}
+  if (!$found) {
+    $chars_read += strlen($c);
+    continue;
+  }
 
-	# close file
-	fclose($f);
-	fwrite(STDERR, str_repeat(' ', strlen($line))."\r");
-	fwrite(STDERR, 'Found non-null data on byte '.$chars_read.' of '.$size.' in "'.$file.'"'."\n");
-	die(0);
+  # close file
+  fclose($f);
+  fwrite(STDERR, str_repeat(' ', strlen($line))."\r");
+  fwrite(STDERR, 'Found non-null data on byte '.$chars_read.' of '.$size.' in "'.$file.'"'."\n");
+  die(0);
 }
 
 fclose($f);

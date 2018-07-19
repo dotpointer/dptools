@@ -10,6 +10,8 @@
 # 2016-11-30 22:38:00 - adding last modified date display when not found
 # 2016-12-05 23:42:00 - adding clearstatcache between reading and resetting phases
 # 2018-06-28 16:15:00 - cleanup
+# 2018-06-28 18:03:58
+# 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 
 # phase 1 - read the dates and files
 
@@ -33,26 +35,26 @@ echo "Reading and remembering dates:\n";
 
 # try open dir
 if ($handle = opendir($path)) {
-	# walk dir contents
-	while (false !== ($file = readdir($handle))) {
-		# if no file, go next
+  # walk dir contents
+  while (false !== ($file = readdir($handle))) {
+    # if no file, go next
 
-		# echo $file;
-		if ($file == "." || $file == ".." || !is_file($file)) {
-			continue;
-		}
+    # echo $file;
+    if ($file == "." || $file == ".." || !is_file($file)) {
+      continue;
+    }
 
-		$mdate = filemtime($file);
+    $mdate = filemtime($file);
 
-		echo  date('Y-m-d H:i:s', $mdate).' - '.$file."\n";
+    echo  date('Y-m-d H:i:s', $mdate).' - '.$file."\n";
 
-		# do file array
-		$this_file = array(FILE_NAME=>$file, FILE_STATUS=>FILE_STATUS_UNCHANGED, FILE_DATE_MODIFIED=>$mdate);
+    # do file array
+    $this_file = array(FILE_NAME=>$file, FILE_STATUS=>FILE_STATUS_UNCHANGED, FILE_DATE_MODIFIED=>$mdate);
 
-		# add file to array
-		$files[] = $this_file;
-	}
-	closedir($handle);
+    # add file to array
+    $files[] = $this_file;
+  }
+  closedir($handle);
 }
 
 echo 'Ready, press any key to reset dates...';
@@ -66,33 +68,33 @@ echo 'Resetting the dates, if needed:'."\n";
 # walk files
 foreach ($files as $file) {
 
-		# does file exist
-		if (file_exists($file[FILE_NAME])) {
-			$date_modified_now = filemtime($file[FILE_NAME]);
+    # does file exist
+    if (file_exists($file[FILE_NAME])) {
+      $date_modified_now = filemtime($file[FILE_NAME]);
 
-			# is date unchanged
-			if ($date_modified_now == $file[FILE_DATE_MODIFIED]) {
-				$status='NO CHANGE';
-			# or has it changed
-			} else {
-				#try touching/setting date
-				if (touch($file[FILE_NAME], $file[FILE_DATE_MODIFIED])) {
-					$status='DATE SET';
-				# if touching failed
-				} else {
-					$status='DATE FAILED';
-				}
-			}
-		} else {
-			$status='NOT FOUND ('.$file[FILE_DATE_MODIFIED].')';
-		}
+      # is date unchanged
+      if ($date_modified_now == $file[FILE_DATE_MODIFIED]) {
+        $status='NO CHANGE';
+      # or has it changed
+      } else {
+        #try touching/setting date
+        if (touch($file[FILE_NAME], $file[FILE_DATE_MODIFIED])) {
+          $status='DATE SET';
+        # if touching failed
+        } else {
+          $status='DATE FAILED';
+        }
+      }
+    } else {
+      $status='NOT FOUND ('.$file[FILE_DATE_MODIFIED].')';
+    }
 
-		$status=str_pad($status, 16, ' ');
-		echo $status.$file[FILE_NAME];
-		if (strpos($status, 'DATE SET') !== false) {
-			echo ' ('.date('Y-m-d H:i:s', $date_modified_now).' -> '.date('Y-m-d H:i:s', $file[FILE_DATE_MODIFIED]).')';
-		}
-		echo "\n";
+    $status=str_pad($status, 16, ' ');
+    echo $status.$file[FILE_NAME];
+    if (strpos($status, 'DATE SET') !== false) {
+      echo ' ('.date('Y-m-d H:i:s', $date_modified_now).' -> '.date('Y-m-d H:i:s', $file[FILE_DATE_MODIFIED]).')';
+    }
+    echo "\n";
 
 }
 ?>

@@ -8,62 +8,63 @@
 # changelog
 # 2017-02-07 11:50:00 - initial version
 # 2018-06-28 17:34:00
+# 2018-07-19 19:29:31 - indentation change, tab to 2 spaces
 
 $filename = isset($argv[1]) ? $argv[1] : false;
 $string = isset($argv[2]) ? $argv[2] : false;
 if ($filename === '--help') {
 ?>
 Usage:
-	<?php echo basename(__FILE__); ?> <filename> [optional/tree/path]
+  <?php echo basename(__FILE__); ?> <filename> [optional/tree/path]
 <?php
-	die(0);
+  die(0);
 }
 
 if ($filename === false) {
-	echo 'No filename specified.'."\n";
-	die(1);
+  echo 'No filename specified.'."\n";
+  die(1);
 }
 
 if (!file_exists($filename)) {
-	echo 'File not found: '.$filename."\n";
-	die(1);
+  echo 'File not found: '.$filename."\n";
+  die(1);
 }
 
 $data = file_get_contents($filename);
 
 if (!$data) {
-	echo 'No data could be read from file.'."\n";
-	die(1);
+  echo 'No data could be read from file.'."\n";
+  die(1);
 }
 
 $data = json_decode($data, true);
 if ($data === null) {
-	echo 'Failed decoding JSON.'."\n";
-	die(1);
+  echo 'Failed decoding JSON.'."\n";
+  die(1);
 }
 
 if ($string) {
-	$keys = explode('/', $string);
+  $keys = explode('/', $string);
 
-	$reached = array();
+  $reached = array();
 
-	do {
-		$key = array_shift($keys);
-		if ($key !== NULL) {
-			$reached[] = $key;
-			if (!isset($data[$key])) {
-				echo 'No key '.$key.' found, path: '.implode('/', $reached)."\n";
-				die(1);
-			}
-			$data = $data[$key];
-		}
-	} while($key !== NULL);
+  do {
+    $key = array_shift($keys);
+    if ($key !== NULL) {
+      $reached[] = $key;
+      if (!isset($data[$key])) {
+        echo 'No key '.$key.' found, path: '.implode('/', $reached)."\n";
+        die(1);
+      }
+      $data = $data[$key];
+    }
+  } while($key !== NULL);
 }
 
 $data = json_encode($data, JSON_PRETTY_PRINT);
 if ($data === null) {
-		echo 'Failed re-encoding JSON.'."\n";
-		die(1);
+    echo 'Failed re-encoding JSON.'."\n";
+    die(1);
 }
 
 echo $data."\n";

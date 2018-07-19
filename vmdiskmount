@@ -7,11 +7,12 @@
 # changelog
 # 2014-10-01 12:09:00
 # 2018-06-29 16:31:00 - cleanup
+# 2018-07-19 19:29:34 - indentation change, tab to 2 spaces
 
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-	echo "VM name and path to device (/dev/example or 'none') must be given.";
-	exit 1
+  echo "VM name and path to device (/dev/example or 'none') must be given.";
+  exit 1
 fi
 
 VBoxManage storageattach "$1" --storagectl "IDE Controller" --port 1 --device 0 --type hdd --medium $2

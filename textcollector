@@ -13,6 +13,8 @@
 # 2014-10-25 21:10:00 - update
 # 2014-10-25 21:21:19
 # 2018-06-29 15:56:00 - cleanup
+# 2018-06-29 17:34:09
+# 2018-07-19 19:29:33 - indentation change, tab to 2 spaces
 
 date_default_timezone_set('Europe/Stockholm');
 
@@ -23,36 +25,36 @@ $rootpath = './';
 $c = 'find '.escapeshellarg($rootpath).' -type f -iname "*.txt"';
 exec($c, $o, $r);
 if ($r !== 0) {
-	die('Could not do find.');
+  die('Could not do find.');
 
 $files = $o;
 
 foreach ($files as $file) {
-	# get contents
-	$contents = file_get_contents($file);
+  # get contents
+  $contents = file_get_contents($file);
 
-	# make sure we get all
-	if ($contents === false) {
-		die('Failed reading: '.$file);
-	}
+  # make sure we get all
+  if ($contents === false) {
+    die('Failed reading: '.$file);
+  }
 
-	$contents = utf8_encode($contents);
+  $contents = utf8_encode($contents);
 
-	# make header
-	$header = trim(implode(" / ", explode("/", substr($file, 2))   ).' - '.date('Y-m-d H:i:s', filemtime($file)));
+  # make header
+  $header = trim(implode(" / ", explode("/", substr($file, 2))   ).' - '.date('Y-m-d H:i:s', filemtime($file)));
 
-	# print header
-	echo $header."\n";
+  # print header
+  echo $header."\n";
 
-	# print line below header
-	echo str_repeat('-', strlen($header))."\n\n";
+  # print line below header
+  echo str_repeat('-', strlen($header))."\n\n";
 
-	# get and print file contents
-	echo trim($contents)."\n\n";
+  # get and print file contents
+  echo trim($contents)."\n\n";
 
-		# shall file be deleted?
-	if ($delete) {
-			unlink($file);
-	}
+    # shall file be deleted?
+  if ($delete) {
+      unlink($file);
+  }
 }
 ?>

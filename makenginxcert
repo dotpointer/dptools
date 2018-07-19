@@ -8,22 +8,23 @@
 # 2014-11-02 14:48:43
 # 2015-09-02 19:12:44 - cleanup
 # 2018-06-28 18:22:00 - cleanup
+# 2018-07-19 19:29:31 - indentation change, tab to 2 spaces
 
 KEYFILE="/etc/nginx/certs/server.key";
 CERTFILE="/etc/nginx/certs/server.crt";
 
 if [[ $1 == "--help" ]]; then
-	echo "Usage: $(basename $0) keyfile certfile"
-	echo "If not specified, keyfile=$KEYFILE, certfile=$CERTFILE";
-	exit;
+  echo "Usage: $(basename $0) keyfile certfile"
+  echo "If not specified, keyfile=$KEYFILE, certfile=$CERTFILE";
+  exit;
 fi
 
 if [[ -n $1 ]]; then
-	KEYFILE=$1;
+  KEYFILE=$1;
 fi
 
 if [[ -n $2 ]]; then
-	CERTFILE=$2;
+  CERTFILE=$2;
 fi
 
 echo "KEY will be in : $KEYFILE";

@@ -22,61 +22,63 @@
 # 2016-12-27 19:14:42 - renaming file from backup_databases to backup-databases
 # 2018-06-28 13:20:00 - minor cleanup
 # 2018-06-28 15:43:00 - description edit
+# 2018-06-28 16:00:49
+# 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 
 # debug printing
 function cl($s, $level = 1) {
-	global $config;
+  global $config;
 
-	# do not log passwords from mountcifs
-	$s = preg_replace('/--password=\".*\"/', 'password="*****"', $s);
+  # do not log passwords from mountcifs
+  $s = preg_replace('/--password=\".*\"/', 'password="*****"', $s);
 
-	# find out level of verbosity
-	switch ($level) {
-		case VERBOSE_ERROR:
-			$l = 'E';
-			break;
-		case VERBOSE_INFO:
-			$l = 'I';
-			break;
-		case VERBOSE_DEBUG:
-			$l = 'D';
-			break;
-	}
-	$s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
+  # find out level of verbosity
+  switch ($level) {
+    case VERBOSE_ERROR:
+      $l = 'E';
+      break;
+    case VERBOSE_INFO:
+      $l = 'I';
+      break;
+    case VERBOSE_DEBUG:
+      $l = 'D';
+      break;
+  }
+  $s = '['.date('Y-m-d H:i:s').' '.$l.'] '.$s."\n";
 
-	# is verbosity on and level is enough?
-	if ($config['verbose'] && $config['verbose'] >= $level) echo $s;
+  # is verbosity on and level is enough?
+  if ($config['verbose'] && $config['verbose'] >= $level) echo $s;
 
-	# is loglevel on and level is enough - the try to append to log
-	if ($config['loglevel'] && $config['loglevel'] >= $level && $f = fopen($config['file_log'], 'a')) {
-		fwrite($f, $s);
-		fclose($f);
-	}
+  # is loglevel on and level is enough - the try to append to log
+  if ($config['loglevel'] && $config['loglevel'] >= $level && $f = fopen($config['file_log'], 'a')) {
+    fwrite($f, $s);
+    fclose($f);
+  }
 
-	return true;
+  return true;
 }
 
 # to remove comments
 function remove_comments($s) {
-	$s = explode("\n", $s);
-	foreach ($s as $k => $v) {
-			$s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
-	}
-	return implode("\n", $s);
+  $s = explode("\n", $s);
+  foreach ($s as $k => $v) {
+      $s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+  return implode("\n", $s);
 }
 
 # --- main
 
 #make sure all extensions are loaded
 if (!function_exists('json_decode')) {
-	echo 'JSON extension is not loaded, make sure it is installed and in php.ini'."\n";
-	die(1);
+  echo 'JSON extension is not loaded, make sure it is installed and in php.ini'."\n";
+  die(1);
 }
 
 # make sure mysql functions are available
 if (!function_exists('mysqli_error')) {
-	echo 'MySQLi extension is not loaded, make sure it is installed and in php.ini, or that mysql_* functions are available through shim library'."\n";
-	die(1);
+  echo 'MySQLi extension is not loaded, make sure it is installed and in php.ini, or that mysql_* functions are available through shim library'."\n";
+  die(1);
 }
 
 # verbosity
@@ -88,47 +90,47 @@ define('VERBOSE_DEBUG', 3);
 $stopafterdump = false;
 
 $config = array(
-	'file_config' => '/etc/dptools/backup-databases',
-	'dir_include' => ''
+  'file_config' => '/etc/dptools/backup-databases',
+  'dir_include' => ''
 );
 
 # get arguments
 $arguments = getopt(
-	'dfhpv::ws',
-	array(
-		'config:',
-		'dry-run',
-		'forcedaily',
-		'help',
-		'include:',
-		'printconfig',
-		'stopafterdump',
-		'verbose::',
-		'writeconfig'
-	)
+  'dfhpv::ws',
+  array(
+    'config:',
+    'dry-run',
+    'forcedaily',
+    'help',
+    'include:',
+    'printconfig',
+    'stopafterdump',
+    'verbose::',
+    'writeconfig'
+  )
 );
 
 # pre-handle options for config location and include dir
 foreach ($arguments as $k => $v) {
-	switch ($k) {
-		case 'config':
-			$config['file_config'] = $v;
-			break;
-		case 'include':
-			$config['dir_include'] = $v;
-			break;
-	}
+  switch ($k) {
+    case 'config':
+      $config['file_config'] = $v;
+      break;
+    case 'include':
+      $config['dir_include'] = $v;
+      break;
+  }
 }
 
 # get config
 if (file_exists($config['file_config'])) {
-	$configtmp = json_decode(remove_comments(file_get_contents($config['file_config'])), true);
-	if ($configtmp === NULL) {
-		echo 'Invalid configuration file: '.$config['file_config']."\n";
-		die(1);
-	}
-	$config = array_merge($config, $configtmp);
-	unset($configtmp);
+  $configtmp = json_decode(remove_comments(file_get_contents($config['file_config'])), true);
+  if ($configtmp === NULL) {
+    echo 'Invalid configuration file: '.$config['file_config']."\n";
+    die(1);
+  }
+  $config = array_merge($config, $configtmp);
+  unset($configtmp);
 }
 
 # config defaults
@@ -156,7 +158,7 @@ $config['verbose'] 						= isset($config['verbose']) && is_numeric($config['verb
 
 # make sure all dirs end with a slash
 foreach (array('dir_backup', 'dir_temp') as $k) {
-	$config[$k] = substr($config[$k], -1) !== '/' ? $config[$k].'/' : $config[$k];
+  $config[$k] = substr($config[$k], -1) !== '/' ? $config[$k].'/' : $config[$k];
 }
 ksort($config);
 
@@ -165,114 +167,114 @@ date_default_timezone_set($config['timezone']);
 
 # should we use global config?
 if ($config['use_global_config']) {
-	# then include that using the include dir
-	require_once($config['dir_include'].'config.php');
-	# walk the database constants
-	foreach (array('name', 'password', 'username', 'host') as $k) {
-		# does the required constant exist?
-		if (defined('DATABASE_'.strtoupper($k))) {
-			# then use that
-			$config['database_'.$k] = constant('DATABASE_'.strtoupper($k));
-		}
-	}
+  # then include that using the include dir
+  require_once($config['dir_include'].'config.php');
+  # walk the database constants
+  foreach (array('name', 'password', 'username', 'host') as $k) {
+    # does the required constant exist?
+    if (defined('DATABASE_'.strtoupper($k))) {
+      # then use that
+      $config['database_'.$k] = constant('DATABASE_'.strtoupper($k));
+    }
+  }
 }
 
 # handle options
 foreach ($arguments as $k => $v) {
-	switch ($k) {
-		case 'd':
-		case 'dryrun':
-			$config['dryrun'] = true;
-			cl('Dry-run option activated (logging also disabled)', VERBOSE_DEBUG);
-			$config['loglevel'] = 0; # do not log this session
-			break;
-		case 'f': # force - do not care about intervals and such
-		case 'forcedaily':
-			$config['forcedaily'] = true;
-			cl('Force daily option activated', VERBOSE_DEBUG);
-			break;
-		case 'h': # print help
-		case 'help':
-		echo basename(__FILE__);
+  switch ($k) {
+    case 'd':
+    case 'dryrun':
+      $config['dryrun'] = true;
+      cl('Dry-run option activated (logging also disabled)', VERBOSE_DEBUG);
+      $config['loglevel'] = 0; # do not log this session
+      break;
+    case 'f': # force - do not care about intervals and such
+    case 'forcedaily':
+      $config['forcedaily'] = true;
+      cl('Force daily option activated', VERBOSE_DEBUG);
+      break;
+    case 'h': # print help
+    case 'help':
+    echo basename(__FILE__);
 ?>
 
 To backup databases and remove old backups
 -d, --dry-run
-	Do a dry-run, do not make any changes
+  Do a dry-run, do not make any changes
 -v[v,vv], --verbose
-	Set verbosity level
+  Set verbosity level
 -f,--forcedaily
-	Force daily option
+  Force daily option
 -w, --writeconfig
-	Output a config to <?php echo $config['file_config']?>
+  Output a config to <?php echo $config['file_config']?>
 -s, --stopafterdump
-	Stop working after dumping data to temp dir
+  Stop working after dumping data to temp dir
 <?php
-			die();
-		case 'p':
-		case 'printconfig':
-			foreach ($config as $k2 => $v2) {
-				echo $k2.' => ';
-				if (is_array($v2)) {
-					echo implode(', ', $v2);
-				} else if (is_bool($v2)) {
-					echo $v2 ? 'true' : 'false';
-				} else {
-					echo $v2;
-				}
-				echo "\n";
-			}
-			die();
-		case 's':
-		case 'stopafterdump':
-			$stopafterdump = true;
-			break;
-		case 'v': # be verbose
-		case 'verbose':
-			# determine and set level of verbosity
-			switch ($v) {
-				default:
-					$config['verbose'] = VERBOSE_ERROR;
-					break;
-				case 'v':
-					$config['verbose'] = VERBOSE_INFO;
-					break;
-				case 'vv':
-					$config['verbose'] = VERBOSE_DEBUG;
-					break;
-			}
-			break;
+      die();
+    case 'p':
+    case 'printconfig':
+      foreach ($config as $k2 => $v2) {
+        echo $k2.' => ';
+        if (is_array($v2)) {
+          echo implode(', ', $v2);
+        } else if (is_bool($v2)) {
+          echo $v2 ? 'true' : 'false';
+        } else {
+          echo $v2;
+        }
+        echo "\n";
+      }
+      die();
+    case 's':
+    case 'stopafterdump':
+      $stopafterdump = true;
+      break;
+    case 'v': # be verbose
+    case 'verbose':
+      # determine and set level of verbosity
+      switch ($v) {
+        default:
+          $config['verbose'] = VERBOSE_ERROR;
+          break;
+        case 'v':
+          $config['verbose'] = VERBOSE_INFO;
+          break;
+        case 'vv':
+          $config['verbose'] = VERBOSE_DEBUG;
+          break;
+      }
+      break;
 
-		case 'w': # write config
-		case 'writeconfig':
-			# make sure we do not write over the old config
-			if (file_exists($config['file_config'])) {
-				cl("Configuration file already exists:".$config['file_config'], VERBOSE_ERROR);
-				die(1);
-			}
-			cl('Writing config to: '.$config['file_config'], VERBOSE_DEBUG);
-			file_put_contents($config['file_config'], json_encode($config));
-			die();
-	}
+    case 'w': # write config
+    case 'writeconfig':
+      # make sure we do not write over the old config
+      if (file_exists($config['file_config'])) {
+        cl("Configuration file already exists:".$config['file_config'], VERBOSE_ERROR);
+        die(1);
+      }
+      cl('Writing config to: '.$config['file_config'], VERBOSE_DEBUG);
+      file_put_contents($config['file_config'], json_encode($config));
+      die();
+  }
 }
 
 # check backup root dir path
 if (!file_exists($config['dir_backup']) || !is_dir($config['dir_backup'])) {
-	cl("Backup directory does not exist: ".$config['dir_backup'], VERBOSE_ERROR);
-	die(1);
+  cl("Backup directory does not exist: ".$config['dir_backup'], VERBOSE_ERROR);
+  die(1);
 }
 
 # check temp backup root dir path
 if (!file_exists($config['dir_temp']) || !is_dir($config['dir_temp'])) {
-	cl("Backup directory does not exist: ".$config['dir_temp'], VERBOSE_ERROR);
-	die(1);
+  cl("Backup directory does not exist: ".$config['dir_temp'], VERBOSE_ERROR);
+  die(1);
 }
 
 # connect to database
 $link = mysqli_connect($config['database_host'], $config['database_username'], $config['database_password']);
 if (!$link) {
-	cl(mysql_error(), VERBOSE_ERROR);
-	die(1);
+  cl(mysql_error(), VERBOSE_ERROR);
+  die(1);
 }
 
 # part 1 - make daily backup
@@ -283,175 +285,175 @@ $today_filename = date('Y-m-d').'.tar.xz';
 # no backup for today found - or force daily
 if (!file_exists($config['dir_backup'].$today_filename) || $config['forcedaily']) {
 
-	# ask for db:s
-	$sql = 'SHOW DATABASES';
-	cl('Running query: '.$sql, VERBOSE_DEBUG);
-	$r = mysqli_query($link, 'SHOW DATABASES');
-	if ($r === false) {
-		cl(mysql_error, VERBOSE_ERROR);
-		die(1);
-	}
+  # ask for db:s
+  $sql = 'SHOW DATABASES';
+  cl('Running query: '.$sql, VERBOSE_DEBUG);
+  $r = mysqli_query($link, 'SHOW DATABASES');
+  if ($r === false) {
+    cl(mysql_error, VERBOSE_ERROR);
+    die(1);
+  }
 
-	$databases = array();
-	# walk result row by row
-	while ($row = mysqli_fetch_assoc($r)) {
-		# put row in to array
-		$databases[] = $row;
-	}
+  $databases = array();
+  # walk result row by row
+  while ($row = mysqli_fetch_assoc($r)) {
+    # put row in to array
+    $databases[] = $row;
+  }
 
-	# free result
-	mysqli_free_result($r);
+  # free result
+  mysqli_free_result($r);
 
-	# disconect db
-	mysqli_close($link);
+  # disconect db
+  mysqli_close($link);
 
-	# any dbs?
-	if (count($databases)) {
+  # any dbs?
+  if (count($databases)) {
 
-		cl('Found '.count($databases). ' databases', VERBOSE_DEBUG);
+    cl('Found '.count($databases). ' databases', VERBOSE_DEBUG);
 
-		# construct path to a tempdir
-		$tempdir = $config['dir_temp'].date('Y-m-d').'-temp-backup/';
-		# does path not exist?
-		if (!file_exists($tempdir)) {
-			cl('Making dir: '.$tempdir, VERBOSE_DEBUG);
-			# try to make dir
-			if (!$config['dryrun']) {
-				exec('mkdir -p '.$tempdir);
-				if (!file_exists($tempdir)) die(cl('Failed creating temp dir: '.$tempdir, VERBOSE_ERROR));
-			}
+    # construct path to a tempdir
+    $tempdir = $config['dir_temp'].date('Y-m-d').'-temp-backup/';
+    # does path not exist?
+    if (!file_exists($tempdir)) {
+      cl('Making dir: '.$tempdir, VERBOSE_DEBUG);
+      # try to make dir
+      if (!$config['dryrun']) {
+        exec('mkdir -p '.$tempdir);
+        if (!file_exists($tempdir)) die(cl('Failed creating temp dir: '.$tempdir, VERBOSE_ERROR));
+      }
 
-			cl('Setting chmod 700 on temp dir: '.$tempdir, VERBOSE_DEBUG);
-			if (!$config['dryrun']) {
-				# correct rights on the dir
-				chmod($tempdir, 0700);
-			}
-		}
+      cl('Setting chmod 700 on temp dir: '.$tempdir, VERBOSE_DEBUG);
+      if (!$config['dryrun']) {
+        # correct rights on the dir
+        chmod($tempdir, 0700);
+      }
+    }
 
-		if (!$config['dryrun']) {
-			# make sure it is a dir
-			if (!is_dir($tempdir)) die(cl('Temp dir is not a dir: '.$tempdir));
-		}
+    if (!$config['dryrun']) {
+      # make sure it is a dir
+      if (!is_dir($tempdir)) die(cl('Temp dir is not a dir: '.$tempdir));
+    }
 
-		$dumped_databases = array();
-		$dumpfiles = array();
-		# walk db:s
-		foreach ($databases as $database) {
-			$database = $database['Database'];
+    $dumped_databases = array();
+    $dumpfiles = array();
+    # walk db:s
+    foreach ($databases as $database) {
+      $database = $database['Database'];
 
-			# is this db to ignore?
-			if (
-				in_array($database, $config['databases_ignore'])
-				||
-				(
-					is_array($config['databases'])
-					&&
-					!in_array($database, $config['databases'])
-				)
-			) {
-				cl('Ignoring database '.$database, VERBOSE_DEBUG);
-				continue;
-			}
+      # is this db to ignore?
+      if (
+        in_array($database, $config['databases_ignore'])
+        ||
+        (
+          is_array($config['databases'])
+          &&
+          !in_array($database, $config['databases'])
+        )
+      ) {
+        cl('Ignoring database '.$database, VERBOSE_DEBUG);
+        continue;
+      }
 
-			cl('Dumping database '.$database, VERBOSE_INFO);
+      cl('Dumping database '.$database, VERBOSE_INFO);
 
-			$dumpfile = $database.'.sql';
-			$dumpfile_fullpath = $tempdir.$dumpfile;
-			# dump this db to tmp location
+      $dumpfile = $database.'.sql';
+      $dumpfile_fullpath = $tempdir.$dumpfile;
+      # dump this db to tmp location
 
-			$cmd = 'mysqldump -u "'.escapeshellcmd(DATABASE_USERNAME).'" --password="'.DATABASE_PASSWORD.'" --add-drop-database '.(array_key_exists($database, $config['databases_extra_parameters']) ? $config['databases_extra_parameters'][$database].' ' : '').' --databases '.escapeshellcmd($database).' > '.escapeshellcmd($dumpfile_fullpath);
-			cl('Running: '.$cmd, VERBOSE_DEBUG);
+      $cmd = 'mysqldump -u "'.escapeshellcmd(DATABASE_USERNAME).'" --password="'.DATABASE_PASSWORD.'" --add-drop-database '.(array_key_exists($database, $config['databases_extra_parameters']) ? $config['databases_extra_parameters'][$database].' ' : '').' --databases '.escapeshellcmd($database).' > '.escapeshellcmd($dumpfile_fullpath);
+      cl('Running: '.$cmd, VERBOSE_DEBUG);
 
-			if (!$config['dryrun']) {
-				# strange things happen when these are defined and they hit exec
-				unset($output, $return_var);
-				exec($cmd, $output, $return_var);
+      if (!$config['dryrun']) {
+        # strange things happen when these are defined and they hit exec
+        unset($output, $return_var);
+        exec($cmd, $output, $return_var);
 
-				# not 0 then it's error
-				if ($return_var !== 0 || !file_exists($dumpfile_fullpath) || !filesize($dumpfile_fullpath)) {
-					cl('Dump empty or failed for db: '.$database, VERBOSE_INFO);
-					if (file_exists($dumpfile_fullpath)) {
-						cl('Removing dump file: '.$dumpfile_fullpath, VERBOSE_DEBUG);
-						unlink($dumpfile_fullpath);
-					}
-					continue;
-				}
-			}
+        # not 0 then it's error
+        if ($return_var !== 0 || !file_exists($dumpfile_fullpath) || !filesize($dumpfile_fullpath)) {
+          cl('Dump empty or failed for db: '.$database, VERBOSE_INFO);
+          if (file_exists($dumpfile_fullpath)) {
+            cl('Removing dump file: '.$dumpfile_fullpath, VERBOSE_DEBUG);
+            unlink($dumpfile_fullpath);
+          }
+          continue;
+        }
+      }
 
-			cl('Setting chmod 700 on dumpfile: '.$dumpfile_fullpath, VERBOSE_DEBUG);
-			if (!$config['dryrun']) {
-				chmod($dumpfile_fullpath, 0700);
-				cl('Dump file size: '.filesize($dumpfile_fullpath).' b', VERBOSE_DEBUG);
-			}
+      cl('Setting chmod 700 on dumpfile: '.$dumpfile_fullpath, VERBOSE_DEBUG);
+      if (!$config['dryrun']) {
+        chmod($dumpfile_fullpath, 0700);
+        cl('Dump file size: '.filesize($dumpfile_fullpath).' b', VERBOSE_DEBUG);
+      }
 
 
-			$dumpfiles[] = $dumpfile;
-		}
+      $dumpfiles[] = $dumpfile;
+    }
 
-		if ($stopafterdump) {
-			cl('Dump files are now ready at: '.$tempdir, VERBOSE_DEBUG);
-			die();
-		}
-		# any dumpfiles?
-		if (count($dumpfiles)) {
-			cl(count($dumpfiles).' dumpfiles ready', VERBOSE_DEBUG);
-			# XZ_OPT="-9e" can be set to maximize compression, but it is very slow, default is -6 and manual does not recommend
-			# higher than -7 due to high memory usage and the time needed
-			# -q = quiet, do not whine about lowering memory
-			$cmd = 'cd '.escapeshellcmd($tempdir).' && export XZ_OPT="--memlimit-compress=64MiB -q" && /bin/tar cJf '.escapeshellcmd($config['dir_temp'].$today_filename).' *';
-			cl('Running: '.$cmd, VERBOSE_DEBUG);
-			if (!$config['dryrun']) {
-				# strange things happen when these are defined and they hit exec
-				unset($output, $return_var);
-				exec($cmd, $output, $return_var);
+    if ($stopafterdump) {
+      cl('Dump files are now ready at: '.$tempdir, VERBOSE_DEBUG);
+      die();
+    }
+    # any dumpfiles?
+    if (count($dumpfiles)) {
+      cl(count($dumpfiles).' dumpfiles ready', VERBOSE_DEBUG);
+      # XZ_OPT="-9e" can be set to maximize compression, but it is very slow, default is -6 and manual does not recommend
+      # higher than -7 due to high memory usage and the time needed
+      # -q = quiet, do not whine about lowering memory
+      $cmd = 'cd '.escapeshellcmd($tempdir).' && export XZ_OPT="--memlimit-compress=64MiB -q" && /bin/tar cJf '.escapeshellcmd($config['dir_temp'].$today_filename).' *';
+      cl('Running: '.$cmd, VERBOSE_DEBUG);
+      if (!$config['dryrun']) {
+        # strange things happen when these are defined and they hit exec
+        unset($output, $return_var);
+        exec($cmd, $output, $return_var);
 
-				if ($return_var !== 0) {
-					cl('Creation of tar file failed: '.var_export($output,true), VERBOSE_ERROR);
-					var_dump($return_var);
-				}
-			}
+        if ($return_var !== 0) {
+          cl('Creation of tar file failed: '.var_export($output,true), VERBOSE_ERROR);
+          var_dump($return_var);
+        }
+      }
 
-			# walk the dumpfiles
-			foreach ($dumpfiles as $dumpfile) {
-				# fullpath to file
-				$dumpfile_fullpath = $tempdir.$dumpfile;
-				# does the dump file exist?
-				if (file_exists($dumpfile_fullpath)) {
-					# then remove it
-					cl('Removing dump file: '.$dumpfile_fullpath, VERBOSE_DEBUG);
-					if (!$config['dryrun']) {
-						unlink($dumpfile_fullpath);
-					}
-				}
-			}
+      # walk the dumpfiles
+      foreach ($dumpfiles as $dumpfile) {
+        # fullpath to file
+        $dumpfile_fullpath = $tempdir.$dumpfile;
+        # does the dump file exist?
+        if (file_exists($dumpfile_fullpath)) {
+          # then remove it
+          cl('Removing dump file: '.$dumpfile_fullpath, VERBOSE_DEBUG);
+          if (!$config['dryrun']) {
+            unlink($dumpfile_fullpath);
+          }
+        }
+      }
 
-			# does the temp dir exist?
-			if (file_exists($tempdir) && is_dir($tempdir)) {
-				# then remove it
-				cl('Removing temp dir: '.$tempdir, VERBOSE_DEBUG);
-				if (!$config['dryrun']) {
-					rmdir($tempdir);
-				}
-			}
+      # does the temp dir exist?
+      if (file_exists($tempdir) && is_dir($tempdir)) {
+        # then remove it
+        cl('Removing temp dir: '.$tempdir, VERBOSE_DEBUG);
+        if (!$config['dryrun']) {
+          rmdir($tempdir);
+        }
+      }
 
-			# move file into place
-			$cmd = 'mv '.escapeshellcmd($config['dir_temp'].$today_filename).' '.escapeshellcmd($config['dir_backup'].$today_filename);
-			cl('Running: '.$cmd, VERBOSE_DEBUG);
-			if (!$config['dryrun']) {
-				# strange things happen when these are defined and they hit exec
-				unset($output, $return_var);
-				exec($cmd, $output, $return_var);
+      # move file into place
+      $cmd = 'mv '.escapeshellcmd($config['dir_temp'].$today_filename).' '.escapeshellcmd($config['dir_backup'].$today_filename);
+      cl('Running: '.$cmd, VERBOSE_DEBUG);
+      if (!$config['dryrun']) {
+        # strange things happen when these are defined and they hit exec
+        unset($output, $return_var);
+        exec($cmd, $output, $return_var);
 
-				if ($return_var !== 0) {
-					cl('Creation of tar file failed: '.var_export($output,true), VERBOSE_ERROR);
-				}
-			}
+        if ($return_var !== 0) {
+          cl('Creation of tar file failed: '.var_export($output,true), VERBOSE_ERROR);
+        }
+      }
 
-			cl('Backup file created: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
-		}
-	}
+      cl('Backup file created: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
+    }
+  }
 } else {
-	cl('Backup for today exists: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
+  cl('Backup for today exists: '.$config['dir_backup'].$today_filename, VERBOSE_INFO);
 }
 
 # part 2 - check for outdated backups
@@ -463,67 +465,67 @@ $files = shell_exec($cmd);
 # without trim here we get empty array items
 $files = explode("\n", trim($files));
 if ($files === NULL) {
-	cl('Find failed', VERBOSE_ERROR);
-	die(1);
+  cl('Find failed', VERBOSE_ERROR);
+  die(1);
 }
 
 # any files?
 if (count($files)) {
-	cl('Sorting files A-Z', VERBOSE_DEBUG);
-	sort($files);
+  cl('Sorting files A-Z', VERBOSE_DEBUG);
+  sort($files);
 
-	$timeout_keep_all = time() - $config['timeout_keep_all'];
-	$timeout_remove_all = time() - $config['timeout_remove_all'];
+  $timeout_keep_all = time() - $config['timeout_keep_all'];
+  $timeout_remove_all = time() - $config['timeout_remove_all'];
 
-	# walk them
-	$kept_months = array();
-	foreach ($files as $file_fullpath) {
-		$file = basename($file_fullpath);
+  # walk them
+  $kept_months = array();
+  foreach ($files as $file_fullpath) {
+    $file = basename($file_fullpath);
 
-		# is this not a archive - go next
-		if (!preg_match('/^[0-9]{3}[0-9]+\-[0-9]{2}-[0-9]{2}\.tar\.xz$/i', $file)) {
-			cl('Ignoring file: '.$file_fullpath, VERBOSE_DEBUG);
-			continue;
-		}
+    # is this not a archive - go next
+    if (!preg_match('/^[0-9]{3}[0-9]+\-[0-9]{2}-[0-9]{2}\.tar\.xz$/i', $file)) {
+      cl('Ignoring file: '.$file_fullpath, VERBOSE_DEBUG);
+      continue;
+    }
 
-		$file_date = substr($file, 0, strpos($file, '.'));
-		$file_timestamp = strtotime($file_date);
+    $file_date = substr($file, 0, strpos($file, '.'));
+    $file_timestamp = strtotime($file_date);
 
-		if ($file_timestamp === false) {
-			cl('Ignoring file, invalid date in filename: '.$file_fullpath, VERBOSE_DEBUG);
-			continue;
-		}
+    if ($file_timestamp === false) {
+      cl('Ignoring file, invalid date in filename: '.$file_fullpath, VERBOSE_DEBUG);
+      continue;
+    }
 
-		# is this file empty?
-		if (filesize($file_fullpath) === 0) {
-			cl('Removing file, it is empty: '.$file_fullpath, VERBOSE_DEBUG);
-			unlink($file_fullpath);
-			continue;
-		}
+    # is this file empty?
+    if (filesize($file_fullpath) === 0) {
+      cl('Removing file, it is empty: '.$file_fullpath, VERBOSE_DEBUG);
+      unlink($file_fullpath);
+      continue;
+    }
 
-		# is file within keep-all timeout?
-		if ($file_timestamp > $timeout_keep_all) {
-			cl('Keeping file, within keep-all timeout: '.$file_fullpath, VERBOSE_DEBUG);
-			continue;
-		}
+    # is file within keep-all timeout?
+    if ($file_timestamp > $timeout_keep_all) {
+      cl('Keeping file, within keep-all timeout: '.$file_fullpath, VERBOSE_DEBUG);
+      continue;
+    }
 
-		# is file out of remove-all limit?
-		if ($file_timestamp < $timeout_remove_all) {
-			# remove it
-			cl('Removing file, outside remove-all timeout: '.$file_fullpath, VERBOSE_DEBUG);
-			unlink($file_fullpath);
-			continue;
-		}
+    # is file out of remove-all limit?
+    if ($file_timestamp < $timeout_remove_all) {
+      # remove it
+      cl('Removing file, outside remove-all timeout: '.$file_fullpath, VERBOSE_DEBUG);
+      unlink($file_fullpath);
+      continue;
+    }
 
-		if (in_array(date('Y-m', $file_timestamp), $kept_months)) {
-			cl('Removing file, already have file for month '.date('Y-m', $file_timestamp).': '.$file, VERBOSE_DEBUG);
-			unlink($file_fullpath);
-		} else {
-			cl('Keeping file, used for month '.date('Y-m', $file_timestamp).': '.$file, VERBOSE_DEBUG);
-			$kept_months[] = date('Y-m', $file_timestamp);
-			continue;
-		}
-	}
+    if (in_array(date('Y-m', $file_timestamp), $kept_months)) {
+      cl('Removing file, already have file for month '.date('Y-m', $file_timestamp).': '.$file, VERBOSE_DEBUG);
+      unlink($file_fullpath);
+    } else {
+      cl('Keeping file, used for month '.date('Y-m', $file_timestamp).': '.$file, VERBOSE_DEBUG);
+      $kept_months[] = date('Y-m', $file_timestamp);
+      continue;
+    }
+  }
 }
 
 ?>

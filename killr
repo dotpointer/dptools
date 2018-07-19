@@ -10,12 +10,14 @@
 # 2014-09-29 - bugfixes
 # 2014-09-29 08:13:02
 # 2018-06-28 17:56:00
+# 2018-06-28 18:11:21
+# 2018-07-19 19:29:31 - indentation change, tab to 2 spaces
 
 # at last, here it is, the process killer that kills by keyword
 $keyword = isset($argv[1]) ? $argv[1] : false;
 
 if ($keyword === false) {
-	die('Keyword must be given.'."\n");
+  die('Keyword must be given.'."\n");
 }
 
 # get matching items
@@ -27,20 +29,20 @@ if ($r) die('Failed finding process.');
 $ps = $o;
 
 foreach ($ps as $line) {
-	# echo $keyword."\n\n".$line;
-	if (strpos($line, $keyword) !== false && preg_match('/^\s*(\d+)\s+.*$/', $line, $m)) {
-		$pid = (int)$m[1];
-		if ($pid === getmypid()) continue;
-		echo $line."\n";
+  # echo $keyword."\n\n".$line;
+  if (strpos($line, $keyword) !== false && preg_match('/^\s*(\d+)\s+.*$/', $line, $m)) {
+    $pid = (int)$m[1];
+    if ($pid === getmypid()) continue;
+    echo $line."\n";
 
-		unset($c, $o, $r);
-		$c = 'kill -9 '.$pid;
-		echo $c."\n";
-		exec($c, $o, $r);	
-		if ($r) die('Failed killing process '.$pid."\n");
-		# should be ID
-		# var_dump($m); 
-		# die($m[1]);
-	}
+    unset($c, $o, $r);
+    $c = 'kill -9 '.$pid;
+    echo $c."\n";
+    exec($c, $o, $r);	
+    if ($r) die('Failed killing process '.$pid."\n");
+    # should be ID
+    # var_dump($m); 
+    # die($m[1]);
+  }
 }
 ?>

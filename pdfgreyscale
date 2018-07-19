@@ -9,31 +9,33 @@
 # 2017-02-05 14:25:00 - updating with checks and optional output name
 # 2017-02-05 15:52:00 - updating meta data with creation date set to original file
 # 2018-06-29 14:18:00 - cleanup
+# 2018-06-29 17:13:06
+# 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
 
 # check locales
 
 # check locale availability
 LOCALECHECK=$(locale -a|grep -i en_US.utf8)
 if [ ! $? -eq 0 ]; then
-	echo 'Locale en_US.utf8 is not installed, please run dpkg-reconfigure locales if in Debian and add it as a second locale.';
-	exit 1;
+  echo 'Locale en_US.utf8 is not installed, please run dpkg-reconfigure locales if in Debian and add it as a second locale.';
+  exit 1;
 fi
 
 # no parameters
 if [ $# -eq 0 ]; then
-	# show help
-	echo "Usage: $0 input.pdf [output.pdf - defaults to input.greyscale.pdf]";
-	exit 1;
+  # show help
+  echo "Usage: $0 input.pdf [output.pdf - defaults to input.greyscale.pdf]";
+  exit 1;
 fi
 
 # only 1 parameter
 if [ $# -eq 1 ]; then
-	# set output
-	OUTNAME="$1.greyscale.pdf";
+  # set output
+  OUTNAME="$1.greyscale.pdf";
 # or more than 1
 else
-	# use second for output
-	OUTNAME="$2";
+  # use second for output
+  OUTNAME="$2";
 fi
 
 export LC_ALL=en_US.utf8;

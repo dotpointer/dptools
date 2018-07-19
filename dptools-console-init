@@ -22,13 +22,15 @@
 # 2018-06-29 - 17:45:00 - rename from dp console setup.sh to dptools-console-init
 # 2018-07-18 - 22:27:00 - updating colors and prompt
 # 2018-07-19 - 17:13:00 - editing aliases, colors, prompt, setup script place
+# 2018-07-19 17:14:04
+# 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
-	# ubuntu 14.10 cannot suddenly take blength and bfreq, so we must
-	# make it shut up even if it fails
-	setterm -blength 0 > /dev/null 2>&1
-	setterm -bfreq 0 > /dev/null 2>&1
+  # ubuntu 14.10 cannot suddenly take blength and bfreq, so we must
+  # make it shut up even if it fails
+  setterm -blength 0 > /dev/null 2>&1
+  setterm -bfreq 0 > /dev/null 2>&1
 fi
 
 # path - note that /usr/sbin is included for normal users, otherwise it isn't
@@ -132,13 +134,13 @@ alias vwdial="wvdial";
 
 # is there an md5sum binary in this system?
 if [[ -f "/usr/bin/md5sum" && -x "/usr/bin/md5sum" ]]; then
-	# get md5 of the hostname, here md5 should be checked for existence
-	COLOR_MARKER_TEMP_NUMBER=$(hostname | md5sum);
-	# cut out one character, convert it from hex to base 10, take second character
-	COLOR_MARKER_TEMP_NUMBER=$((16#${COLOR_MARKER_TEMP_NUMBER:1:1}));
+  # get md5 of the hostname, here md5 should be checked for existence
+  COLOR_MARKER_TEMP_NUMBER=$(hostname | md5sum);
+  # cut out one character, convert it from hex to base 10, take second character
+  COLOR_MARKER_TEMP_NUMBER=$((16#${COLOR_MARKER_TEMP_NUMBER:1:1}));
 else
-	# fallback to red
-	COLOR_MARKER_TEMP_NUMBER=13;
+  # fallback to red
+  COLOR_MARKER_TEMP_NUMBER=13;
 fi
 
 # color constants with special characters
@@ -291,109 +293,109 @@ RESET="\001\033[0;00m\002"
 
 # translate selected marker color number to real color
 case $COLOR_MARKER_TEMP_NUMBER in
-	0 )
-		COLOR_MARKER="$PCOLOR_BWT"; # black shows nothing
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	1 )
-		COLOR_MARKER="$PCOLOR_BWT";
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	2 )
-		COLOR_MARKER="$PCOLOR_BGN";
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	3 )
-		COLOR_MARKER="$PCOLOR_BYW";
-		COLOR_NOTICE="$PCOLOR_BBE";
-		;;
-	4 )
-		COLOR_MARKER="$PCOLOR_BBE";
-		COLOR_NOTICE="$PCOLOR_BYW";
-		;;
-	5 )
-		COLOR_MARKER="$PCOLOR_BPE";
-		COLOR_NOTICE="$PCOLOR_BCN";
-		;;
-	6 )
-		COLOR_MARKER="$PCOLOR_BCN";
-		COLOR_NOTICE="$PCOLOR_BPE";
-		;;
-	7 )
-		COLOR_MARKER="$PCOLOR_BRD";
-		COLOR_NOTICE="$PCOLOR_BGN";
-		;;
-	8 )
-		COLOR_MARKER="$PCOLOR_BWT";
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	9 )
-		COLOR_MARKER="$PCOLOR_BRD";
-		COLOR_NOTICE="$PCOLOR_BGN";
-		;;
-	10 )
-		COLOR_MARKER="$PCOLOR_BGN";
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	11 )
-		COLOR_MARKER="$PCOLOR_BYW";
-		COLOR_NOTICE="$PCOLOR_BBE";
-		;;
-	12 )
-		COLOR_MARKER="$PCOLOR_BBK";
-		COLOR_NOTICE="$PCOLOR_BRD";
-		;;
-	13 )
-		COLOR_MARKER="$PCOLOR_BPE";
-		COLOR_NOTICE="$PCOLOR_BCN";
-		;;
-	14 )
-		COLOR_MARKER="$PCOLOR_BCN";
-		COLOR_NOTICE="$PCOLOR_BPE";
-		;;
-	15 )
-		COLOR_MARKER="$PCOLOR_BWT"
-		;;
+  0 )
+    COLOR_MARKER="$PCOLOR_BWT"; # black shows nothing
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  1 )
+    COLOR_MARKER="$PCOLOR_BWT";
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  2 )
+    COLOR_MARKER="$PCOLOR_BGN";
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  3 )
+    COLOR_MARKER="$PCOLOR_BYW";
+    COLOR_NOTICE="$PCOLOR_BBE";
+    ;;
+  4 )
+    COLOR_MARKER="$PCOLOR_BBE";
+    COLOR_NOTICE="$PCOLOR_BYW";
+    ;;
+  5 )
+    COLOR_MARKER="$PCOLOR_BPE";
+    COLOR_NOTICE="$PCOLOR_BCN";
+    ;;
+  6 )
+    COLOR_MARKER="$PCOLOR_BCN";
+    COLOR_NOTICE="$PCOLOR_BPE";
+    ;;
+  7 )
+    COLOR_MARKER="$PCOLOR_BRD";
+    COLOR_NOTICE="$PCOLOR_BGN";
+    ;;
+  8 )
+    COLOR_MARKER="$PCOLOR_BWT";
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  9 )
+    COLOR_MARKER="$PCOLOR_BRD";
+    COLOR_NOTICE="$PCOLOR_BGN";
+    ;;
+  10 )
+    COLOR_MARKER="$PCOLOR_BGN";
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  11 )
+    COLOR_MARKER="$PCOLOR_BYW";
+    COLOR_NOTICE="$PCOLOR_BBE";
+    ;;
+  12 )
+    COLOR_MARKER="$PCOLOR_BBK";
+    COLOR_NOTICE="$PCOLOR_BRD";
+    ;;
+  13 )
+    COLOR_MARKER="$PCOLOR_BPE";
+    COLOR_NOTICE="$PCOLOR_BCN";
+    ;;
+  14 )
+    COLOR_MARKER="$PCOLOR_BCN";
+    COLOR_NOTICE="$PCOLOR_BPE";
+    ;;
+  15 )
+    COLOR_MARKER="$PCOLOR_BWT"
+    ;;
 esac
 
 # find out if in a git repo, write out branch if so
 parse_git_branch() {
-	DATA=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/");
+  DATA=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/");
 
-	# not empty?
-	if [[ ! -z $DATA ]]; then
-		# write branch
-		# important for colors is -e
-		# \001-\002 escape gives garbage on numeric branch names
-		# no escape makes bash think prompt is longer than it is
-		# \[-\] escape adds \[\[ to the beginning of the string
-		echo -e "${DATA}";
-	else
-		echo "\$";
-	fi
+  # not empty?
+  if [[ ! -z $DATA ]]; then
+    # write branch
+    # important for colors is -e
+    # \001-\002 escape gives garbage on numeric branch names
+    # no escape makes bash think prompt is longer than it is
+    # \[-\] escape adds \[\[ to the beginning of the string
+    echo -e "${DATA}";
+  else
+    echo "\$";
+  fi
 }
 
 getu() {
-	if [[ $USER == "root" ]]; then
-		# prompt color gives garbage on numeric texts
-		# same here, a numeric username will give garbage characters
-		# around the username
-		echo -e "${COLOR_NOTICE}${USER}";
-	else
-		echo -e "${USER}";
-	fi
+  if [[ $USER == "root" ]]; then
+    # prompt color gives garbage on numeric texts
+    # same here, a numeric username will give garbage characters
+    # around the username
+    echo -e "${COLOR_NOTICE}${USER}";
+  else
+    echo -e "${USER}";
+  fi
 }
 
 
 getw() {
-	if [[ ${#PWD} -ge 30 ]]; then
-		TMP=$(echo $PWD|rev);
-		TMP=$(echo ${TMP:0:27}|rev);
-		TMP="...$TMP";
-		echo $TMP;
-	else
-		echo $PWD;
-	fi
+  if [[ ${#PWD} -ge 30 ]]; then
+    TMP=$(echo $PWD|rev);
+    TMP=$(echo ${TMP:0:27}|rev);
+    TMP="...$TMP";
+    echo $TMP;
+  else
+    echo $PWD;
+  fi
 }
 
 # setup the prompt with colors, slash at $() is very important, otherwise
@@ -410,7 +412,7 @@ export PS1=$PS1
 
 # global version
 if [ -e /etc/dptools/dptools-console-init ]; then
-	. /etc/dptools/dptools-console-init
+  . /etc/dptools/dptools-console-init
 fi
 
 # single user version

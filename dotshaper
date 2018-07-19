@@ -8,51 +8,52 @@
 # 2014-04-22 xx:xx:xx - initial version
 # 2014-05-03 11:34:10 - cleanup
 # 2018-06-28 16:42:00 - description edit
+# 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 
 DEV=$2
 
 if [ "$1" = "status" ]
 then
-	# display status then exit
-	tc -s qdisc ls dev $DEV
-	tc -s class ls dev $DEV
-	exit
+  # display status then exit
+  tc -s qdisc ls dev $DEV
+  tc -s class ls dev $DEV
+  exit
 fi
 
 if [ "$1" = "stop" ] 
 then 
-	# cleanup
-	tc qdisc del dev $DEV root    2> /dev/null > /dev/null
-	tc qdisc del dev $DEV ingress 2> /dev/null > /dev/null
-	exit
+  # cleanup
+  tc qdisc del dev $DEV root    2> /dev/null > /dev/null
+  tc qdisc del dev $DEV ingress 2> /dev/null > /dev/null
+  exit
 fi
 
 if [ "$1" = "start" ] 
 then 
-	# convert up- and downlink from kb to kbit
-	DOWNLINK=$[$3*8]
-	UPLINK=$[$4*8]
+  # convert up- and downlink from kb to kbit
+  DOWNLINK=$[$3*8]
+  UPLINK=$[$4*8]
 
-	# clean existing down- and uplink qdiscs, hide errors
-	tc qdisc del dev $DEV root    2> /dev/null > /dev/null
-	tc qdisc del dev $DEV ingress 2> /dev/null > /dev/null
+  # clean existing down- and uplink qdiscs, hide errors
+  tc qdisc del dev $DEV root    2> /dev/null > /dev/null
+  tc qdisc del dev $DEV ingress 2> /dev/null > /dev/null
 
-	# uplink
+  # uplink
 
-	# install root CBQ
-	tc qdisc add dev $DEV root handle 1: cbq avpkt 1000 bandwidth 10mbit 
+  # install root CBQ
+  tc qdisc add dev $DEV root handle 1: cbq avpkt 1000 bandwidth 10mbit 
 
-	# main class
-	tc class add dev $DEV parent 1: classid 1:1 cbq rate ${UPLINK}kbit allot 1500 prio 5 bounded isolated 
+  # main class
+  tc class add dev $DEV parent 1: classid 1:1 cbq rate ${UPLINK}kbit allot 1500 prio 5 bounded isolated 
 
-	# filter
-	tc filter add dev $DEV parent 1: protocol ip prio 18 u32 match ip dst 0.0.0.0/0 flowid 1:1
+  # filter
+  tc filter add dev $DEV parent 1: protocol ip prio 18 u32 match ip dst 0.0.0.0/0 flowid 1:1
 
-	# downlink
+  # downlink
 
-	# add downlink qdisc
-	tc qdisc add dev $DEV handle ffff: ingress
+  # add downlink qdisc
+  tc qdisc add dev $DEV handle ffff: ingress
 
-	# filter *everything* to it (0.0.0.0/0), drop everything that's coming in too fast
-	tc filter add dev $DEV parent ffff: protocol ip prio 50 u32 match ip src 0.0.0.0/0 police rate ${DOWNLINK}kbit burst 10k drop flowid :1
+  # filter *everything* to it (0.0.0.0/0), drop everything that's coming in too fast
+  tc filter add dev $DEV parent ffff: protocol ip prio 50 u32 match ip src 0.0.0.0/0 police rate ${DOWNLINK}kbit burst 10k drop flowid :1
 fi

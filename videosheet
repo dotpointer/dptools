@@ -19,699 +19,701 @@
 # 2017-09-19 21:53:00 - using stderr for diagnostic output
 # 2017-09-19 22:07:19
 # 2018-06-29 16:06:00 - cleanup
+# 2018-06-29 17:36:17
+# 2018-07-19 19:29:33 - indentation change, tab to 2 spaces
 
 class Sheet {
-	public $backgroundcolor;
-	public $column;
-	public $compact;
-	public $filename;
-	public $filesize;
-	public $fontname;
-	public $fontsize;
-	public $format;
-	public $grid;
-	public $gridonly;
-	public $header;
-	public $output;
-	public $quality;
-	public $resolution;
-	public $skipnoduration;
-	public $textcolor;
-	public $thumbcount;
-	public $thumbnails;
-	public $thumbsize;
-	public $timestamp;
-	public $vid_interval;
-
-	# to init the new object
-	public function __construct($filename, $skipnoduration = false) {
-
-		o(VERBOSE_DEBUGDEEP, 'Constructing new video sheet object');
-
-		$this->backgroundcolor = array(0,0,0,0);
-		$this->column = 5;
-		$this->compact = false;
-		$this->fontname = false; # "./Cabin-Regular-TTF.ttf";
-		$this->fontsize = 4;
-		$this->gridonly = false;
-		$this->header = 100;
-		$this->quality = false; # auto
-		$this->skipnoduration = $skipnoduration;
-		$this->textcolor = array(255,255,255,0);
-		$this->thumbsize = array(220,-1);
-		$this->timestamp = true;
-
-		# check if name was supplied
-		$this->output = false;
-
-		o(VERBOSE_DEBUGDEEP, 'Constructing new video object');
-
-		$this->filename = $filename;
-		o(VERBOSE_INFO, 'Input filename: '.$this->filename);
-		$this->filesize = $this->getFileSize();
-		o(VERBOSE_DEBUG, 'Input filesize: '.round($this->filesize,2).' MB');
-
-		# get the duration
-		$this->duration = $this->getVideoDuration();
-		o(VERBOSE_DEBUG, 'Input duration: '.$this->getTimeString($this->duration));
-		if ($this->duration === 0) {
-			if ($this->skipnoduration) {
-				o(VERBOSE_DEBUG, 'File has no duration, skipping silently because skip no duration has been set');
-				die(0);
-			} else {
-				o(VERBOSE_ERROR, 'File has no duration');
-				die(1);
-			}
-		}
-
-		# get one frame to get the resolution
-		if (!$example = $this->getFrameAt(0)) {
-			o(VERBOSE_ERROR, 'Failed finding resolution at frame 0');
-			die(1);
-		}
-
-		$this->resolution = array(
-			imagesx($example),
-			imagesy($example)
-		);
-		o(VERBOSE_DEBUG, 'Input resolution: '.$this->resolution[0].'x'.$this->resolution[1].' px');
-
-		$this->thumbnails = array();
-		$this->thumbsize = $this->resolution;
-		$this->thumbcount = 0;
-	}
-
-	# to get file size
-	public function getFileSize() {
-		return filesize($this->filename) / 1048576.0;
-	}
-
-	# to get the duration of the video in seconds
-	public function getVideoDuration() {
-
-		# run ffmpeg in info mode
-		$c = "/usr/bin/ffmpeg -i ".escapeshellarg($this->filename).' 2>&1';
-		o(VERBOSE_DEBUGDEEP, 'Running: '.$c);
-		$p = popen($c,'r');
-		if ($p === false) {
-			@pclose($p);
-			o(VERBOSE_ERROR, 'Failed opening '.$this->filename, false, true);
-			die(1);
-		}
-
-		$pout = '';
-		# walk the command output and collect data
-		while (!feof($p)) {
-			$pout .= fgets($p);
-		}
-		pclose($p);
-
-		# try to find duration in the collected data
-		preg_match(
-			# Duration: 00:02:16.43, start: 0.000000, bitrate: 632 kb/s
-			"/Duration:\s{1}(?P<hours>\d+?):(?P<minutes>\d+?):(?P<seconds>\d+\.\d+?),/",
-			$pout,
-			$matches
-		);
-
-		# format it
-		$hours = isset($matches['hours']) ? (float)$matches['hours'] : 0;
-		$minutes = isset($matches['minutes']) ? (float)$matches['minutes'] : 0;
-		$seconds = isset($matches['seconds']) ? (float)$matches['seconds'] : 0;
-		$duration = 3600  *  $hours + 60  *  $minutes + $seconds;
-
-		return $duration;
-	}
-
-	# to get one frame at one specific seek time
-	public function getFrameAt($seektime) {
-		$timestring = $this->getTimeString($seektime);
-
-		# -ss time_off        set the start time offset
-		# -i infile
-		# -f fmt              force format
-		# -frames number      set the number of frames to output
-		# -c codec            codec name
-		# (:v must be video...)
-		# -loglevel loglevel  set logging level
-
-		$c = "/usr/bin/ffmpeg -ss ".$timestring." -i ".escapeshellarg($this->filename)." -f image2 -frames:v 1 -c:v png -loglevel 8 -";
-		o(VERBOSE_DEBUGDEEP, 'Running: '.$c);
-		$p = popen($c,'r'/*  stdout=PIPE */);
-		if ($p === false) {
-			o(VERBOSE_ERROR, 'Failed opening input file to get frame at: '.$seektime);
-			die(1);
-		}
-
-		$pout = '';
-		while (!feof($p)) {
-			$pout .= fgets($p); # $pout = p.communicate();
-		}
-		pclose($p);
-		$img = @imagecreatefromstring($pout); # Image.open(StringIO.StringIO(pout[0]));
-		return $img;
-	}
-
-	# to make thumbnails by a given interval
-	public function makeThumbnails($interval) {
-
-		o(VERBOSE_DEBUG, 'Making thumbnails with interval of '.$interval);
-
-		$totalThumbs = $this->duration / $interval;
-		$thumbsList = array();
-		$seektime = 0;
-
-		# walk the thumbnails to be created
-		foreach (range(0, $totalThumbs - 1) as $i => $n) {
-
-			o(VERBOSE_INFO, progressbar($i+1, $totalThumbs - 1 +1).'Getting frame', "\r");
-
-			$seektime += $interval;
-			# fetch an image from this frame
-			$tempthumb = $this->getFrameAt($seektime);
-
-			if (!is_resource($tempthumb)) {
-				o(VERBOSE_INFO, "Warning, invalid frame at: ".$this->getTimeString($seektime).' will skip it');
-			}
-
-			$thumbsList[] = $tempthumb;
-		}
-
-		# newline
-		o(VERBOSE_INFO, '');
-
-		$this->thumbnails = $thumbsList;
-		$this->thumbcount = count($thumbsList);
-
-		return $thumbsList;
-	}
-
-	function makeFailThumbnail($width, $height) {
-		$img = imagecreatetruecolor($width, $height);
-		$bgcolor = imagecolorallocate($img, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
-		$textcolor = imagecolorallocate($img, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
-		$ts = 'Failed';
-		# is a TTF font specified?
-		if ($this->fontname) {
-			imagettftext(
-				$img,
-				$this->fontsize,
-				0,
-				2,
-				$this->fontsize + 5,
-				$textcolor,
-				$this->fontname,
-				$ts
-			);
-		# or should we use plain writing?
-		} else {
-			imagestring(
-				$img,
-				4, # font
-				3,
-				3 - 4,
-				$ts,
-				$textcolor
-			);
-		}
-		return $img;
-	}
-
-	# to make a single thumbnail
-	function makeSingleThumbnail($old_image, $thumbnail_width, $thumbnail_height) {
-
-		# is this frame invalid?
-		if (!is_resource($old_image)) {
-			# make dummy image
-			return $this->makeFailThumbnail($thumbnail_width, $thumbnail_height);
-		}
-
-		$original_width = imagesx($old_image);
-		$original_height = imagesy($old_image);
-
-		# is the original width bigger than original height
-		if ($original_width > $original_height) {
-			# set the new width to the maximum
-			$new_width = $thumbnail_width;
-			# calculate the new height
-			$new_height = (int)($original_height * ($new_width / $original_width));
-		# or if the original width is smaller than the original height
-		} else {
-			# set the new height to the maximum
-			$new_height = $thumbnail_height;
-			# calculate the new width
-			$new_width = (int)($original_width * ($new_height / $original_height));
-		}
-
-		# calculate destination positions
-		$dest_x = (int)(($thumbnail_width - $new_width) / 2);
-
-		$dest_y = (int)(($thumbnail_height - $new_height) / 2);
-
-		# create a new image
-		$new_image = imagecreatetruecolor(
-			$thumbnail_width,
-			$thumbnail_height
-		);
-
-		# copy the old image resized into the new image
-		imagecopyresized(
-			$new_image,
-			$old_image,
-			$dest_x,
-			$dest_y,
-			0,
-			0,
-			$new_width,
-			$new_height,
-			$original_width,
-			$original_height
-		);
-
-		# return the new image
-		return $new_image;
-	}
-
-	# to shrink thumbnails?
-	public function shrinkThumbs($maxsize) {
-
-		# no thumbs?
-		if ($this->thumbcount==0) {
-			return;
-		}
-
-		o(VERBOSE_DEBUG, 'Shrinking thumbnails to max dimensions of '.$maxsize[0].'x'.$maxsize[1].' px');
-
-		$thumbsize_found = false;
-
-		# walk the thumbnails
-		foreach (range(0, $this->thumbcount - 1) as $i) {
-
-			o(VERBOSE_INFO, progressbar($i+1, $this->thumbcount - 1 + 1).'Shrinking thumbnail', "\r");
-
-			# generate a single thumbnail
-			$this->thumbnails[$i] = $this->makeSingleThumbnail(
-				$this->thumbnails[$i],
-				$maxsize[0],
-				$maxsize[1]
-			);
-
-			# is the thumb size 0 x 0 but this thumbnail is a resource?
-			if (!$thumbsize_found && is_resource($this->thumbnails[$i])) {
-				# try to get x and y for this thumbnail
-				$x = imagesx($this->thumbnails[$i]);
-				$y = imagesy($this->thumbnails[$i]);
-				# if it succeeded, use this thumbnail as size reference
-				if ($x && $y) {
-					$this->thumbsize = array(
-						$x,
-						$y
-					);
-					$thumbsize_found = true;
-				}
-			}
-		}
-
-		# still not found thumbsize
-		if (!$thumbsize_found) {
-			# use max size then
-			$this->thumbsize = $maxsize;
-		}
-		# newline
-		o(VERBOSE_INFO, '');
-
-		return $this->thumbnails;
-	}
-
-	# to convert seconds to HH:MM:SS
-	public function getTimeString($seconds) {
-		$hours = (int)($seconds / 3600);
-		$minutes = (int)(($seconds % 3600) / 60);
-		$seconds = (int)($seconds % 60);
-		$timestring = str_pad($hours, 2,'0', STR_PAD_LEFT).":".str_pad($minutes, 2,'0', STR_PAD_LEFT).":".str_pad($seconds, 2,'0', STR_PAD_LEFT);
-		return $timestring;
-	}
-
-	public function setProperty($prop, $value) {
-
-		# $this->font = imageloadfont($value[0]);#ImageFont.truetype($value[0], $value[1]);
-
-		switch ($prop) {
-			case 'backgroundcolor':
-			case 'compact':
-			case 'format':
-			case 'fontname':
-			case 'fontsize':
-			case 'gridonly':
-			case 'output':
-			case 'quality':
-			case 'skipnoduration':
-			case 'textcolor':
-			case 'timestamp':
-			case 'header':
-			case 'column':
-				$this->$prop = $value;
-				break;
-			case 'thumbsize':
-				# is the thumb size set to auto calculate?
-				if ((int)$value[1] === -1) {
-					# then calculate using the resolution
-					# $value[1] = (int)($original_height * ($new_width / $original_width));
-					$value[1] = (int)($this->resolution[1] * ($value[0] / $this->resolution[0]));
-				}
-
-				$this->thumbsize = $value;
-
-				break;
-			default:
-				o(VERBOSE_ERROR, 'Unknown sheet property: '.$property);
-				die(1);
-		}
-
-		o(VERBOSE_DEBUGDEEP, 'Setting property '.$prop.' to '.(is_array($value) ? $value[0].','.$value[1].(isset($value[2]) ? ','.$value[2] : '') : $value));
-
-		return true;
-	}
-
-	# to paste contents from one image into another
-	public function paste($srcimg, $dstimg, $dst_x, $dst_y) {
-		imagecopyresampled (
-			$dstimg ,
-			$srcimg ,
-			$dst_x , $dst_y ,
-			0, 0,
-			imagesx($srcimg), imagesy($srcimg),
-			imagesx($srcimg), imagesy($srcimg)
-		);
-	}
-
-	public function makeGrid() {
-
-		o(VERBOSE_DEBUG, 'Constructing grid');
-
-		$column = $this->column;
-		$row = $this->thumbcount / $column;
-
-		if ($this->thumbcount % $column > 0) {
-			$row += 1;
-		}
-		$width = $this->thumbsize[0];
-		$height = $this->thumbsize[1];
-
-		o(VERBOSE_DEBUG, 'Grid thumbsize: '.$width.'x'.$height.' px');
-
-		$grid = imagecreatetruecolor($width * $column, $height * $row); # Image.new($this->mode, array($width * $column, $height * $row));
-
-		$bgcolor = imagecolorallocate($grid, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
-		$textcolor = imagecolorallocate($grid, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
-
-		$seektime = 0;
-
-		foreach (range(0, $row -1) as $j) {
-
-			foreach (range(0, $column -1) as $i) {
-
-				if ($j  *  $column + $i >= $this->thumbcount) {
-					break;
-				}
-
-				# make sure there is an image here
-				if (is_resource($this->thumbnails[$j * $column+$i])) {
-					o(VERBOSE_DEBUGDEEP, 'Pasting thumbnail '.$j.','.$i.' to '.$width * $i.'x'.$height * $j);
-
-					$this->paste(
-						# paste this image
-						$this->thumbnails[$j * $column+$i],
-						# into this image
-						$grid,
-						# paste it at this x position in the target image
-						$width * $i,
-						# paste it at this y position in the target image
-						$height * $j
-					);
-				} else {
-					o(VERBOSE_DEBUGDEEP, 'Skipping invalid thumbnail '.$j.','.$i.' at '.$width * $i.'x'.$height * $j);
-				}
-
-				# is timestamp writing on
-				if ($this->timestamp == true) {
-
-					# calculate seek time
-					$seektime += $this->vid_interval;
-
-					# get the text
-					$ts = $this->getTimeString($seektime);
-
-					# is a TTF font specified?
-					if ($this->fontname) {
-						imagettftext(
-							$grid,
-							$this->fontsize,
-							0,
-							$width * $i + 2,
-							$height * $j + ($height - $this->fontsize + 5),
-							$textcolor,
-							$this->fontname,
-							$ts
-						);
-					# or should we use plain writing?
-					} else {
-						imagestring(
-							$grid,
-							4, # font
-							($width * $i) + 3,
-							($height * $j) + $height - 15,
-							$ts,
-							$textcolor
-						);
-					}
-				}
-			}
-		}
-		$this->grid = $grid;
-		return $grid;
-	}
-
-	# make information header
-	public function makeHeader() {
-
-		o(VERBOSE_DEBUG, 'Constructing header');
-
-		$width = $this->resolution[0];
-		$height = $this->resolution[1];
-		$duration = $this->duration;
-		$hours = $duration / 3600;
-		$minutes = ($duration % 3600) / 60;
-		$seconds = $duration % 60;
-		$timestring = str_pad(floor($hours), 2, '0', STR_PAD_LEFT).":".str_pad(floor($minutes), 2, '0', STR_PAD_LEFT).":".str_pad(floor($seconds), 2, '0', STR_PAD_LEFT);
-
-		$this->header = imagecreatetruecolor(imagesx($this->grid), $this->header);
-		# first allocated color is background
-		$bgcolor = imagecolorallocate($this->header, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
-		$textcolor = imagecolorallocate($this->header, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
-
-		# is there a font file
-		if ($this->fontname) {
-
-			# compact mode
-			if ($this->compact) {
-				imagettftext(
-					$this->header ,
-					$this->fontsize,
-					0,
-					10,
-					20,
-					$textcolor,
-					$this->fontname,
-					implode(' ', array(
-						basename($this->filename),
-						(round($this->filesize, 2))." MB",
-						$width."x".$height,
-						$timestring
-					))
-				);
-			# not compact mode
-			} else {
-
-				# file name text
-				imagettftext(
-					$this->header,
-					$this->fontsize,
-					0,
-					10,
-					20,
-					$textcolor,
-					$this->fontname,
-					"File Name: ".basename($this->filename)
-				);
-
-				# file size text
-				imagettftext(
-					$this->header,
-					$this->fontsize,
-					0,
-					10,
-					40,
-					$textcolor,
-					$this->fontname,
-					"File Size: ".(round($this->filesize, 2))." MB"
-				);
-
-				# file resolution text
-				imagettftext(
-					$this->header,
-					$this->fontsize,
-					0,
-					10,
-					60,
-					$textcolor,
-					$this->fontname,
-					"Resolution: ".$width."x".$height
-				);
-
-				# file size text
-				imagettftext(
-					$this->header,
-					$this->fontsize,
-					0,
-					10,
-					80,
-					$textcolor,
-					$this->fontname,
-					"Duration: ".$timestring
-				);
-			}
-		# no font file
-		} else {
-			# compact mode
-			if ($this->compact) {
-				imagestring(
-					$this->header,
-					4, # font
-					5,
-					5,
-						implode(' ', array(
-							basename($this->filename),
-							(round($this->filesize, 2))." MB",
-							$width."x".$height,
-							$timestring
-						))
-					, $textcolor
-				);
-			# not compact mode
-			} else {
-
-				# file name text
-				imagestring(
-					$this->header,
-					4, # font
-					10,
-					10,
-					"File Name : ".basename($this->filename),
-					$textcolor
-				);
-
-				# file size text
-				imagestring(
-					$this->header,
-					4, # font
-					10,
-					30,
-					"File Size : ".(round($this->filesize, 2))." MB",
-					$textcolor
-				);
-
-				# resolution text
-				imagestring(
-					$this->header,
-					4, # font
-					10,
-					50,
-					"Resolution: ".$width."x".$height,
-					$textcolor
-				);
-
-				# duration text
-				imagestring(
-					$this->header,
-					4, # font
-					10,
-					70,
-					"Duration  :".$timestring,
-					$textcolor
-				);
-			}
-		}
-
-		# return the header image
-		return $this->header;
-	}
-
-	# to make a sheet by a given interval
-	public function makeSheetByInterval($interval) {
-
-		o(VERBOSE_DEBUG, 'Making sheet by interval: '.$interval);
-
-		$this->vid_interval = $interval;
-		$this->makeThumbnails($interval);
-		$this->shrinkThumbs($this->thumbsize);
-		$this->makeGrid();
-
-
-		# only output grid - use the whole grid as image
-		if ($this->gridonly) {
-			$this->sheet = $this->grid;
-		# output sheet with borders and header
-		} else {
-			$this->makeHeader();
-			$this->sheet = imagecreatetruecolor(imagesx($this->grid), imagesy($this->grid) + imagesy($this->header));
-			$this->paste($this->header, $this->sheet, 0, 0);
-			$this->paste($this->grid, $this->sheet, 0, imagesy($this->header));
-		}
-
-		return $this->sheet;
-	}
-
-	public function makeSheetByNumber($numOfThumbs) {
-		o(VERBOSE_DEBUG, 'Making sheet by number mode, thumbs: '.$numOfThumbs);
-		$interval = ($this->duration / $numOfThumbs);
-		$this->vid_interval = $interval;
-		return $this->makeSheetByInterval($interval);
-	}
-
-	public function output() {
-
-		# make sure file does not exist
-		if (file_exists($this->output)) {
-			o(VERBOSE_ERROR, 'Output file exists already: '.$this->output);
-			die(1);
-		}
-
-		o(VERBOSE_DEBUG, 'Output quality: '.($this->quality === false ? 100 : $this->quality));
-		o(VERBOSE_INFO, 'Output file   : '.$this->output);
-
-		switch ($this->format) {
-			case 'jpg':
-			case 'jpeg':
-				imagejpeg(
-					$this->sheet,
-					$this->output,
-					$this->quality === false ? 75 : $this->quality # 0-100
-				);
-				break;
-
-			default:
-				imagepng(
-					$this->sheet,
-					$this->output,
-					$this->quality === false ? 9 : $this->quality # compression 0-9
-
-				);
-				break;
-		}
-
-		return true;
-	}
+  public $backgroundcolor;
+  public $column;
+  public $compact;
+  public $filename;
+  public $filesize;
+  public $fontname;
+  public $fontsize;
+  public $format;
+  public $grid;
+  public $gridonly;
+  public $header;
+  public $output;
+  public $quality;
+  public $resolution;
+  public $skipnoduration;
+  public $textcolor;
+  public $thumbcount;
+  public $thumbnails;
+  public $thumbsize;
+  public $timestamp;
+  public $vid_interval;
+
+  # to init the new object
+  public function __construct($filename, $skipnoduration = false) {
+
+    o(VERBOSE_DEBUGDEEP, 'Constructing new video sheet object');
+
+    $this->backgroundcolor = array(0,0,0,0);
+    $this->column = 5;
+    $this->compact = false;
+    $this->fontname = false; # "./Cabin-Regular-TTF.ttf";
+    $this->fontsize = 4;
+    $this->gridonly = false;
+    $this->header = 100;
+    $this->quality = false; # auto
+    $this->skipnoduration = $skipnoduration;
+    $this->textcolor = array(255,255,255,0);
+    $this->thumbsize = array(220,-1);
+    $this->timestamp = true;
+
+    # check if name was supplied
+    $this->output = false;
+
+    o(VERBOSE_DEBUGDEEP, 'Constructing new video object');
+
+    $this->filename = $filename;
+    o(VERBOSE_INFO, 'Input filename: '.$this->filename);
+    $this->filesize = $this->getFileSize();
+    o(VERBOSE_DEBUG, 'Input filesize: '.round($this->filesize,2).' MB');
+
+    # get the duration
+    $this->duration = $this->getVideoDuration();
+    o(VERBOSE_DEBUG, 'Input duration: '.$this->getTimeString($this->duration));
+    if ($this->duration === 0) {
+      if ($this->skipnoduration) {
+        o(VERBOSE_DEBUG, 'File has no duration, skipping silently because skip no duration has been set');
+        die(0);
+      } else {
+        o(VERBOSE_ERROR, 'File has no duration');
+        die(1);
+      }
+    }
+
+    # get one frame to get the resolution
+    if (!$example = $this->getFrameAt(0)) {
+      o(VERBOSE_ERROR, 'Failed finding resolution at frame 0');
+      die(1);
+    }
+
+    $this->resolution = array(
+      imagesx($example),
+      imagesy($example)
+    );
+    o(VERBOSE_DEBUG, 'Input resolution: '.$this->resolution[0].'x'.$this->resolution[1].' px');
+
+    $this->thumbnails = array();
+    $this->thumbsize = $this->resolution;
+    $this->thumbcount = 0;
+  }
+
+  # to get file size
+  public function getFileSize() {
+    return filesize($this->filename) / 1048576.0;
+  }
+
+  # to get the duration of the video in seconds
+  public function getVideoDuration() {
+
+    # run ffmpeg in info mode
+    $c = "/usr/bin/ffmpeg -i ".escapeshellarg($this->filename).' 2>&1';
+    o(VERBOSE_DEBUGDEEP, 'Running: '.$c);
+    $p = popen($c,'r');
+    if ($p === false) {
+      @pclose($p);
+      o(VERBOSE_ERROR, 'Failed opening '.$this->filename, false, true);
+      die(1);
+    }
+
+    $pout = '';
+    # walk the command output and collect data
+    while (!feof($p)) {
+      $pout .= fgets($p);
+    }
+    pclose($p);
+
+    # try to find duration in the collected data
+    preg_match(
+      # Duration: 00:02:16.43, start: 0.000000, bitrate: 632 kb/s
+      "/Duration:\s{1}(?P<hours>\d+?):(?P<minutes>\d+?):(?P<seconds>\d+\.\d+?),/",
+      $pout,
+      $matches
+    );
+
+    # format it
+    $hours = isset($matches['hours']) ? (float)$matches['hours'] : 0;
+    $minutes = isset($matches['minutes']) ? (float)$matches['minutes'] : 0;
+    $seconds = isset($matches['seconds']) ? (float)$matches['seconds'] : 0;
+    $duration = 3600  *  $hours + 60  *  $minutes + $seconds;
+
+    return $duration;
+  }
+
+  # to get one frame at one specific seek time
+  public function getFrameAt($seektime) {
+    $timestring = $this->getTimeString($seektime);
+
+    # -ss time_off        set the start time offset
+    # -i infile
+    # -f fmt              force format
+    # -frames number      set the number of frames to output
+    # -c codec            codec name
+    # (:v must be video...)
+    # -loglevel loglevel  set logging level
+
+    $c = "/usr/bin/ffmpeg -ss ".$timestring." -i ".escapeshellarg($this->filename)." -f image2 -frames:v 1 -c:v png -loglevel 8 -";
+    o(VERBOSE_DEBUGDEEP, 'Running: '.$c);
+    $p = popen($c,'r'/*  stdout=PIPE */);
+    if ($p === false) {
+      o(VERBOSE_ERROR, 'Failed opening input file to get frame at: '.$seektime);
+      die(1);
+    }
+
+    $pout = '';
+    while (!feof($p)) {
+      $pout .= fgets($p); # $pout = p.communicate();
+    }
+    pclose($p);
+    $img = @imagecreatefromstring($pout); # Image.open(StringIO.StringIO(pout[0]));
+    return $img;
+  }
+
+  # to make thumbnails by a given interval
+  public function makeThumbnails($interval) {
+
+    o(VERBOSE_DEBUG, 'Making thumbnails with interval of '.$interval);
+
+    $totalThumbs = $this->duration / $interval;
+    $thumbsList = array();
+    $seektime = 0;
+
+    # walk the thumbnails to be created
+    foreach (range(0, $totalThumbs - 1) as $i => $n) {
+
+      o(VERBOSE_INFO, progressbar($i+1, $totalThumbs - 1 +1).'Getting frame', "\r");
+
+      $seektime += $interval;
+      # fetch an image from this frame
+      $tempthumb = $this->getFrameAt($seektime);
+
+      if (!is_resource($tempthumb)) {
+        o(VERBOSE_INFO, "Warning, invalid frame at: ".$this->getTimeString($seektime).' will skip it');
+      }
+
+      $thumbsList[] = $tempthumb;
+    }
+
+    # newline
+    o(VERBOSE_INFO, '');
+
+    $this->thumbnails = $thumbsList;
+    $this->thumbcount = count($thumbsList);
+
+    return $thumbsList;
+  }
+
+  function makeFailThumbnail($width, $height) {
+    $img = imagecreatetruecolor($width, $height);
+    $bgcolor = imagecolorallocate($img, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
+    $textcolor = imagecolorallocate($img, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
+    $ts = 'Failed';
+    # is a TTF font specified?
+    if ($this->fontname) {
+      imagettftext(
+        $img,
+        $this->fontsize,
+        0,
+        2,
+        $this->fontsize + 5,
+        $textcolor,
+        $this->fontname,
+        $ts
+      );
+    # or should we use plain writing?
+    } else {
+      imagestring(
+        $img,
+        4, # font
+        3,
+        3 - 4,
+        $ts,
+        $textcolor
+      );
+    }
+    return $img;
+  }
+
+  # to make a single thumbnail
+  function makeSingleThumbnail($old_image, $thumbnail_width, $thumbnail_height) {
+
+    # is this frame invalid?
+    if (!is_resource($old_image)) {
+      # make dummy image
+      return $this->makeFailThumbnail($thumbnail_width, $thumbnail_height);
+    }
+
+    $original_width = imagesx($old_image);
+    $original_height = imagesy($old_image);
+
+    # is the original width bigger than original height
+    if ($original_width > $original_height) {
+      # set the new width to the maximum
+      $new_width = $thumbnail_width;
+      # calculate the new height
+      $new_height = (int)($original_height * ($new_width / $original_width));
+    # or if the original width is smaller than the original height
+    } else {
+      # set the new height to the maximum
+      $new_height = $thumbnail_height;
+      # calculate the new width
+      $new_width = (int)($original_width * ($new_height / $original_height));
+    }
+
+    # calculate destination positions
+    $dest_x = (int)(($thumbnail_width - $new_width) / 2);
+
+    $dest_y = (int)(($thumbnail_height - $new_height) / 2);
+
+    # create a new image
+    $new_image = imagecreatetruecolor(
+      $thumbnail_width,
+      $thumbnail_height
+    );
+
+    # copy the old image resized into the new image
+    imagecopyresized(
+      $new_image,
+      $old_image,
+      $dest_x,
+      $dest_y,
+      0,
+      0,
+      $new_width,
+      $new_height,
+      $original_width,
+      $original_height
+    );
+
+    # return the new image
+    return $new_image;
+  }
+
+  # to shrink thumbnails?
+  public function shrinkThumbs($maxsize) {
+
+    # no thumbs?
+    if ($this->thumbcount==0) {
+      return;
+    }
+
+    o(VERBOSE_DEBUG, 'Shrinking thumbnails to max dimensions of '.$maxsize[0].'x'.$maxsize[1].' px');
+
+    $thumbsize_found = false;
+
+    # walk the thumbnails
+    foreach (range(0, $this->thumbcount - 1) as $i) {
+
+      o(VERBOSE_INFO, progressbar($i+1, $this->thumbcount - 1 + 1).'Shrinking thumbnail', "\r");
+
+      # generate a single thumbnail
+      $this->thumbnails[$i] = $this->makeSingleThumbnail(
+        $this->thumbnails[$i],
+        $maxsize[0],
+        $maxsize[1]
+      );
+
+      # is the thumb size 0 x 0 but this thumbnail is a resource?
+      if (!$thumbsize_found && is_resource($this->thumbnails[$i])) {
+        # try to get x and y for this thumbnail
+        $x = imagesx($this->thumbnails[$i]);
+        $y = imagesy($this->thumbnails[$i]);
+        # if it succeeded, use this thumbnail as size reference
+        if ($x && $y) {
+          $this->thumbsize = array(
+            $x,
+            $y
+          );
+          $thumbsize_found = true;
+        }
+      }
+    }
+
+    # still not found thumbsize
+    if (!$thumbsize_found) {
+      # use max size then
+      $this->thumbsize = $maxsize;
+    }
+    # newline
+    o(VERBOSE_INFO, '');
+
+    return $this->thumbnails;
+  }
+
+  # to convert seconds to HH:MM:SS
+  public function getTimeString($seconds) {
+    $hours = (int)($seconds / 3600);
+    $minutes = (int)(($seconds % 3600) / 60);
+    $seconds = (int)($seconds % 60);
+    $timestring = str_pad($hours, 2,'0', STR_PAD_LEFT).":".str_pad($minutes, 2,'0', STR_PAD_LEFT).":".str_pad($seconds, 2,'0', STR_PAD_LEFT);
+    return $timestring;
+  }
+
+  public function setProperty($prop, $value) {
+
+    # $this->font = imageloadfont($value[0]);#ImageFont.truetype($value[0], $value[1]);
+
+    switch ($prop) {
+      case 'backgroundcolor':
+      case 'compact':
+      case 'format':
+      case 'fontname':
+      case 'fontsize':
+      case 'gridonly':
+      case 'output':
+      case 'quality':
+      case 'skipnoduration':
+      case 'textcolor':
+      case 'timestamp':
+      case 'header':
+      case 'column':
+        $this->$prop = $value;
+        break;
+      case 'thumbsize':
+        # is the thumb size set to auto calculate?
+        if ((int)$value[1] === -1) {
+          # then calculate using the resolution
+          # $value[1] = (int)($original_height * ($new_width / $original_width));
+          $value[1] = (int)($this->resolution[1] * ($value[0] / $this->resolution[0]));
+        }
+
+        $this->thumbsize = $value;
+
+        break;
+      default:
+        o(VERBOSE_ERROR, 'Unknown sheet property: '.$property);
+        die(1);
+    }
+
+    o(VERBOSE_DEBUGDEEP, 'Setting property '.$prop.' to '.(is_array($value) ? $value[0].','.$value[1].(isset($value[2]) ? ','.$value[2] : '') : $value));
+
+    return true;
+  }
+
+  # to paste contents from one image into another
+  public function paste($srcimg, $dstimg, $dst_x, $dst_y) {
+    imagecopyresampled (
+      $dstimg ,
+      $srcimg ,
+      $dst_x , $dst_y ,
+      0, 0,
+      imagesx($srcimg), imagesy($srcimg),
+      imagesx($srcimg), imagesy($srcimg)
+    );
+  }
+
+  public function makeGrid() {
+
+    o(VERBOSE_DEBUG, 'Constructing grid');
+
+    $column = $this->column;
+    $row = $this->thumbcount / $column;
+
+    if ($this->thumbcount % $column > 0) {
+      $row += 1;
+    }
+    $width = $this->thumbsize[0];
+    $height = $this->thumbsize[1];
+
+    o(VERBOSE_DEBUG, 'Grid thumbsize: '.$width.'x'.$height.' px');
+
+    $grid = imagecreatetruecolor($width * $column, $height * $row); # Image.new($this->mode, array($width * $column, $height * $row));
+
+    $bgcolor = imagecolorallocate($grid, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
+    $textcolor = imagecolorallocate($grid, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
+
+    $seektime = 0;
+
+    foreach (range(0, $row -1) as $j) {
+
+      foreach (range(0, $column -1) as $i) {
+
+        if ($j  *  $column + $i >= $this->thumbcount) {
+          break;
+        }
+
+        # make sure there is an image here
+        if (is_resource($this->thumbnails[$j * $column+$i])) {
+          o(VERBOSE_DEBUGDEEP, 'Pasting thumbnail '.$j.','.$i.' to '.$width * $i.'x'.$height * $j);
+
+          $this->paste(
+            # paste this image
+            $this->thumbnails[$j * $column+$i],
+            # into this image
+            $grid,
+            # paste it at this x position in the target image
+            $width * $i,
+            # paste it at this y position in the target image
+            $height * $j
+          );
+        } else {
+          o(VERBOSE_DEBUGDEEP, 'Skipping invalid thumbnail '.$j.','.$i.' at '.$width * $i.'x'.$height * $j);
+        }
+
+        # is timestamp writing on
+        if ($this->timestamp == true) {
+
+          # calculate seek time
+          $seektime += $this->vid_interval;
+
+          # get the text
+          $ts = $this->getTimeString($seektime);
+
+          # is a TTF font specified?
+          if ($this->fontname) {
+            imagettftext(
+              $grid,
+              $this->fontsize,
+              0,
+              $width * $i + 2,
+              $height * $j + ($height - $this->fontsize + 5),
+              $textcolor,
+              $this->fontname,
+              $ts
+            );
+          # or should we use plain writing?
+          } else {
+            imagestring(
+              $grid,
+              4, # font
+              ($width * $i) + 3,
+              ($height * $j) + $height - 15,
+              $ts,
+              $textcolor
+            );
+          }
+        }
+      }
+    }
+    $this->grid = $grid;
+    return $grid;
+  }
+
+  # make information header
+  public function makeHeader() {
+
+    o(VERBOSE_DEBUG, 'Constructing header');
+
+    $width = $this->resolution[0];
+    $height = $this->resolution[1];
+    $duration = $this->duration;
+    $hours = $duration / 3600;
+    $minutes = ($duration % 3600) / 60;
+    $seconds = $duration % 60;
+    $timestring = str_pad(floor($hours), 2, '0', STR_PAD_LEFT).":".str_pad(floor($minutes), 2, '0', STR_PAD_LEFT).":".str_pad(floor($seconds), 2, '0', STR_PAD_LEFT);
+
+    $this->header = imagecreatetruecolor(imagesx($this->grid), $this->header);
+    # first allocated color is background
+    $bgcolor = imagecolorallocate($this->header, $this->backgroundcolor[0], $this->backgroundcolor[1], $this->backgroundcolor[2]);
+    $textcolor = imagecolorallocate($this->header, $this->textcolor[0], $this->textcolor[1], $this->textcolor[2]);
+
+    # is there a font file
+    if ($this->fontname) {
+
+      # compact mode
+      if ($this->compact) {
+        imagettftext(
+          $this->header ,
+          $this->fontsize,
+          0,
+          10,
+          20,
+          $textcolor,
+          $this->fontname,
+          implode(' ', array(
+            basename($this->filename),
+            (round($this->filesize, 2))." MB",
+            $width."x".$height,
+            $timestring
+          ))
+        );
+      # not compact mode
+      } else {
+
+        # file name text
+        imagettftext(
+          $this->header,
+          $this->fontsize,
+          0,
+          10,
+          20,
+          $textcolor,
+          $this->fontname,
+          "File Name: ".basename($this->filename)
+        );
+
+        # file size text
+        imagettftext(
+          $this->header,
+          $this->fontsize,
+          0,
+          10,
+          40,
+          $textcolor,
+          $this->fontname,
+          "File Size: ".(round($this->filesize, 2))." MB"
+        );
+
+        # file resolution text
+        imagettftext(
+          $this->header,
+          $this->fontsize,
+          0,
+          10,
+          60,
+          $textcolor,
+          $this->fontname,
+          "Resolution: ".$width."x".$height
+        );
+
+        # file size text
+        imagettftext(
+          $this->header,
+          $this->fontsize,
+          0,
+          10,
+          80,
+          $textcolor,
+          $this->fontname,
+          "Duration: ".$timestring
+        );
+      }
+    # no font file
+    } else {
+      # compact mode
+      if ($this->compact) {
+        imagestring(
+          $this->header,
+          4, # font
+          5,
+          5,
+            implode(' ', array(
+              basename($this->filename),
+              (round($this->filesize, 2))." MB",
+              $width."x".$height,
+              $timestring
+            ))
+          , $textcolor
+        );
+      # not compact mode
+      } else {
+
+        # file name text
+        imagestring(
+          $this->header,
+          4, # font
+          10,
+          10,
+          "File Name : ".basename($this->filename),
+          $textcolor
+        );
+
+        # file size text
+        imagestring(
+          $this->header,
+          4, # font
+          10,
+          30,
+          "File Size : ".(round($this->filesize, 2))." MB",
+          $textcolor
+        );
+
+        # resolution text
+        imagestring(
+          $this->header,
+          4, # font
+          10,
+          50,
+          "Resolution: ".$width."x".$height,
+          $textcolor
+        );
+
+        # duration text
+        imagestring(
+          $this->header,
+          4, # font
+          10,
+          70,
+          "Duration  :".$timestring,
+          $textcolor
+        );
+      }
+    }
+
+    # return the header image
+    return $this->header;
+  }
+
+  # to make a sheet by a given interval
+  public function makeSheetByInterval($interval) {
+
+    o(VERBOSE_DEBUG, 'Making sheet by interval: '.$interval);
+
+    $this->vid_interval = $interval;
+    $this->makeThumbnails($interval);
+    $this->shrinkThumbs($this->thumbsize);
+    $this->makeGrid();
+
+
+    # only output grid - use the whole grid as image
+    if ($this->gridonly) {
+      $this->sheet = $this->grid;
+    # output sheet with borders and header
+    } else {
+      $this->makeHeader();
+      $this->sheet = imagecreatetruecolor(imagesx($this->grid), imagesy($this->grid) + imagesy($this->header));
+      $this->paste($this->header, $this->sheet, 0, 0);
+      $this->paste($this->grid, $this->sheet, 0, imagesy($this->header));
+    }
+
+    return $this->sheet;
+  }
+
+  public function makeSheetByNumber($numOfThumbs) {
+    o(VERBOSE_DEBUG, 'Making sheet by number mode, thumbs: '.$numOfThumbs);
+    $interval = ($this->duration / $numOfThumbs);
+    $this->vid_interval = $interval;
+    return $this->makeSheetByInterval($interval);
+  }
+
+  public function output() {
+
+    # make sure file does not exist
+    if (file_exists($this->output)) {
+      o(VERBOSE_ERROR, 'Output file exists already: '.$this->output);
+      die(1);
+    }
+
+    o(VERBOSE_DEBUG, 'Output quality: '.($this->quality === false ? 100 : $this->quality));
+    o(VERBOSE_INFO, 'Output file   : '.$this->output);
+
+    switch ($this->format) {
+      case 'jpg':
+      case 'jpeg':
+        imagejpeg(
+          $this->sheet,
+          $this->output,
+          $this->quality === false ? 75 : $this->quality # 0-100
+        );
+        break;
+
+      default:
+        imagepng(
+          $this->sheet,
+          $this->output,
+          $this->quality === false ? 9 : $this->quality # compression 0-9
+
+        );
+        break;
+    }
+
+    return true;
+  }
 }
 
 # defaults
@@ -720,26 +722,26 @@ $count = 20;
 # get arguments
 $args = getopt('o:i:n:c:t:v::q:',
 array(
-	'bgcolor:',
-	'column:',
-	'compact',
-	'format:',
-	'filename:',
-	'fontname:',
-	'fontsize:',
-	'gridonly',
-	'header:',
-	'help',
-	'interval:',
-	'notime:',
-	'number:',
-	'output:',
-	'preview:',
-	'quality:',
-	'skipnoduration',
-	'textcolor:',
-	'thumbsize:',
-	'verbose::'
+  'bgcolor:',
+  'column:',
+  'compact',
+  'format:',
+  'filename:',
+  'fontname:',
+  'fontsize:',
+  'gridonly',
+  'header:',
+  'help',
+  'interval:',
+  'notime:',
+  'number:',
+  'output:',
+  'preview:',
+  'quality:',
+  'skipnoduration',
+  'textcolor:',
+  'thumbsize:',
+  'verbose::'
 ));
 
 if (isset($args['help'])) {
@@ -748,107 +750,107 @@ Create thumbnail contact sheet from a video.
 by Robert Klebe, dotpointer, original version in Python by rorasa
 
 --bgcolor=<r, default 0>,<g, default 0>,<b, default 0> (not implemented: ,<a, default 0>)
-	Specify background color of contact sheet. color is specify in RGBA format.
+  Specify background color of contact sheet. color is specify in RGBA format.
 
 --column=, -c <num, default 5>
-	Specify number of column of thumbnail sheet.
+  Specify number of column of thumbnail sheet.
 
 --compact
-	Do a compact one line header.
+  Do a compact one line header.
 
 --filename= <input-filename>
-	Input video filename.
+  Input video filename.
 
 --fontname=<./fontname, default plain internal>
-	Specify font of description. Any truetype font are supported.
+  Specify font of description. Any truetype font are supported.
 
 --fontsize=<size, default 15>
-	Specify font size.
+  Specify font size.
 
 --format=<jpg|png>
-	Specify output format.
+  Specify output format.
 
 --gridonly
-	Only output the grid, skip the frame and header around it.
+  Only output the grid, skip the frame and header around it.
 
 --header=<num, default 5>
-	Specify height of description header.
+  Specify height of description header.
 
 --interval=, -i <sec, default <?php echo $count ?>>
-	Create thumbnails at fixed interval. Each thumbnail is <sec> seconds apart.
+  Create thumbnails at fixed interval. Each thumbnail is <sec> seconds apart.
 
 --notime
-	Remove thumbnail timestamp.
+  Remove thumbnail timestamp.
 
 --number=, -n <num, default <?php echo $count ?>>
-	Create total of <num> thumbnails. Each thumbnail is at equidistant apart.
+  Create total of <num> thumbnails. Each thumbnail is at equidistant apart.
 
 --output=, -o <output-filename, default input-filename-without-ext.png>
-	Specift output video filename.
+  Specift output video filename.
 
 --skipnoduration
-	Do not output error upon input file with no duration, just quit.
+  Do not output error upon input file with no duration, just quit.
 
 --textcolor=<r, default 255>,<g, default 255>,<b, default 255> (not implemented: ,<a, default 0>)
-	Specify text color of description. color is specify in RGBA format.
+  Specify text color of description. color is specify in RGBA format.
 
 --thumbsize=, -t <width, default 160>,<height, default 120, set to -1 for auto>
-	Specify maximum size of a thumbnail. The thumbnails will keep its aspect ratio unchanged.
+  Specify maximum size of a thumbnail. The thumbnails will keep its aspect ratio unchanged.
 
 --verbose, -v<v|vv>
-	Set verbosity level,
+  Set verbosity level,
 
 --quality=<png:0-9, jpg:0-100>, -q <...>
-	Set compression level.
-	PNG: 0 = no compression, 9 = maximum compression
-	JPEG: 0 = maximum compression, 100 = minimum compression
+  Set compression level.
+  PNG: 0 = no compression, 9 = maximum compression
+  JPEG: 0 = maximum compression, 100 = minimum compression
 <?php
-	die();
+  die();
 }
 
 # to output data
 function o($level, $s, $newline=false) {
-	global $verbose;
+  global $verbose;
 
-	# is this beyond the output level?
-	if ($level > $verbose) {
-		return false;
-	}
+  # is this beyond the output level?
+  if ($level > $verbose) {
+    return false;
+  }
 
-	$newline = $newline ? $newline : "\n";
+  $newline = $newline ? $newline : "\n";
 
-	fwrite(STDERR, $s.($newline ? $newline : ''));
+  fwrite(STDERR, $s.($newline ? $newline : ''));
 
-	return true;
+  return true;
 }
 
 function progressbar($part, $total) {
 
-	# character length for progress bar
-	$pb_length = 10;
+  # character length for progress bar
+  $pb_length = 10;
 
-	# calculate the part
-	$pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
-	# calculate the total
-	$pb_total = $pb_length;
+  # calculate the part
+  $pb_part = round( ($part > 0 && $total > 0) ? ($part/$total) * $pb_length : 0);
+  # calculate the total
+  $pb_total = $pb_length;
 
-	return
-		'['.
-		str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
+  return
+    '['.
+    str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
 
-		($part < $total && $pb_part > 0 ? '>' : '').
+    ($part < $total && $pb_part > 0 ? '>' : '').
 
-		str_repeat('.', $pb_total - $pb_part).
-		'] '.
-		# the first number is the actual amount of characters in the
-		# resulting string, and we want 000.000, so that's 7
-		sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
-		'% '.
-		str_pad($part, strlen($total), '0', STR_PAD_LEFT).
-		'/'.
-		$total.
-		' '
-		;
+    str_repeat('.', $pb_total - $pb_part).
+    '] '.
+    # the first number is the actual amount of characters in the
+    # resulting string, and we want 000.000, so that's 7
+    sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
+    '% '.
+    str_pad($part, strlen($total), '0', STR_PAD_LEFT).
+    '/'.
+    $total.
+    ' '
+    ;
 }
 
 # --- main ------------------------------
@@ -882,119 +884,119 @@ $verbose = VERBOSE_ERROR;
 # walk arguments
 foreach ($args as $argkey => $argvalue) {
 
-	# find out argument
-	switch ($argkey) {
+  # find out argument
+  switch ($argkey) {
 
-		case 'bgcolor':
-			$bbcolor = explode(',',$argvalue);
-			break;
+    case 'bgcolor':
+      $bbcolor = explode(',',$argvalue);
+      break;
 
-		case 'c':
-		case 'column':
-			$column = $argvalue;
-			break;
+    case 'c':
+    case 'column':
+      $column = $argvalue;
+      break;
 
-		case 'compact':
-			$compact = true;
-			break;
+    case 'compact':
+      $compact = true;
+      break;
 
-		case 'filename':
-			$filename = $argvalue;
-			break;
+    case 'filename':
+      $filename = $argvalue;
+      break;
 
-		case 'format':
-			$format = $argvalue;
-			break;
+    case 'format':
+      $format = $argvalue;
+      break;
 
-		case 'quality':
-			$quality = $argvalue;
-			break;
+    case 'quality':
+      $quality = $argvalue;
+      break;
 
-		case 'fontname':
-			$fontname = $argvalue;
-			break;
+    case 'fontname':
+      $fontname = $argvalue;
+      break;
 
-		case 'fontsize':
-			$fontsize = $argvalue;
-			break;
+    case 'fontsize':
+      $fontsize = $argvalue;
+      break;
 
-		case 'gridonly':
-			$gridonly = true;
-			break;
+    case 'gridonly':
+      $gridonly = true;
+      break;
 
-		case 'header':
-			$header = $argvalue;
-			break;
+    case 'header':
+      $header = $argvalue;
+      break;
 
-		case 'i':
-		case 'interval':
-			$interval = $argvalue;
+    case 'i':
+    case 'interval':
+      $interval = $argvalue;
 
-			# set mode
-			$mode = 'interval';
-			$count = $interval;
+      # set mode
+      $mode = 'interval';
+      $count = $interval;
 
-			break;
+      break;
 
-		case 'notime':
-			$notime = true;
-			break;
+    case 'notime':
+      $notime = true;
+      break;
 
-		case 'n':
-		case 'number':
-			$number = $argvalue;
+    case 'n':
+    case 'number':
+      $number = $argvalue;
 
-			# set mode
-			$mode = 'number';
-			$count = $number;
-			break;
+      # set mode
+      $mode = 'number';
+      $count = $number;
+      break;
 
-		case 'o':
-		case 'output':
-			$output = $argvalue;
-			break;
+    case 'o':
+    case 'output':
+      $output = $argvalue;
+      break;
 
-		case 'skipnoduration':
-			$skipnoduration = true;
-			break;
+    case 'skipnoduration':
+      $skipnoduration = true;
+      break;
 
-		case 'textcolor':
-			$textcolor = explode(',', $argvalue);
-			break;
+    case 'textcolor':
+      $textcolor = explode(',', $argvalue);
+      break;
 
-		case 'thumbsize':
-			$thumbsize = explode(',', $argvalue);
-			break;
-		case 'v':
-		case 'verbose':
-			switch ($argvalue) {
-				default:
-					$verbose = VERBOSE_INFO;
-					break;
-				case 'v':
-					$verbose = VERBOSE_DEBUG;
-					break;
-				case 'vv':
-					$verbose = VERBOSE_DEBUGDEEP;
-					break;
-			}
-			break;
-	}
+    case 'thumbsize':
+      $thumbsize = explode(',', $argvalue);
+      break;
+    case 'v':
+    case 'verbose':
+      switch ($argvalue) {
+        default:
+          $verbose = VERBOSE_INFO;
+          break;
+        case 'v':
+          $verbose = VERBOSE_DEBUG;
+          break;
+        case 'vv':
+          $verbose = VERBOSE_DEBUGDEEP;
+          break;
+      }
+      break;
+  }
 }
 
 if (!file_exists($filename)) {
-	o(VERBOSE_ERROR, 'Input file not found: '.$filename, false);
-	die(1);
+  o(VERBOSE_ERROR, 'Input file not found: '.$filename, false);
+  die(1);
 }
 
 if (!$filename) {
-	o(VERBOSE_ERROR, 'Missing input filename.', false);
-	die(1);
+  o(VERBOSE_ERROR, 'Missing input filename.', false);
+  die(1);
 }
 
 if (!file_exists('/usr/bin/ffmpeg')) {
-	o(VERBOSE_ERROR, '/usr/bin/ffmpeg not installed');
-	die(1);
+  o(VERBOSE_ERROR, '/usr/bin/ffmpeg not installed');
+  die(1);
 }
 
 # make new sheet object
@@ -1008,83 +1010,83 @@ $sheet->setProperty('output', $output !== false ? $output : $sheet->filename.'.'
 
 # make sure file does not exist
 if (file_exists($sheet->output)) {
-	o(VERBOSE_ERROR, 'Output file exists already: '.$sheet->output);
-	die(1);
+  o(VERBOSE_ERROR, 'Output file exists already: '.$sheet->output);
+  die(1);
 }
 
 # set column
 if ($column != false) {
-	$column = $column;
-	if ($column < 1) {
-		$column = 1;
-	}
-	$sheet->setProperty('column',$column);
+  $column = $column;
+  if ($column < 1) {
+    $column = 1;
+  }
+  $sheet->setProperty('column',$column);
 }
 
 # set header height
 if ($header != false) {
-	$header = (int)$header;
-	if ($header < 85) {
-		$header = 85;
-	}
+  $header = (int)$header;
+  if ($header < 85) {
+    $header = 85;
+  }
 
-	$sheet->setProperty('header',$header);
+  $sheet->setProperty('header',$header);
 }
 
 # set timestamp
 if ($notime != false) {
-	$sheet->setProperty('timestamp',false);
+  $sheet->setProperty('timestamp',false);
 }
 
 # set thumb maximum size
 if ($thumbsize != false) {
-	$thumbsize = array($thumbsize[0], $thumbsize[1]);
-	$sheet->setProperty('thumbsize', $thumbsize);
+  $thumbsize = array($thumbsize[0], $thumbsize[1]);
+  $sheet->setProperty('thumbsize', $thumbsize);
 }
 
 # set text color
 if ($textcolor != false) {
-	$color = array($textcolor[0], $textcolor[1], $textcolor[2], $textcolor[3]);
-	$sheet->setProperty('textcolor', $color);
+  $color = array($textcolor[0], $textcolor[1], $textcolor[2], $textcolor[3]);
+  $sheet->setProperty('textcolor', $color);
 }
 
 # set background color
 if ($bbcolor != false) {
-	$color = array($bbcolor[0], $bbcolor[1], $bbcolor[2], $bbcolor[3]);
-	$sheet->setProperty('backgroundcolor', $color);
+  $color = array($bbcolor[0], $bbcolor[1], $bbcolor[2], $bbcolor[3]);
+  $sheet->setProperty('backgroundcolor', $color);
 }
 
 # set quality
 if ($quality != false) {
-	$sheet->setProperty('quality', $quality);
+  $sheet->setProperty('quality', $quality);
 }
 
 # set font name
 if ($fontname != false) {
-	$sheet->setProperty('fontname', $fontname);
+  $sheet->setProperty('fontname', $fontname);
 }
 
 # set font size
 if ($fontsize != false) {
-	$sheet->setProperty('fontsize', $fontsize);
+  $sheet->setProperty('fontsize', $fontsize);
 }
 
 # set compact
 if ($compact != false) {
-	$sheet->setProperty('compact', true);
-	$sheet->setProperty('header', $sheet->fontname ? $sheet->fontsize * 2 : 25);
+  $sheet->setProperty('compact', true);
+  $sheet->setProperty('header', $sheet->fontname ? $sheet->fontsize * 2 : 25);
 }
 
 # set grid only
 if ($gridonly != false) {
-	$sheet->setProperty('gridonly', true);
+  $sheet->setProperty('gridonly', true);
 }
 
 # find out what mode that was activated
 if ($mode == 'number') {
-	$sheet->makeSheetByNumber($count);
+  $sheet->makeSheetByNumber($count);
 } else {
-	$sheet->makeSheetByInterval($count);
+  $sheet->makeSheetByInterval($count);
 }
 
 $sheet->output();

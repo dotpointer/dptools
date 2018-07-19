@@ -7,26 +7,28 @@
 
 # 2017-03-05 14:32:00
 # 2018-06-29 14:20:00 - cleanup
+# 2018-06-29 17:13:11
+# 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
 
 # find all files
 $c = "find -iname '*.pdf'";
 exec($c, $o, $r);
 if ($r !== 0) {
-	echo 'Failed finding PDF files.'."\n";
-	die(1);
+  echo 'Failed finding PDF files.'."\n";
+  die(1);
 }
 $files = $o;
 
 foreach ($files as $file) {
-	if (strpos($file, 'greyscale.pdf')!== false) continue;
-	unset($c, $o, $r);
-	$c = 'pdfgreyscale '.escapeshellarg($file);
-	exec($c,$o, $r);
-	if ($r !== 0) {
-		echo 'Failed running command.'."\n";
-		var_dump($o);
-		die(1);
-	}
+  if (strpos($file, 'greyscale.pdf')!== false) continue;
+  unset($c, $o, $r);
+  $c = 'pdfgreyscale '.escapeshellarg($file);
+  exec($c,$o, $r);
+  if ($r !== 0) {
+    echo 'Failed running command.'."\n";
+    var_dump($o);
+    die(1);
+  }
 }
 
 ?>

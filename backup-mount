@@ -9,6 +9,7 @@
 # 2015-06-06 12:47:17 - making file a part of dptools
 # 2018-06-28 13:32:00 - cleanup
 # 2018-06-28 15:44:00 - description edit and cleanup
+# 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 
 
 # Make sure only root can run our script
@@ -42,78 +43,78 @@ source $CONFIG_FILE;
 # check parameters
 
 if [ -z "$DIR_SHARE" ]; then
-	echo "DIR_SHARE not set";
-	exit 1;
+  echo "DIR_SHARE not set";
+  exit 1;
 fi
 echo "Samba share mount point: $DIR_SHARE";
 
 if [ -z "$DIR_IMAGE" ]; then
-	echo "DIR_IMAGE not set";
-	exit 1;
+  echo "DIR_IMAGE not set";
+  exit 1;
 fi
 echo "Image file mount point : $DIR_IMAGE";
 
 if [ -z "$LOOPDEVICE" ]; then
-	echo "LOOPDEVICE not set";
-	exit 1;
+  echo "LOOPDEVICE not set";
+  exit 1;
 fi
 echo "Loop device: $LOOPDEVICE";
 
 if [ -z "$MAPPERNAME" ]; then
-	echo "MAPPERNAME not set";
-	exit 1;
+  echo "MAPPERNAME not set";
+  exit 1;
 fi
 echo "Device mapper: /dev/mapper/$MAPPERNAME";
 
 if [ -z "$SAMBA_USER" ]; then
-	echo "SAMBA_USER not set";
-	exit 1;
+  echo "SAMBA_USER not set";
+  exit 1;
 fi
 echo "Samba user: $SAMBA_USER";
 
 if [ -z "$SAMBA_PASSWORD" ]; then
-	echo "SAMBA_PASSWORD not set";
-	exit 1;
+  echo "SAMBA_PASSWORD not set";
+  exit 1;
 fi
 
 if [ -z "$SAMBA_PATH_SHARE" ]; then
-	echo "SAMBA_PATH_SHARE not set";
-	exit 1;
+  echo "SAMBA_PATH_SHARE not set";
+  exit 1;
 fi
 echo "Samba share path: $SAMBA_PATH_SHARE";
 
 if [ -z "$SAMBA_PATH_IMAGE" ]; then
-	echo "SAMBA_PATH_IMAGE not set";
-	exit 1;
+  echo "SAMBA_PATH_IMAGE not set";
+  exit 1;
 fi
 echo "Samba image path inside Samba share: $SAMBA_PATH_IMAGE";
 
 # make sure outer container dir is there
 echo "Checking share dir: $DIR_SHARE";
 if [ ! -d "$DIR_SHARE" ]; then
-	# make a dir to mount on
-	echo "Creating outer mount dir: $DIR_SHARE";
-	mkdir -p $DIR_SHARE
-	if [[ $? != 0 ]]; then
-		echo "Failed creating dir: $DIR_SHARE";
-		exit 1;
-	fi
+  # make a dir to mount on
+  echo "Creating outer mount dir: $DIR_SHARE";
+  mkdir -p $DIR_SHARE
+  if [[ $? != 0 ]]; then
+    echo "Failed creating dir: $DIR_SHARE";
+    exit 1;
+  fi
 fi
 
 # mount the outer cifs bridge over samba
 echo "Mounting samba share $SAMBA_PATH_SHARE to share dir $DIR_SHARE";
 mount -t cifs -o username=$SAMBA_USER,password=$SAMBA_PASSWORD //$SAMBA_PATH_SHARE $DIR_SHARE
 if [[ $? != 0 ]]; then
-	echo "Failed mounting samba share: $SAMBA_PATH_SHARE -> $DIR_SHARE";
-	exit 1;
+  echo "Failed mounting samba share: $SAMBA_PATH_SHARE -> $DIR_SHARE";
+  exit 1;
 fi
 
 # connecting loop device to image
 echo "Connecting $LOOPDEVICE to $DIR_SHARE$SAMBA_PATH_IMAGE";
 losetup $LOOPDEVICE $DIR_SHARE$SAMBA_PATH_IMAGE
 if [[ $? != 0 ]]; then
-	echo "Failed mounting dir: $DIR_SHARE$SAMBA_PATH_IMAGE";
-	exit 1;
+  echo "Failed mounting dir: $DIR_SHARE$SAMBA_PATH_IMAGE";
+  exit 1;
 fi
 
 # open loop device
@@ -123,21 +124,21 @@ cryptsetup luksOpen $LOOPDEVICE $MAPPERNAME
 # check the image dir
 echo "Checking image dir: $DIR_IMAGE";
 if [ ! -d "$DIR_IMAGE" ]; then
-	# make a dir to mount on
-	echo "Creating outer mount dir: $DIR_IMAGE";
-	mkdir -p $DIR_IMAGE
-	if [[ $? != 0 ]]; then
-		echo "Failed creating dir: $DIR_IMAGE";
-		exit 1;
-	fi
+  # make a dir to mount on
+  echo "Creating outer mount dir: $DIR_IMAGE";
+  mkdir -p $DIR_IMAGE
+  if [[ $? != 0 ]]; then
+    echo "Failed creating dir: $DIR_IMAGE";
+    exit 1;
+  fi
 fi
 
 # mount the image
 echo "Mounting mapper /dev/mapper/$MAPPERNAME to image dir $DIR_IMAGE";
 mount /dev/mapper/$MAPPERNAME $DIR_IMAGE
 if [[ $? != 0 ]]; then
-	echo "Failed mounting dir: $DIR_IMAGE";
-	exit 1;
+  echo "Failed mounting dir: $DIR_IMAGE";
+  exit 1;
 fi
 
 echo "Image is now ready in $DIR_IMAGE";

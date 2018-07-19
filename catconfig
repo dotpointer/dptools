@@ -10,39 +10,40 @@
 # 2015-06-01 13:21:44
 # 2015-08-24 16:19:31
 # 2018-06-28 16:05:00 - cleanup
+# 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 
 # make sure argv is set
 if (!isset($argv[1])) {
-	echo 'No file specified'."\n";
-	die(1);
+  echo 'No file specified'."\n";
+  die(1);
 }
 
 if ($argv[1] === '-h' || $argv[1] === '--help') {
 ?>
-	Usage: <?php echo $_SERVER['SCRIPT_FILENAME']?> <filename>
+  Usage: <?php echo $_SERVER['SCRIPT_FILENAME']?> <filename>
 <?php	
 }
 
 $file = $argv[1];
 
 if (!file_exists($file) || !$f = fopen($file, 'r')) {
-	echo 'Failed opening file: '.$file."\n";
-	die(1);
+  echo 'Failed opening file: '.$file."\n";
+  die(1);
 }
 
 # walk the file
 while (!feof($f)) {
-	# get the line
-	$line = fgets($f);
+  # get the line
+  $line = fgets($f);
 
-	# begin by removing the comments, everything with # after is a comment
-	$line = trim(strpos($line, '#') !== false ? substr($line, 0, strpos($line, '#')) : $line);
+  # begin by removing the comments, everything with # after is a comment
+  $line = trim(strpos($line, '#') !== false ? substr($line, 0, strpos($line, '#')) : $line);
 
-	if (!$line) {
-		continue;
-	}
+  if (!$line) {
+    continue;
+  }
 
-	echo $line."\n";
+  echo $line."\n";
 }
 
 fclose($f);

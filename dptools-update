@@ -15,6 +15,7 @@
 # 2018-06-29 19:20:00 - bugfix, update failed to run
 # 2018-06-30 02:25:00 - adding support for arguments and user profile files editing
 # 2018-07-01 14:11:00 - adding git installer
+# 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 
 ACTION_ADD="";
 ACTION_UPDATE="";
@@ -23,208 +24,208 @@ CURRENTUSER=$(whoami);
 TARGETDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)";
 
 while getopts ":ahuy" opt; do
-	case $opt in
-		a) # add to provided or current user
+  case $opt in
+    a) # add to provided or current user
 
-			# read optional argument
-			OPTARG=${!OPTIND}
-			if [ "${OPTARG:0:1}" == "-" ] || [ "$#" -lt "$OPTIND" ]; then
-				# default value if nothing is set
-				OPTARG=$CURRENTUSER;
-			else
-				OPTIND=$(( $OPTIND + 1 ))
-			fi
+      # read optional argument
+      OPTARG=${!OPTIND}
+      if [ "${OPTARG:0:1}" == "-" ] || [ "$#" -lt "$OPTIND" ]; then
+        # default value if nothing is set
+        OPTARG=$CURRENTUSER;
+      else
+        OPTIND=$(( $OPTIND + 1 ))
+      fi
 
-			ACTION_ADD=$OPTARG;
-			;;
+      ACTION_ADD=$OPTARG;
+      ;;
 
-		h) # print help
+    h) # print help
 cat << EOF
 Update dptools.
 
 Usage: dptools-update [-a [user]][-h][-u][-y]
 
 -a [username - defaults to current user]
-	Add dptools-console-init call to .bashrc and .profile
-	for current user or for the user provided in the argument.
+  Add dptools-console-init call to .bashrc and .profile
+  for current user or for the user provided in the argument.
 
 -h
-	Print this information and exit.
+  Print this information and exit.
 
 -u
-	Update dptools. Uses git pull. This is the default action
-	unless any other parameter is given.
+  Update dptools. Uses git pull. This is the default action
+  unless any other parameter is given.
 
 -y
-	Answer yes on confirmation questions.
+  Answer yes on confirmation questions.
 
 EOF
-			exit 0;
-			;;
+      exit 0;
+      ;;
 
-		u) # update
-			ACTION_UPDATE="1";
-			;;
+    u) # update
+      ACTION_UPDATE="1";
+      ;;
 
-		y) # param force yes
-			PARAM_FORCE_YES="1";
-			;;
-		\?)
-			echo "Error: invalid option -$OPTARG" >&2;
-			exit 1;
-			;;
-	esac
+    y) # param force yes
+      PARAM_FORCE_YES="1";
+      ;;
+    \?)
+      echo "Error: invalid option -$OPTARG" >&2;
+      exit 1;
+      ;;
+  esac
 done
 
 # no option given at all?
 if [ -z $ACTION_ADD ] && [ -z $ACTION_DEPRECATED ] && [ -z $ACTION_UPDATE ]; then
-	# run update
-	ACTION_UPDATE="1";
+  # run update
+  ACTION_UPDATE="1";
 fi
 
 # action: update
 if [[ "$ACTION_UPDATE" == "1" ]]; then
-	if ! [ -x "$(command -v git)" ]; then
-		if [[ ! $CURRENTUSER == "root" ]]; then
-			echo "Error: git is not installed and you are not root, so cannot try to install either. Try again as root." >&2;
-			exit 1;
-		fi
+  if ! [ -x "$(command -v git)" ]; then
+    if [[ ! $CURRENTUSER == "root" ]]; then
+      echo "Error: git is not installed and you are not root, so cannot try to install either. Try again as root." >&2;
+      exit 1;
+    fi
 
-		if [ ! -x "$(command -v 'apt-get')" ]; then
-			echo "Error: git is not installed, cannot install because apt-get command is not available. Install git and retry.";
-			exit 1;
-		fi
+    if [ ! -x "$(command -v 'apt-get')" ]; then
+      echo "Error: git is not installed, cannot install because apt-get command is not available. Install git and retry.";
+      exit 1;
+    fi
 
-		if [[ $PARAM_FORCE_YES != "1" ]]; then
-			read -p "Git is not installed and it is needed, install it? [y or n]: " -n 1 -r
-			if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-				exit 1;
-			fi
-		fi
+    if [[ $PARAM_FORCE_YES != "1" ]]; then
+      read -p "Git is not installed and it is needed, install it? [y or n]: " -n 1 -r
+      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1;
+      fi
+    fi
 
-		apt-get install -y git
-		if [ ! $? -eq 0 ]; then
-			echo 'Error: failed to install git.' >&2;
-			exit 1;
-		fi
+    apt-get install -y git
+    if [ ! $? -eq 0 ]; then
+      echo 'Error: failed to install git.' >&2;
+      exit 1;
+    fi
 
-		if [ ! -x "$(command -v 'apt-get')" ]; then
-			echo "Error: git is still not installed.";
-			exit 1;
-		fi
-	fi
+    if [ ! -x "$(command -v 'apt-get')" ]; then
+      echo "Error: git is still not installed.";
+      exit 1;
+    fi
+  fi
 
-	if [[ -z $TARGETDIR	]]; then
-		echo "Errr: could not find target directory $TARGETDIR." >&2;
-		exit 1;
-	fi
+  if [[ -z $TARGETDIR	]]; then
+    echo "Errr: could not find target directory $TARGETDIR." >&2;
+    exit 1;
+  fi
 
-	echo "dptools directory: $TARGETDIR";
+  echo "dptools directory: $TARGETDIR";
 
-	if [ ! -w $TARGETDIR ] ; then
-		echo "Error: dptools directory $TARGETDIR is not writable for your user." >&2;
-		exit 1;
-	fi
+  if [ ! -w $TARGETDIR ] ; then
+    echo "Error: dptools directory $TARGETDIR is not writable for your user." >&2;
+    exit 1;
+  fi
 
-	# does target dir exist
-	if [ -d "$TARGETDIR" ]; then
-		cd "$TARGETDIR";
-		git pull
-		if [ ! $? -eq 0 ]; then
-			echo 'Error: failed pulling data from git repository.' >&2;
-			exit 1;
-		fi
-	fi
+  # does target dir exist
+  if [ -d "$TARGETDIR" ]; then
+    cd "$TARGETDIR";
+    git pull
+    if [ ! $? -eq 0 ]; then
+      echo 'Error: failed pulling data from git repository.' >&2;
+      exit 1;
+    fi
+  fi
 
-	# does target dir not exist
-	if [ ! -d "$TARGETDIR" ]; then
-		git clone https://gitlab.com/dotpointer/dptools.git $TARGETDIR
-		if [ ! $? -eq 0 ]; then
-			echo 'Error: failed cloning data from git repository.' >&2;
-			exit 1;
-		fi
-	fi
+  # does target dir not exist
+  if [ ! -d "$TARGETDIR" ]; then
+    git clone https://gitlab.com/dotpointer/dptools.git $TARGETDIR
+    if [ ! $? -eq 0 ]; then
+      echo 'Error: failed cloning data from git repository.' >&2;
+      exit 1;
+    fi
+  fi
 
-	# end message
-	echo "Update finished, thank you for using dptools."
+  # end message
+  echo "Update finished, thank you for using dptools."
 fi
 
 # action: add dptools to user profile
 if [[ ! -z $ACTION_ADD ]]; then
-	# get user home directory
-	HOMEDIR=$(getent passwd $ACTION_ADD | cut -d: -f6);
-	if [ ! $? -eq 0 ] ; then
-		echo "Error: failed removing deprecated file $REMOVEFILE";
-		exit 1;
-	fi
+  # get user home directory
+  HOMEDIR=$(getent passwd $ACTION_ADD | cut -d: -f6);
+  if [ ! $? -eq 0 ] ; then
+    echo "Error: failed removing deprecated file $REMOVEFILE";
+    exit 1;
+  fi
 
-	if [[ -z $HOMEDIR ]]; then
-		echo "Error: could not find home directory for user $ACTION_ADD";
-		exit 1;
-	fi
+  if [[ -z $HOMEDIR ]]; then
+    echo "Error: could not find home directory for user $ACTION_ADD";
+    exit 1;
+  fi
 
-	if [[ ! -d $HOMEDIR ]]; then
-		echo "Error: home directory $HOMEDIR does not exist.";
-		exit 1;
-	fi
+  if [[ ! -d $HOMEDIR ]]; then
+    echo "Error: home directory $HOMEDIR does not exist.";
+    exit 1;
+  fi
 
-	# look for this line
-	NEEDEDLINE=". $TARGETDIR/dptools-console-init";
+  # look for this line
+  NEEDEDLINE=". $TARGETDIR/dptools-console-init";
 
-	# loop through files to check for dptools-console-init in them
-	declare -a items=(".bashrc" ".profile")
-	for i in "${items[@]}"
-	do
-		# get current fullpath
-		CURRENTFILE="$HOMEDIR/$i";
+  # loop through files to check for dptools-console-init in them
+  declare -a items=(".bashrc" ".profile")
+  for i in "${items[@]}"
+  do
+    # get current fullpath
+    CURRENTFILE="$HOMEDIR/$i";
 
-		# is current file not existing
-		if [[ ! -f $CURRENTFILE ]]; then
-			# is there no write access to the home directory
-			if [[ ! -w $HOMEDIR ]]; then
-				echo "Error: no write access for home directory $HOMEDIR.";
-				exit 1;
-			fi
-			echo "$CURRENTFILE does not exist, trying to touch it.";
-			touch $CURRENTFILE;
-			if [ $? -ne 0 ]; then
-				echo "Error: failed touching $CURRENTFILE";
-			fi
-		fi
+    # is current file not existing
+    if [[ ! -f $CURRENTFILE ]]; then
+      # is there no write access to the home directory
+      if [[ ! -w $HOMEDIR ]]; then
+        echo "Error: no write access for home directory $HOMEDIR.";
+        exit 1;
+      fi
+      echo "$CURRENTFILE does not exist, trying to touch it.";
+      touch $CURRENTFILE;
+      if [ $? -ne 0 ]; then
+        echo "Error: failed touching $CURRENTFILE";
+      fi
+    fi
 
-		# is current file not existing or writeable
-		if [ ! -f $CURRENTFILE ] ; then
-			echo "Error: $CURRENTFILE does not exist.";
-		# or is current file existing and writeable
-		else
-			# look in file for the needed line
-			DATA=$(cat $CURRENTFILE|grep "$NEEDEDLINE");
-			# was the line missing
-			if [[ -z $DATA ]]; then
-				# is the file writeable
-				if [[ -w $CURRENTFILE ]]; then
-					# try to add the line
-					echo "$CURRENTFILE is missing dptools-console-init, trying to add it";
-					echo $NEEDEDLINE >> $CURRENTFILE;
-					if [ $? -ne 0 ]; then
-						echo "Error: failed adding dptools-console-init to $CURRENTFILE";
-						# no exit here, take next file
-					else
-						# is this the profile file and the user is the current one
-						if [ "$i" == ".profile" ] && [ "$ACTION_ADD" == "$CURRENTUSER" ]; then
-							# then reload the profile
-							echo "Reloading current user profile.";
-							source "$HOMEDIR/.profile";
-						fi
-					fi
-				# or is the file not writeable
-				else
-					echo "Error: $CURRENTFILE is missing dptools-console-init, but file is not writeable.";
-					# no exit here, take next file
-				fi
-			else
-				echo "$CURRENTFILE already seems to have dptools-console-init";
-			fi
-		fi
-	done
+    # is current file not existing or writeable
+    if [ ! -f $CURRENTFILE ] ; then
+      echo "Error: $CURRENTFILE does not exist.";
+    # or is current file existing and writeable
+    else
+      # look in file for the needed line
+      DATA=$(cat $CURRENTFILE|grep "$NEEDEDLINE");
+      # was the line missing
+      if [[ -z $DATA ]]; then
+        # is the file writeable
+        if [[ -w $CURRENTFILE ]]; then
+          # try to add the line
+          echo "$CURRENTFILE is missing dptools-console-init, trying to add it";
+          echo $NEEDEDLINE >> $CURRENTFILE;
+          if [ $? -ne 0 ]; then
+            echo "Error: failed adding dptools-console-init to $CURRENTFILE";
+            # no exit here, take next file
+          else
+            # is this the profile file and the user is the current one
+            if [ "$i" == ".profile" ] && [ "$ACTION_ADD" == "$CURRENTUSER" ]; then
+              # then reload the profile
+              echo "Reloading current user profile.";
+              source "$HOMEDIR/.profile";
+            fi
+          fi
+        # or is the file not writeable
+        else
+          echo "Error: $CURRENTFILE is missing dptools-console-init, but file is not writeable.";
+          # no exit here, take next file
+        fi
+      else
+        echo "$CURRENTFILE already seems to have dptools-console-init";
+      fi
+    fi
+  done
 fi

@@ -10,6 +10,7 @@
 # 2017-03-07 08:56:02
 # 2018-06-28 12:28:00 - adding confirmation
 # 2018-06-28 15:43:00 - description edit
+# 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 
 # make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
@@ -22,7 +23,7 @@ echo "This will create an image file for backup storage named imagefile.img in t
 read -p "Type y to continue, or anything else to quit: " -n 1 -r
 echo    # (optional) move to a new line
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-	exit 1;
+  exit 1;
 fi
 
 echo "Creating image file imagefile.img...";

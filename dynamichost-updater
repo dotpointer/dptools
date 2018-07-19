@@ -19,6 +19,8 @@
 # 2014-05-14 - adding check for interface availability in ipconfig output
 # 2015-06-01 17:41:00
 # 2018-06-28 15:56:53 - cleanup
+# 2018-06-28 18:07:40
+# 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 
 # --- some parameter constants - DO NOT CHANGE
 define('LOGLEVEL_DEBUG', 4);	# debug level, print all
@@ -27,7 +29,7 @@ define('LOGLEVEL_WARNING', 2);	# warning level, print when things go wrong
 define('LOGLEVEL_ERROR', 1);	# error level, print when fatal things go wrong
 define('LOGLEVEL_NONE', 0);	# none level, do not output anything
 
-	# name of the program
+  # name of the program
 define('PROGRAM_NAME', 'dynamichost-updater');
 define('COMPANY_NAME', 'dotpointer');
 define('VERSION_NUMBER', '1.0.4');
@@ -35,309 +37,309 @@ define('VERSION_NUMBER', '1.0.4');
 # to get data using curl
 function curl_get($config, $url) {
 
-	# create a new cURL resource
-	$ch = curl_init();
+  # create a new cURL resource
+  $ch = curl_init();
 
-	curl_setopt_array(
-		$ch,
-		array(
-			CURLOPT_URL			   => $url,
-			CURLOPT_RETURNTRANSFER	=> true,			# return web page
-			CURLOPT_HEADER			=> false,			# don't return headers
-			CURLOPT_FOLLOWLOCATION	=> true,			# follow redirects
-			CURLOPT_ENCODING		=> "",				# handle all encodings
-			CURLOPT_USERAGENT		=> COMPANY_NAME.' - '.PROGRAM_NAME.' - '.VERSION_NUMBER,
-			CURLOPT_AUTOREFERER		=> true,			# set referer on redirect
-			CURLOPT_CONNECTTIMEOUT	=> 30,				# timeout on connect
-			CURLOPT_TIMEOUT			=> 30,				# timeout on response
-			CURLOPT_MAXREDIRS		=> 10,				# stop after 10 redirects
-			# CURLOPT_POST			=> 1,				# i am sending post data
-			# CURLOPT_POSTFIELDS		=> http_build_query(array('user' => $username, 'pass' => $password)),
-			CURLOPT_SSL_VERIFYHOST	=> 0,				# don't verify ssl
-			CURLOPT_SSL_VERIFYPEER	=> false,			#
-			CURLOPT_VERBOSE			=> false,			#
-			# CURLOPT_USERPWD			=> $username.':'.$password
-			CURLOPT_IPRESOLVE	=>	CURL_IPRESOLVE_V4
-		)
-	);
+  curl_setopt_array(
+    $ch,
+    array(
+      CURLOPT_URL			   => $url,
+      CURLOPT_RETURNTRANSFER	=> true,			# return web page
+      CURLOPT_HEADER			=> false,			# don't return headers
+      CURLOPT_FOLLOWLOCATION	=> true,			# follow redirects
+      CURLOPT_ENCODING		=> "",				# handle all encodings
+      CURLOPT_USERAGENT		=> COMPANY_NAME.' - '.PROGRAM_NAME.' - '.VERSION_NUMBER,
+      CURLOPT_AUTOREFERER		=> true,			# set referer on redirect
+      CURLOPT_CONNECTTIMEOUT	=> 30,				# timeout on connect
+      CURLOPT_TIMEOUT			=> 30,				# timeout on response
+      CURLOPT_MAXREDIRS		=> 10,				# stop after 10 redirects
+      # CURLOPT_POST			=> 1,				# i am sending post data
+      # CURLOPT_POSTFIELDS		=> http_build_query(array('user' => $username, 'pass' => $password)),
+      CURLOPT_SSL_VERIFYHOST	=> 0,				# don't verify ssl
+      CURLOPT_SSL_VERIFYPEER	=> false,			#
+      CURLOPT_VERBOSE			=> false,			#
+      # CURLOPT_USERPWD			=> $username.':'.$password
+      CURLOPT_IPRESOLVE	=>	CURL_IPRESOLVE_V4
+    )
+  );
 
-	# run the curl
-	$output = curl_exec($ch);
+  # run the curl
+  $output = curl_exec($ch);
 
-	# if error from curl
-	if (curl_errno($ch) != 0) {
-		# TODO: if we return false here
-		logmsg($config, LOGLEVEL_WARNING, 'cURL error when contacting '.$url.': ('.curl_errno($ch).') '.curl_error($ch));
-		return false;
-	}
+  # if error from curl
+  if (curl_errno($ch) != 0) {
+    # TODO: if we return false here
+    logmsg($config, LOGLEVEL_WARNING, 'cURL error when contacting '.$url.': ('.curl_errno($ch).') '.curl_error($ch));
+    return false;
+  }
 
-	# close cURL resource, and free up system resources
-	curl_close($ch);
+  # close cURL resource, and free up system resources
+  curl_close($ch);
 
-	return $output;
+  return $output;
 }
 
 # get cache
 function get_cache($cache) {
-	$cache = file_exists($cache) ? json_decode(file_get_contents($cache), true) : array();
-	if (!is_array($cache)) return array();
-	return $cache;
+  $cache = file_exists($cache) ? json_decode(file_get_contents($cache), true) : array();
+  if (!is_array($cache)) return array();
+  return $cache;
 }
 
 # to extract ip from interface or url
 function get_ip($config, $interface) {
 
-	# is this an URL?
-	if (strpos($interface, 'http') !== false) {
-		# then try to get contents from that
-		# $data = file_get_contents($interface);
+  # is this an URL?
+  if (strpos($interface, 'http') !== false) {
+    # then try to get contents from that
+    # $data = file_get_contents($interface);
 
-		$data = curl_get($config, $interface);
+    $data = curl_get($config, $interface);
 
-		if ($data === false) {
-			logmsg($config, LOGLEVEL_ERROR, 'No response when trying to fetch IP from URL '.$interface);
-			# TODO: here we should return false
-			die(false);
-		}
+    if ($data === false) {
+      logmsg($config, LOGLEVEL_ERROR, 'No response when trying to fetch IP from URL '.$interface);
+      # TODO: here we should return false
+      die(false);
+    }
 
-		$data = trim($data);
+    $data = trim($data);
 
-		if (preg_match('/^[0-255].[0-255].[0-255].[0-255]$/', $interface) === false) {
-			logmsg($config, LOGLEVEL_ERROR, 'No IP extracted from URL '.$interface);
-			die(false);
-		}
+    if (preg_match('/^[0-255].[0-255].[0-255].[0-255]$/', $interface) === false) {
+      logmsg($config, LOGLEVEL_ERROR, 'No IP extracted from URL '.$interface);
+      die(false);
+    }
 
-		$ipaddress = $data;
+    $ipaddress = $data;
 
-		logmsg($config, LOGLEVEL_DEBUG, 'Interface '.$interface.': address is '.$ipaddress);
+    logmsg($config, LOGLEVEL_DEBUG, 'Interface '.$interface.': address is '.$ipaddress);
 
-	# or regular interface?
-	} else {
-		# run ifconfig, check if the interface is there
-		$contents = shell_exec('ifconfig');
-			if (strpos($contents, $interface) === false) {
-			logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': not found in ifconfig output');
-			return false;
-		}
+  # or regular interface?
+  } else {
+    # run ifconfig, check if the interface is there
+    $contents = shell_exec('ifconfig');
+      if (strpos($contents, $interface) === false) {
+      logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': not found in ifconfig output');
+      return false;
+    }
 
-		# run the ifconfig for the eth from where to get the IP
-		$contents = shell_exec('ifconfig '.$interface);
+    # run the ifconfig for the eth from where to get the IP
+    $contents = shell_exec('ifconfig '.$interface);
 
-		# extract the current IP by doing a regex
-		$regex = '/.*?inet addr\:(.*?)\s*?Bcast?/';
-		preg_match_all($regex, $contents, $matches);
+    # extract the current IP by doing a regex
+    $regex = '/.*?inet addr\:(.*?)\s*?Bcast?/';
+    preg_match_all($regex, $contents, $matches);
 
-			if (!isset($matches[1]) || !isset($matches[1][0])) {
-				unset ($matches);
-				# inet addr:10.23.72.222  P-t-P:10.64.64.64  Mask:255.255.255.255
-			$regex = '/.*?inet addr\:(.*?)\s*?P\-t\-P?/';
-			preg_match_all($regex, $contents, $matches);
-		}
+      if (!isset($matches[1]) || !isset($matches[1][0])) {
+        unset ($matches);
+        # inet addr:10.23.72.222  P-t-P:10.64.64.64  Mask:255.255.255.255
+      $regex = '/.*?inet addr\:(.*?)\s*?P\-t\-P?/';
+      preg_match_all($regex, $contents, $matches);
+    }
 
-		# if the regex failed to extract IP, abort
-		if (!isset($matches[1]) || !isset($matches[1][0])) {
-			logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': failed extracting address');
-			return false;
-		}
+    # if the regex failed to extract IP, abort
+    if (!isset($matches[1]) || !isset($matches[1][0])) {
+      logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': failed extracting address');
+      return false;
+    }
 
-		# to be sure of clean IP, trim of all spaces around it, even if there should not be any by now
-		$ipaddress = trim($matches[1][0]);
-		if (strlen($ipaddress) < 1) {
-			logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': address is empty');
-			return false;
-		}
+    # to be sure of clean IP, trim of all spaces around it, even if there should not be any by now
+    $ipaddress = trim($matches[1][0]);
+    if (strlen($ipaddress) < 1) {
+      logmsg($config, LOGLEVEL_WARNING, 'Interface '.$interface.': address is empty');
+      return false;
+    }
 
-		logmsg($config, LOGLEVEL_DEBUG, 'Interface '.$interface.': address is '.$ipaddress);
-	}
+    logmsg($config, LOGLEVEL_DEBUG, 'Interface '.$interface.': address is '.$ipaddress);
+  }
 
-	return $ipaddress;
+  return $ipaddress;
 }
 
 # log message
 function logmsg($config, $level, $message, $logtofile=true) {
 
-	$chars = array(
-		LOGLEVEL_DEBUG => 'D',
-		LOGLEVEL_ERROR => 'E',
-		LOGLEVEL_INFO => 'I',
-		LOGLEVEL_NONE => 'N',
-		LOGLEVEL_WARNING => 'W'
-	);
+  $chars = array(
+    LOGLEVEL_DEBUG => 'D',
+    LOGLEVEL_ERROR => 'E',
+    LOGLEVEL_INFO => 'I',
+    LOGLEVEL_NONE => 'N',
+    LOGLEVEL_WARNING => 'W'
+  );
 
-	$message = date('Y-m-d H:i:s').' - '.(array_key_exists($level, $chars) ? $chars[$level] : '?').' - '.$message."\r\n";
+  $message = date('Y-m-d H:i:s').' - '.(array_key_exists($level, $chars) ? $chars[$level] : '?').' - '.$message."\r\n";
 
-	# if we are allowed to write to stdout or to all
-	if ($config['loglevel_stdout'] >= $level) {
-		# output the message
-		echo $message;
-	}
+  # if we are allowed to write to stdout or to all
+  if ($config['loglevel_stdout'] >= $level) {
+    # output the message
+    echo $message;
+  }
 
-	# if we have logfile, if we are called to log and if we're allowed by user to log to file or to all
-	if (
-		$config['loglevel_logfile'] >= $level &&
-		$config['logfile'] != false
-	) {
-			# try to open the logfile for appending
-		if (!$f = fopen($config['logfile'], 'a')) {
-			# if that failed, call ourselves but do not log it to avoid loop
-			echo logmsg($config, LOGLEVEL_ERROR, 'Failed opening logfile '.$config['logfile'], false);
-			return false;
-		}
-		# write the message to the logfile
-		fputs($f, $message);
-		# close the logfile
-		fclose($f);
-	}
-	return true;
+  # if we have logfile, if we are called to log and if we're allowed by user to log to file or to all
+  if (
+    $config['loglevel_logfile'] >= $level &&
+    $config['logfile'] != false
+  ) {
+      # try to open the logfile for appending
+    if (!$f = fopen($config['logfile'], 'a')) {
+      # if that failed, call ourselves but do not log it to avoid loop
+      echo logmsg($config, LOGLEVEL_ERROR, 'Failed opening logfile '.$config['logfile'], false);
+      return false;
+    }
+    # write the message to the logfile
+    fputs($f, $message);
+    # close the logfile
+    fclose($f);
+  }
+  return true;
 }
 
 # to update a host with new ip
 function update_host($config, $server_url, $username, $password, $ip, $hostnames) {
 
-	# fix placeholders in url
-	$server_url = str_replace(array(
-		'$HOSTNAMES$',
-		'$IP$',
-		'$USERNAME$',
-		'$PASSWORD$'
-	), array(
-			$hostnames,
-			$ip,
-			$username,
-			$password
-	), $server_url);
+  # fix placeholders in url
+  $server_url = str_replace(array(
+    '$HOSTNAMES$',
+    '$IP$',
+    '$USERNAME$',
+    '$PASSWORD$'
+  ), array(
+      $hostnames,
+      $ip,
+      $username,
+      $password
+  ), $server_url);
 
-	# create a new cURL resource
-	$ch = curl_init();
+  # create a new cURL resource
+  $ch = curl_init();
 
-	# echo '>'.$server_url.'<';
-	curl_setopt_array(
-		$ch,
-		array(
-			CURLOPT_URL			   => $server_url,
-			CURLOPT_RETURNTRANSFER	=> true,			# return web page
-			CURLOPT_HEADER			=> false,			# don't return headers
-			CURLOPT_FOLLOWLOCATION	=> true,			# follow redirects
-			CURLOPT_ENCODING		=> "",				# handle all encodings
-			CURLOPT_USERAGENT		=> COMPANY_NAME.' - '.PROGRAM_NAME.' - '.VERSION_NUMBER,
-			CURLOPT_AUTOREFERER		=> true,			# set referer on redirect
-			CURLOPT_CONNECTTIMEOUT	=> 10,				# timeout on connect
-			CURLOPT_TIMEOUT			=> 30,				# timeout on response
-			CURLOPT_MAXREDIRS		=> 10,				# stop after 10 redirects
-			# CURLOPT_POST			=> 1,				# i am sending post data
-			# CURLOPT_POSTFIELDS		=> http_build_query(array('user' => $username, 'pass' => $password)),
-			CURLOPT_SSL_VERIFYHOST	=> 0,				# don't verify ssl
-			CURLOPT_SSL_VERIFYPEER	=> false,			#
-			CURLOPT_VERBOSE			=> false,			#
-			CURLOPT_USERPWD			=> $username.':'.$password
-		)
-	);
+  # echo '>'.$server_url.'<';
+  curl_setopt_array(
+    $ch,
+    array(
+      CURLOPT_URL			   => $server_url,
+      CURLOPT_RETURNTRANSFER	=> true,			# return web page
+      CURLOPT_HEADER			=> false,			# don't return headers
+      CURLOPT_FOLLOWLOCATION	=> true,			# follow redirects
+      CURLOPT_ENCODING		=> "",				# handle all encodings
+      CURLOPT_USERAGENT		=> COMPANY_NAME.' - '.PROGRAM_NAME.' - '.VERSION_NUMBER,
+      CURLOPT_AUTOREFERER		=> true,			# set referer on redirect
+      CURLOPT_CONNECTTIMEOUT	=> 10,				# timeout on connect
+      CURLOPT_TIMEOUT			=> 30,				# timeout on response
+      CURLOPT_MAXREDIRS		=> 10,				# stop after 10 redirects
+      # CURLOPT_POST			=> 1,				# i am sending post data
+      # CURLOPT_POSTFIELDS		=> http_build_query(array('user' => $username, 'pass' => $password)),
+      CURLOPT_SSL_VERIFYHOST	=> 0,				# don't verify ssl
+      CURLOPT_SSL_VERIFYPEER	=> false,			#
+      CURLOPT_VERBOSE			=> false,			#
+      CURLOPT_USERPWD			=> $username.':'.$password
+    )
+  );
 
-	# run the curl
-	$output = curl_exec($ch);
+  # run the curl
+  $output = curl_exec($ch);
 
-	# if error from curl
-	if (curl_errno($ch) != 0) {
-		# TODO: if we return false here
-		logmsg($config, LOGLEVEL_WARNING, 'cURL error when contacting '.$server_url.': ('.curl_errno($ch).') '.curl_error($ch));
-		return false;
-	}
+  # if error from curl
+  if (curl_errno($ch) != 0) {
+    # TODO: if we return false here
+    logmsg($config, LOGLEVEL_WARNING, 'cURL error when contacting '.$server_url.': ('.curl_errno($ch).') '.curl_error($ch));
+    return false;
+  }
 
-	# close cURL resource, and free up system resources
-	curl_close($ch);
+  # close cURL resource, and free up system resources
+  curl_close($ch);
 
-	return $output;
+  return $output;
 }
 
 # --- read a config, get jobs array ---------------------------------------------------------------------------------------------------------------------
 function read_config($configfile) {
 
-	$config['jobs'] = array();
-	$job = 'default';
+  $config['jobs'] = array();
+  $job = 'default';
 
-	# logmsg($config, LOGLEVEL_DEBUG, 'Opening config file '.$configfile);
+  # logmsg($config, LOGLEVEL_DEBUG, 'Opening config file '.$configfile);
 
-	# no config - get out
-	if (!file_exists($configfile) || !$f = fopen($configfile, 'r')) {
-		die('Failed opening config file '.$configfile.'. Create it and make readable, cannot work without it.');
-	}
+  # no config - get out
+  if (!file_exists($configfile) || !$f = fopen($configfile, 'r')) {
+    die('Failed opening config file '.$configfile.'. Create it and make readable, cannot work without it.');
+  }
 
-	$contents = '';
-	# walk the file
-	while (!feof($f)) {
-		# get the line
-		$line = fgets($f);
+  $contents = '';
+  # walk the file
+  while (!feof($f)) {
+    # get the line
+    $line = fgets($f);
 
-		# begin by removing the comments, everything with # after is a comment
-		$contents .= strpos($line, '#') !== false ? substr($line, 0, strpos($line, '#')) : $line;
-	}
+    # begin by removing the comments, everything with # after is a comment
+    $contents .= strpos($line, '#') !== false ? substr($line, 0, strpos($line, '#')) : $line;
+  }
 
-	# try to decode the contents
-	$contents = json_decode($contents, true);
-	if (!is_array($contents)) {
-		die('Fatal error, JSON config file is not valid JSON.'."\n");
-	}
+  # try to decode the contents
+  $contents = json_decode($contents, true);
+  if (!is_array($contents)) {
+    die('Fatal error, JSON config file is not valid JSON.'."\n");
+  }
 
-	# setup defaults for config
-	$contents['cachefile']			= isset($contents['cachefile'])	? $contents['cachefile'] : '/var/cache/'.PROGRAM_NAME.'.cache';
-	$contents['interfaces']			= isset($contents['interfaces']) && is_array($contents['interfaces']) ? $contents['interfaces'] : array();
-	$contents['jobs']				= isset($contents['jobs']) && is_array($contents['jobs']) ? $contents['jobs'] : array();
-	$contents['logfile']			= isset($contents['logfile'])	? $contents['logfile'] :'/var/log/'.PROGRAM_NAME.'.log';
-	$contents['loglevel_logfile']	= isset($contents['loglevel_logfile'])	? $contents['loglevel_logfile'] : LOGLEVEL_INFO;
-	$contents['loglevel_stdout']	= isset($contents['loglevel_stdout'])	? $contents['loglevel_stdout'] : LOGLEVEL_INFO;
+  # setup defaults for config
+  $contents['cachefile']			= isset($contents['cachefile'])	? $contents['cachefile'] : '/var/cache/'.PROGRAM_NAME.'.cache';
+  $contents['interfaces']			= isset($contents['interfaces']) && is_array($contents['interfaces']) ? $contents['interfaces'] : array();
+  $contents['jobs']				= isset($contents['jobs']) && is_array($contents['jobs']) ? $contents['jobs'] : array();
+  $contents['logfile']			= isset($contents['logfile'])	? $contents['logfile'] :'/var/log/'.PROGRAM_NAME.'.log';
+  $contents['loglevel_logfile']	= isset($contents['loglevel_logfile'])	? $contents['loglevel_logfile'] : LOGLEVEL_INFO;
+  $contents['loglevel_stdout']	= isset($contents['loglevel_stdout'])	? $contents['loglevel_stdout'] : LOGLEVEL_INFO;
 
-	return $contents;
+  return $contents;
 }
 
 # --- set the ip cache ------------------------------------------------------------------------------------------
 function set_cachefile($config, $cache) {
-	# $cache = array();
-	$cache['interfaces'] = isset($cache['interfaces']) ? $cache['interfaces'] : array();
-	$cache['jobs'] = isset($cache['jobs']) ? $cache['jobs'] : array();
+  # $cache = array();
+  $cache['interfaces'] = isset($cache['interfaces']) ? $cache['interfaces'] : array();
+  $cache['jobs'] = isset($cache['jobs']) ? $cache['jobs'] : array();
 
-	# walk the interfaces
-	foreach ($config['interfaces'] as $interface => $tmp) {
-
-
-		# no ip set in config? then go next
-		if (!isset($config['interfaces'][$interface]['address']) || !$config['interfaces'][$interface]['address']) {
-			continue;
-		}
-
-		# no date in config - then not updated this session, go next
-		if (!isset($config['interfaces'][$interface]['updated'])) {
-			continue;
-		}
-
-		# store the ip
-		$cache['interfaces'][$interface] = array(
-			'address' => $config['interfaces'][$interface]['address'],
-			'updated' => $config['interfaces'][$interface]['updated']
-		);
-	}
-
-	# walk the jobs
-	foreach ($config['jobs'] as $job => $tmp) {
+  # walk the interfaces
+  foreach ($config['interfaces'] as $interface => $tmp) {
 
 
-		# no ip set? then go next
-		if (!isset($config['jobs'][$job]['address'])) {
-			continue;
-		}
+    # no ip set in config? then go next
+    if (!isset($config['interfaces'][$interface]['address']) || !$config['interfaces'][$interface]['address']) {
+      continue;
+    }
 
-		# no update timestamp, not touched this session, go next
-		if (!isset($config['jobs'][$job]['updated'])) {
-			continue;
-		}
+    # no date in config - then not updated this session, go next
+    if (!isset($config['interfaces'][$interface]['updated'])) {
+      continue;
+    }
 
-		$cache['jobs'][$job] = array(
-			'address' 			=> $config['jobs'][$job]['address'],
-			'updated'	=> $config['jobs'][$job]['updated']
-		);
-	}
+    # store the ip
+    $cache['interfaces'][$interface] = array(
+      'address' => $config['interfaces'][$interface]['address'],
+      'updated' => $config['interfaces'][$interface]['updated']
+    );
+  }
 
-	# put data into file
-	return file_put_contents($config['cachefile'], json_encode($cache));
+  # walk the jobs
+  foreach ($config['jobs'] as $job => $tmp) {
+
+
+    # no ip set? then go next
+    if (!isset($config['jobs'][$job]['address'])) {
+      continue;
+    }
+
+    # no update timestamp, not touched this session, go next
+    if (!isset($config['jobs'][$job]['updated'])) {
+      continue;
+    }
+
+    $cache['jobs'][$job] = array(
+      'address' 			=> $config['jobs'][$job]['address'],
+      'updated'	=> $config['jobs'][$job]['updated']
+    );
+  }
+
+  # put data into file
+  return file_put_contents($config['cachefile'], json_encode($cache));
 }
 
 # --- main ---------------------------------------------------------------------------------------------
@@ -356,155 +358,155 @@ $prev_interfaces = array();
 
 # walk the interfaces
 foreach ($config['interfaces'] as $interface => $tmp) {
-	if (
-		# is there a timeout set...
-		isset($config['interfaces'][$interface]['timeout']) &&
-		# and it exists in cache
-		isset($cache['interfaces'][$interface], $cache['interfaces'][$interface]['updated'], $cache['interfaces'][$interface]['address']) &&
-		# and still within timeout
-		$cache['interfaces'][$interface]['updated'] > (time() - $config['interfaces'][$interface]['timeout'])
-	) {
-		# then take the cached address
-		$config['interfaces'][$interface]['address'] = $cache['interfaces'][$interface]['address'];
-	# is there a source for where to get the address?
-	} else if (isset($config['interfaces'][$interface]['source'])) {
-		$config['interfaces'][$interface]['address'] = get_ip($config, $config['interfaces'][$interface]['source']);
+  if (
+    # is there a timeout set...
+    isset($config['interfaces'][$interface]['timeout']) &&
+    # and it exists in cache
+    isset($cache['interfaces'][$interface], $cache['interfaces'][$interface]['updated'], $cache['interfaces'][$interface]['address']) &&
+    # and still within timeout
+    $cache['interfaces'][$interface]['updated'] > (time() - $config['interfaces'][$interface]['timeout'])
+  ) {
+    # then take the cached address
+    $config['interfaces'][$interface]['address'] = $cache['interfaces'][$interface]['address'];
+  # is there a source for where to get the address?
+  } else if (isset($config['interfaces'][$interface]['source'])) {
+    $config['interfaces'][$interface]['address'] = get_ip($config, $config['interfaces'][$interface]['source']);
 
-		if ($config['interfaces'][$interface]['address']) {
-			$config['interfaces'][$interface]['updated'] = time();
-		}
-	# interface failure
-	} else {
-		$config['interfaces'][$interface]['address'] = false;
-	}
+    if ($config['interfaces'][$interface]['address']) {
+      $config['interfaces'][$interface]['updated'] = time();
+    }
+  # interface failure
+  } else {
+    $config['interfaces'][$interface]['address'] = false;
+  }
 }
 
 # walk the jobs from the config file
 foreach ($config['jobs'] as $job => $jobdata) {
 
-	logmsg($config, LOGLEVEL_DEBUG, 'Running job '.$job);
+  logmsg($config, LOGLEVEL_DEBUG, 'Running job '.$job);
 
-	# by default we do update
-	$update_host = true;
+  # by default we do update
+  $update_host = true;
 
-	# fetch parameters for this job
-	$config['jobs'][$job]['forcedupdatelimit']	= isset($config['jobs'][$job]['forcedupdatelimit'])	? (int)$config['jobs'][$job]['forcedupdatelimit'] : 0;
-	$config['jobs'][$job]['hostnames']			= isset($config['jobs'][$job]['hostnames'])			? $config['jobs'][$job]['hostnames'] : false;
-	$config['jobs'][$job]['interface']			= isset($config['jobs'][$job]['interface'])			? $config['jobs'][$job]['interface'] : false;
-	$config['jobs'][$job]['password']			= isset($config['jobs'][$job]['password'])			? $config['jobs'][$job]['password'] : false;
-	$config['jobs'][$job]['server']				= isset($config['jobs'][$job]['server'])			? $config['jobs'][$job]['server'] : false;
-	$config['jobs'][$job]['username']			= isset($config['jobs'][$job]['username'])			? $config['jobs'][$job]['username'] : false;
+  # fetch parameters for this job
+  $config['jobs'][$job]['forcedupdatelimit']	= isset($config['jobs'][$job]['forcedupdatelimit'])	? (int)$config['jobs'][$job]['forcedupdatelimit'] : 0;
+  $config['jobs'][$job]['hostnames']			= isset($config['jobs'][$job]['hostnames'])			? $config['jobs'][$job]['hostnames'] : false;
+  $config['jobs'][$job]['interface']			= isset($config['jobs'][$job]['interface'])			? $config['jobs'][$job]['interface'] : false;
+  $config['jobs'][$job]['password']			= isset($config['jobs'][$job]['password'])			? $config['jobs'][$job]['password'] : false;
+  $config['jobs'][$job]['server']				= isset($config['jobs'][$job]['server'])			? $config['jobs'][$job]['server'] : false;
+  $config['jobs'][$job]['username']			= isset($config['jobs'][$job]['username'])			? $config['jobs'][$job]['username'] : false;
 
-	# check that we have all necessary parameters
-	if (
-		!$config['jobs'][$job]['hostnames'] ||
-		!$config['jobs'][$job]['interface'] ||
-		!$config['jobs'][$job]['password'] ||
-		!$config['jobs'][$job]['server'] ||
-		!$config['jobs'][$job]['username'] ||
-		strlen($config['jobs'][$job]['username']) < 1 ||
-		strlen($config['jobs'][$job]['password']) < 1 ||
-		strlen($config['jobs'][$job]['hostnames']) < 1 ||
-		strlen($config['jobs'][$job]['server']) < 2
+  # check that we have all necessary parameters
+  if (
+    !$config['jobs'][$job]['hostnames'] ||
+    !$config['jobs'][$job]['interface'] ||
+    !$config['jobs'][$job]['password'] ||
+    !$config['jobs'][$job]['server'] ||
+    !$config['jobs'][$job]['username'] ||
+    strlen($config['jobs'][$job]['username']) < 1 ||
+    strlen($config['jobs'][$job]['password']) < 1 ||
+    strlen($config['jobs'][$job]['hostnames']) < 1 ||
+    strlen($config['jobs'][$job]['server']) < 2
 
-	) {
-		logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, invalid configuration.');
-		continue;
-	}
+  ) {
+    logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, invalid configuration.');
+    continue;
+  }
 
-	# check that we have a matching interface
-	if (
-		!isset($config['interfaces'][$config['jobs'][$job]['interface']], $config['interfaces'][$config['jobs'][$job]['interface']]['address'])
-	) {
-		logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, no matching interface configuration.');
-		continue;
-	}
+  # check that we have a matching interface
+  if (
+    !isset($config['interfaces'][$config['jobs'][$job]['interface']], $config['interfaces'][$config['jobs'][$job]['interface']]['address'])
+  ) {
+    logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, no matching interface configuration.');
+    continue;
+  }
 
-	# check that the address on the interface is okay
-	if (
-		!$config['interfaces'][$config['jobs'][$job]['interface']]['address']
-	) {
-		logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, no valid address on interface '.$config['jobs'][$job]['interface']);
-		continue;
-	}
+  # check that the address on the interface is okay
+  if (
+    !$config['interfaces'][$config['jobs'][$job]['interface']]['address']
+  ) {
+    logmsg($config, LOGLEVEL_WARNING, 'Job '.$job.': skipping, no valid address on interface '.$config['jobs'][$job]['interface']);
+    continue;
+  }
 
-	# reached forced update limit?
-	if (
-		# $update_host
-		# &&
-		$config['jobs'][$job]['forcedupdatelimit'] != 0
-		&&
-		isset($cache['jobs'][$job], $cache['jobs'][$job]['updated'])
-		&&
-		($cache['jobs'][$job]['updated'] >= (time() - $config['jobs'][$job]['forcedupdatelimit']))
-	) {
-		logmsg($config, LOGLEVEL_DEBUG, 'Job '.$job.': skipping, not reached forced update limit, ' . ( (strtotime($cache['jobs'][$job]['updated']) + $config['jobs'][$job]['forcedupdatelimit']) - time()) . 's left (' . date('Y-m-d H:i:s', strtotime($cache['jobs'][$job]['updated']) +$config['jobs'][$job]['forcedupdatelimit']).').');
-		# $update_host = false;
-		continue;
-	}
+  # reached forced update limit?
+  if (
+    # $update_host
+    # &&
+    $config['jobs'][$job]['forcedupdatelimit'] != 0
+    &&
+    isset($cache['jobs'][$job], $cache['jobs'][$job]['updated'])
+    &&
+    ($cache['jobs'][$job]['updated'] >= (time() - $config['jobs'][$job]['forcedupdatelimit']))
+  ) {
+    logmsg($config, LOGLEVEL_DEBUG, 'Job '.$job.': skipping, not reached forced update limit, ' . ( (strtotime($cache['jobs'][$job]['updated']) + $config['jobs'][$job]['forcedupdatelimit']) - time()) . 's left (' . date('Y-m-d H:i:s', strtotime($cache['jobs'][$job]['updated']) +$config['jobs'][$job]['forcedupdatelimit']).').');
+    # $update_host = false;
+    continue;
+  }
 
-	# does the cache ip match the current one?
-	if (
-		# $update_host &&
-		isset($cache['jobs'][$job], $cache['jobs'][$job]['address']) &&
-		$cache['jobs'][$job]['address'] === $config['interfaces'][$config['jobs'][$job]['interface']]['address']
-	) {
-		logmsg($config, LOGLEVEL_DEBUG, 'Job '.$job.': skipping, address matches interface.');
-		continue;
-	}
+  # does the cache ip match the current one?
+  if (
+    # $update_host &&
+    isset($cache['jobs'][$job], $cache['jobs'][$job]['address']) &&
+    $cache['jobs'][$job]['address'] === $config['interfaces'][$config['jobs'][$job]['interface']]['address']
+  ) {
+    logmsg($config, LOGLEVEL_DEBUG, 'Job '.$job.': skipping, address matches interface.');
+    continue;
+  }
 
-	# behind here we update the IP
-		# TODO: if we check here if the new ip is FALSE and avoid updating, just storing it in file as FALSE
+  # behind here we update the IP
+    # TODO: if we check here if the new ip is FALSE and avoid updating, just storing it in file as FALSE
 
-	logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': updating address to '.$config['interfaces'][$config['jobs'][$job]['interface']]['address']);
+  logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': updating address to '.$config['interfaces'][$config['jobs'][$job]['interface']]['address']);
 
-	$response = update_host(
-		$config,
-		$config['jobs'][$job]['server'],
-		$config['jobs'][$job]['username'],
-		$config['jobs'][$job]['password'],
-		$config['interfaces'][$config['jobs'][$job]['interface']]['address'],
-		$config['jobs'][$job]['hostnames']
-	);
+  $response = update_host(
+    $config,
+    $config['jobs'][$job]['server'],
+    $config['jobs'][$job]['username'],
+    $config['jobs'][$job]['password'],
+    $config['interfaces'][$config['jobs'][$job]['interface']]['address'],
+    $config['jobs'][$job]['hostnames']
+  );
 
-	# response not totally bad?
-	if ($response !== false) {
+  # response not totally bad?
+  if ($response !== false) {
 
-		# split response by newlines
-		$response = explode("\n", trim($response));
+    # split response by newlines
+    $response = explode("\n", trim($response));
 
-		logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': response was '.implode(" / ", $response));
+    logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': response was '.implode(" / ", $response));
 
-		$allok = true;
+    $allok = true;
 
-		foreach ($response as $responsedomain) {
-			if (strpos($responsedomain, "nochg") === false && strpos($responsedomain, "good") === false) {
-				$allok = false;
-				break;
-			}
-		}
-		if ($allok) {
-			logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': considered as complete');
-			# if ok - clean up the response newlines, convert them to slashes
-			# only mark this as updated if response was not bad
+    foreach ($response as $responsedomain) {
+      if (strpos($responsedomain, "nochg") === false && strpos($responsedomain, "good") === false) {
+        $allok = false;
+        break;
+      }
+    }
+    if ($allok) {
+      logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': considered as complete');
+      # if ok - clean up the response newlines, convert them to slashes
+      # only mark this as updated if response was not bad
 
-			$config['jobs'][$job]['address'] = $config['interfaces'][$config['jobs'][$job]['interface']]['address'];
-			$config['jobs'][$job]['updated'] = time();
-			$update_cache = true;
-		} else {
-			logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': considered as failure');
-		}
-	} else {
-		logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': cURL fail');
-	}
-	# this results in that even if the cURL totally failed will the ip be updated in cache, not smart
+      $config['jobs'][$job]['address'] = $config['interfaces'][$config['jobs'][$job]['interface']]['address'];
+      $config['jobs'][$job]['updated'] = time();
+      $update_cache = true;
+    } else {
+      logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': considered as failure');
+    }
+  } else {
+    logmsg($config, LOGLEVEL_INFO, 'Job '.$job.': cURL fail');
+  }
+  # this results in that even if the cURL totally failed will the ip be updated in cache, not smart
 
-	# complete the job
-	logmsg($config, LOGLEVEL_DEBUG, $job.': done');
+  # complete the job
+  logmsg($config, LOGLEVEL_DEBUG, $job.': done');
 }
 
 # set the ip cache for the jobs
 if ($update_cache) {
-	set_cachefile($config, $cache);
+  set_cachefile($config, $cache);
 }
 ?>
