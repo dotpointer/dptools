@@ -7,6 +7,7 @@
 # 2018-07-18 19:06:00 - editing inclusion/exclusion, adding actions
 # 2018-07-18 21:32:00 - adding copy preserve, review and delete actions
 # 2018-07-19 18:14:00 - bugfix, unknown files missed space in prefix name
+# 2018-07-19 18:29:00 - bugfix, wrong shellscript mime, adding ignore names
 
 # verbosity levels
 define('VERBOSE_OFF', 0);    # no info at all
@@ -31,7 +32,7 @@ $config = array(
   ),
   'includemimes' => array(
     'text/plain',
-    'text/shellscript',
+    'text/x-shellscript',
     'text/x-php'
   ),
   'expandlist' => 'expandlist.txt',
@@ -43,7 +44,9 @@ $config = array(
     '/base3.php',
     '/exporting.js',
     '/fonts/',
-    '/highcharts.js'
+    '/highcharts.js',
+    '/jquery.',
+    '/jquery-'
   ),
   'ignoremimes' => array(
     'image/',
