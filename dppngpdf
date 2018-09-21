@@ -1,0 +1,412 @@
+#!/usr/bin/php
+<?php
+
+    # dppngpdf - adjust scanned png files and output a pdf with meta data
+    # by robert klebe, dotpointer
+
+    # changelog
+    # 2018-09-19 22:04:00 - parts done
+    # 2018-09-20 19:13:35 - intial version
+    # 2018-09-21 19:56:00 - bugfixes and cleanup
+
+  $action = false;
+  $opts = getopt('a:c:i:gho:');
+  $greyscale = false;
+  $contrasts = array();
+  $greyscales = array();
+  $default_contrast = 50;
+  $editext = '.dppngpdf-edit.png';
+  $metadata_timeout = 86400 * 3;
+  $input = false;
+  $output = false;
+
+  # get parameters
+  foreach ($opts as $optkey => $optvalue) {
+    switch ($optkey) {
+      case 'a':
+        $action = $optvalue;
+        break;
+      case 'c':
+        $contrasts = explode(",", $optvalue);
+        break;
+      case 'g':
+        $greyscales = explode(",", $optvalue);
+        break;
+      case 'h':
+?>Usage: <?php echo basename(__FILE__); ?> <options>
+
+Options:
+  -a <action>
+    Do an action, may be one of the following:
+      meta, to write meta data description to images, writes simple-scan as
+      the first line if no meta data is available previously and the image
+      was made less than 3 days ago.
+
+      list, list metadata for PNG:s.
+
+      drop, remove edit files.
+
+      adjust, to adjust contrast and greyscale if wanted, will write to
+      <filename><?php echo $editext; ?>. Use -c and -g to set properties.
+
+      comply, to overwrite png files with the edited files.
+
+      pdf, to write png files to a pdf. Use -o <filename> to set name.
+  -c <contrast1,contrast2...>
+    Set contrast values for each image. Default is <?php echo $default_contrast; ?>
+    Use a number to set contrast, leave empty to not set a contrast.
+  -g <image-index1,image-index2...>
+    Make selected images greyscale.
+  -h
+    Print this information.
+  -i <filename>
+    Set input file, only used with list action.
+
+  -o <filename>
+    Set output file, defaults to <first filename>.pdf.
+<?php
+        break;
+      case 'i':
+        $input = $optvalue;
+        break;
+      case 'o':
+        $output = $optvalue;
+        break;
+    }
+  }
+
+  # get a date with timezone
+  function tzdate($date = false) {
+    if ($date === false) {
+        $date = time();
+    }
+    return date("c", $date);
+  }
+
+  # get exif data from a file
+  function getexifdata($input) {
+    # get exif data
+    $c = 'exiftool -j '.escapeshellarg($input);
+    exec($c, $o, $r);
+    if ($r) {
+      echo 'Failed: '.$c."\n";
+      die(1);
+    }
+
+    $exifdata = json_decode(implode("", $o), true);
+    if ($exifdata === null) {
+      echo 'Failed decoding exif JSON data.'."\n";
+      die(1);
+    }
+    $exifdata = $exifdata[0];
+
+    $description = isset($exifdata['Description']) ? $exifdata['Description'] : false;
+    if ($description && strlen($description)) {
+      $description = json_decode($description, true);
+      if ($description === null) {
+          echo 'Failed JSON decoding description'."\n";
+          die(1);
+      }
+    } else {
+      $description = array();
+    }
+    return $description;
+  }
+
+  # get program version
+  function getversion($what) {
+    switch ($what) {
+        case 'simple-scan':
+            # get exif data
+            $c = 'simple-scan --version 2>&1';
+            exec($c, $o, $r);
+            if ($r) {
+                echo 'Failed: '.$c."\n";
+                die(1);
+            }
+            return $o[0];
+        case 'imagemagick':
+            $c = 'convert --version';
+            exec($c, $o, $r);
+            if ($r) {
+                echo 'Failed: '.$c."\n";
+                die(1);
+            }
+            $v = substr($o[0], strpos($o[0], ':') + 2);
+            return substr($v, 0, strrpos($v, 'http') - 1);
+    }
+  }
+
+  # get list of png files
+  function getfiles($includeedits = false) {
+    global $editext;
+    # find all files
+    $c = 'find . -type f -iname "*.png"';
+    exec($c, $o, $r);
+    if ($r) {
+      echo 'Failed: '.$c."\n";
+      die(1);
+    }
+    # sort
+    sort($o);
+
+    # remove edited files
+    $files = array();
+    foreach ($o as $file) {
+      if ($includeedits === false && substr(strtolower($file), -strlen($editext)) === $editext) {
+        continue;
+      }
+      $files[] = $file;
+    }
+    return $files;
+  }
+
+  # write exifdata to file, preserve dates
+  function setexifdata($file, $data) {
+    # extra precaution, store modify date
+    clearstatcache();
+    $mtime = filemtime($file);
+    # ask to set description
+    $c = 'exiftool -P -overwrite_original -XMP-dc:Description='.escapeshellarg(json_encode($data)).' '.escapeshellarg($file);
+    exec($c, $o, $r);
+    if ($r) {
+        echo 'Failed: '.$c."\n";
+        die(1);
+    }
+    # re-set the modify date
+    touch($file, $mtime);
+  }
+
+  $level = 0;
+
+  switch ($action) {
+    case 'meta':
+
+      $files = getfiles();
+
+      foreach ($files as $file) {
+
+        $exifdata = getexifdata($file);
+        clearstatcache();
+        $mtime = filemtime($file);
+        if (!count($exifdata)) {
+          if ($mtime > time() - $metadata_timeout) {
+            echo $file.' - metadata missing, within timeout, will set'."\n";
+
+            $exifdata[] = array(tzdate($mtime), getversion('simple-scan'), 'PNG');
+            setexifdata($file, $exifdata);
+          } else {
+            echo $file.' - metadata missing, outside of timeout, will write creation date'."\n";
+            $exifdata[] = array(tzdate($mtime));
+            setexifdata($file, $exifdata);
+          }
+        } else {
+          echo $file.' - metadata exists'."\n";
+        }
+      }
+
+      break;
+    case 'adjust':
+      $files = getfiles();
+
+      foreach ($files as $fileindex => $file) {
+        # get settings for this file, if there are any
+        $contrast = isset($contrasts[$fileindex]) ? (int)$contrasts[$fileindex] : $default_contrast;
+        $greyscale = isset($greyscales[$fileindex]) && (int)$greyscales[$fileindex] === 1;
+
+        $already_contrast = false;
+        $already_greyscale = false;
+        # get the exifdata for this file
+        $exifdata = getexifdata($file);
+        foreach ($exifdata as $dataline) {
+          if (!isset($dataline[1]) || !isset($dataline[2])) continue;
+          # 0 = date
+          # 1 = program
+          # 2 = command line
+          if (strpos($dataline[1], 'ImageMagick') !== false) {
+            if (strpos($dataline[2], '-brightness-contrast') !== false) {
+              $already_contrast = true;
+            }
+            if (strpos($dataline[2], '-colorspace Gray') !== false) {
+              $already_greyscale = true;
+            }
+          }
+        }
+
+        $im = array();
+        # no previous contrast and no contrast defined
+        if ($already_contrast) {
+          echo $file.' - contrast is already adjusted'."\n";
+        } else if ($contrast === 0) {
+          echo $file.' - contrast set to 0, not adjusting'."\n";
+        } else {
+          echo $file.' - contrast not adjusted, setting to '.((int)$contrast)."\n";
+          $im[] = '-brightness-contrast 0x'.(int)$contrast;
+        }
+
+        # no previous contrast and no contrast defined
+        if ($already_greyscale) {
+          echo $file.' - greyscale is already done'."\n";
+        } else if ($greyscale === 1) {
+          echo $file.' - greyscale not done, doing'."\n";
+          $im[] = '-colorspace Gray';
+        } else {
+          echo $file.' - greyscale disabled, not doing'."\n";
+        }
+
+        if (count($im)) {
+          # get modify time
+          clearstatcache();
+          $mtime = filemtime($file);
+          # make a command
+          $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+          $c = strtr($cexif, array(
+            '{in}' => escapeshellarg($file),
+            '{out}' => escapeshellarg($file.$editext)
+          ));
+          echo $cexif."\n";
+          exec($c, $o, $r);
+          if ($r) {
+              echo 'Failed: '.$c."\n";
+              die(1);
+          }
+          # get date from the edited file for exif data
+          clearstatcache();
+          $exifdata[] = array(tzdate(filemtime($file.$editext)), getversion('imagemagick'), $cexif);
+          # prepare and set exif data
+          setexifdata($file.$editext, $exifdata);
+          # set mtime back
+          touch($file.$editext, $mtime);
+        }
+      }
+
+      break;
+    case 'comply':
+      $files = getfiles();
+
+      foreach ($files as $file) {
+        if (!file_exists($file.$editext)) {
+          echo $file.' - no edited version, not touching'."\n";
+          continue;
+        }
+        if (!is_file($file) || !mime_content_type($file) === 'image/png') {
+          echo $file.' - not a file or not a PNG file, not touching';
+          continue;
+        }
+        echo $file.$editext.' -> '.$file."\n";
+        if (!unlink($file)) {
+          echo 'Failed removing: '.$file."\n";
+          die(1);
+        }
+
+        if (!rename($file.$editext, $file)) {
+          echo 'Failed renaming '.$file.$editext.' to '.$file."\n";
+          die(1);
+        }
+      }
+      break;
+    case 'drop':
+      $files = getfiles();
+      foreach ($files as $file) {
+        if (file_exists($file.$editext)) {
+          echo $file.$editext.' - removing'."\n";
+          if (!unlink($file.$editext)) {
+            echo 'Failed removing: '.$file."\n";
+            die(1);
+          }
+          continue;
+        }
+      }
+      break;
+    case 'list':
+      if ($input === false) {
+        # default, list all PNG:s
+        $files = getfiles(true);
+        foreach ($files as $file) {
+
+          echo $file."\n";
+
+          $exifdata = getexifdata($file);
+
+          foreach ($exifdata as $dataline) {
+            echo '  '.implode('  ', $dataline)."\n";
+          }
+        }
+      } else if (strtolower(substr($input, -4)) === '.png') {
+
+        $exifdata = getexifdata($input);
+
+        foreach ($exifdata as $dataline) {
+          echo '  '.implode('  ', $dataline)."\n";
+        }
+
+      } else if (strtolower(substr($input, -4)) === '.pdf') {
+        $exifdata = getexifdata($input);
+        var_dump($exifdata);
+        echo $input."\n";
+        echo '  Container:'."\n";
+        foreach ($exifdata[0] as $dataline) { # 0 = container
+          echo '    '.implode('  ', $dataline)."\n";
+        }
+
+        echo '  Files:'."\n";
+        foreach ($exifdata[1] as $index => $file) { # 1 = files
+          echo '    '.$index.':'."\n";
+          foreach ($file as $dataline) {
+            echo '      '.implode('  ', $dataline)."\n";
+          }
+        }
+      }
+      break;
+    case 'pdf':
+      $pdf_exifdata = array(
+        array(), # index 0 = container
+        array()  # index 1 = files
+      );
+
+      $files = getfiles();
+
+      if (!count($files)) {
+        echo 'No suitable PNG files are ready for PDF creation.'."\n";
+        die(1);
+      }
+
+      foreach ($files as $v) {
+        $image_exifdata = getexifdata($v);
+        # make sure each file has some meta data
+        if (!count($image_exifdata)) {
+          echo 'File missing exif meta data, will not continue, run meta or adjust: '.$v."\n";
+          die(1);
+        }
+
+        # make sure no edited versions are available
+        if (file_exists($v.$editext)) {
+          echo 'Edited versions of file exist, run comply or drop: '.$v."\n";
+          die(1);
+        }
+
+        $pdf_exifdata[1][] = $image_exifdata;
+      }
+      # prepare
+      $imtmpfile = '.dppngpdf-tmp';
+      $filelistfiles = array();
+      foreach ($files as $v) {
+        $filelistfiles[] = escapeshellarg($v);
+      }
+      file_put_contents($imtmpfile, implode("\n", $filelistfiles));
+      $output = $output !== false && strlen($output) ? $output : $files[0].'.pdf';
+      $im[] = '-compress lzw';
+      $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+      $c = strtr($cexif, array(
+        '{in}' => '@'.$imtmpfile,
+        '{out}' => escapeshellarg($output)
+      ));
+      # echo $c."\n";
+      exec($c, $o, $r);
+      unlink($imtmpfile);
+      clearstatcache();
+      $pdf_exifdata[0][] = array(tzdate(filemtime($output)), getversion('imagemagick'), $cexif);
+      setexifdata($output, $pdf_exifdata);
+      break;
+  }
+?>

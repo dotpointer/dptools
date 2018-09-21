@@ -40,6 +40,7 @@ alias addgroup='groupadd';
 alias array='cat /proc/scsi/rr172x/0';
 alias backupdir='tar -cvzf';
 alias batstat='upower -i /org/freedesktop/UPower/devices/battery_BAT0';
+alias bfg='bfg --no-blob-protection';
 alias cd..='cd ..';
 alias cd...='cd ...';
 alias chkdsk='dosfsck -v -a -w';
