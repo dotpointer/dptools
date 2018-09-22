@@ -12,6 +12,7 @@
 # 2018-09-22 18:47:00 - adding metakeep, metasync, configs and
 #   and configwrite, replacing contrast adjustment with level
 #   adjustment for quality
+# 2018-09-22 23:15:00 - adding image dimensions to metadata, grayscale bugfix
 
 /**
  * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
@@ -135,6 +136,13 @@ function getfiles($includeedits = false) {
   }
   return $files;
 }
+
+# get image dimensions
+function getimagedim($file) {
+  $tmp = getimagesize($file);
+  return (isset($tmp[0]) ? $tmp[0] : '?').'x'.(isset($tmp[1]) ? $tmp[1] : '?');
+}
+
 # to remove comments in a string beginning with a # sign
 function remove_comments($s) {
   $s = explode("\n", $s);
@@ -174,7 +182,7 @@ $config = array(
   'crop_adjustments' => array('x' => 0, 'y' => 0, 't' => 0),
   'default_level' => array('25%', '75%'),
   'editext' => '.dppngpdf-edit.png',
-  'greyscales' => array(),
+  'grayscales' => array(),
   'input' => false,
   'metadata_timeout' => 86400 * 10,
   'metafile' => basename(__FILE__).'-metadata.txt',
@@ -183,7 +191,7 @@ $config = array(
 );
 
 # get parameters
-$opts = getopt('a:l:i:gho:x:');
+$opts = getopt('a:l:i:g:ho:x:');
 
 # config files
 $configfiles = array(
@@ -199,7 +207,7 @@ foreach ($opts as $optkey => $optvalue) {
       $config_opt['action'] = $optvalue;
       break;
     case 'g':
-      $config_opt['greyscales'] = explode(",", $optvalue);
+      $config_opt['grayscales'] = explode(",", $optvalue);
       break;
     case 'h':
 ?>Usage: <?php echo basename(__FILE__); ?> <options>
@@ -211,7 +219,7 @@ Options:
       a4crop, crop a file of 300 dpi to 2480 x 3508 pixels A4 size, use -x to
       set adjustments. Makes edit files, use comply action to accept changes.
 
-      adjust, to adjust level and greyscale if wanted, will write to
+      adjust, to adjust level and grayscale if wanted, will write to
       <filename><?php echo $config['editext']; ?>. Use -c and -g to set properties
       and the comply action to accept changes.
 
@@ -242,7 +250,7 @@ Options:
     Use a number to set level, leave empty to not set a level.
 
   -g <image-index1,image-index2...>
-    Make selected images greyscale.
+    Make selected images grayscale.
 
   -h
     Print this information.
@@ -356,7 +364,11 @@ switch ($config['action']) {
     }
     # get date from the edited file for exif data
     clearstatcache();
-    $exifdata[] = array(tzdate(filemtime($file.$config['editext'])), getversion('imagemagick'), $cexif);
+    $exifdata[] = array(
+      tzdate(filemtime($file.$config['editext'])),
+      getimagedim($file.$config['editext']),
+      $getversion('imagemagick'), $cexif
+    );
     # prepare and set exif data
     setexifdata($file.$config['editext'], $exifdata);
     # set mtime back
@@ -369,23 +381,24 @@ switch ($config['action']) {
     foreach ($files as $fileindex => $file) {
       # get settings for this file, if there are any
       $level = isset($config['levels'][$fileindex]) ? explode(':',$config['levels'][$fileindex]) : $config['default_level'];
-      $greyscale = isset($config['greyscales'][$fileindex]) && (int)$config['greyscales'][$fileindex] === 1;
+      $grayscale = isset($config['grayscales'][$fileindex]) && (int)$config['grayscales'][$fileindex] === 1;
 
       $already_level = false;
-      $already_greyscale = false;
+      $already_grayscale = false;
       # get the exifdata for this file
       $exifdata = getexifdata($file);
       foreach ($exifdata as $dataline) {
-        if (!isset($dataline[1]) || !isset($dataline[2])) continue;
+        if (!isset($dataline[2]) || !isset($dataline[3])) continue;
         # 0 = date
-        # 1 = program
-        # 2 = command line
-        if (strpos($dataline[1], 'ImageMagick') !== false) {
-          if (strpos($dataline[2], '-level') !== false) {
+        # 1 = dimensions
+        # 2 = program
+        # 3 = additional info - command line, hardware and so on
+        if (strpos($dataline[2], 'ImageMagick') !== false) {
+          if (strpos($dataline[3], '-level') !== false) {
             $already_level = true;
           }
-          if (strpos($dataline[2], '-colorspace Gray') !== false) {
-            $already_greyscale = true;
+          if (strpos($dataline[3], '-colorspace Gray') !== false) {
+            $already_grayscale = true;
           }
         }
       }
@@ -402,13 +415,13 @@ switch ($config['action']) {
       }
 
       # no previous  and no level defined
-      if ($already_greyscale) {
-        echo $file.' - greyscale is already done'."\n";
-      } else if ($greyscale === 1) {
-        echo $file.' - greyscale not done, doing'."\n";
+      if ($already_grayscale) {
+        echo $file.' - grayscale is already done'."\n";
+      } else if ($grayscale === true) {
+        echo $file.' - grayscale not done, doing'."\n";
         $im[] = '-colorspace Gray';
       } else {
-        echo $file.' - greyscale disabled, not doing'."\n";
+        echo $file.' - grayscale disabled, not doing'."\n";
       }
 
       if (count($im)) {
@@ -429,7 +442,7 @@ switch ($config['action']) {
         }
         # get date from the edited file for exif data
         clearstatcache();
-        $exifdata[] = array(tzdate(filemtime($file.$config['editext'])), getversion('imagemagick'), $cexif);
+        $exifdata[] = array(tzdate(filemtime($file.$config['editext'])), getimagedim($file.$config['editext']), getversion('imagemagick'), $cexif);
         # prepare and set exif data
         setexifdata($file.$config['editext'], $exifdata);
         # set mtime back
@@ -468,7 +481,7 @@ switch ($config['action']) {
       die(1);
     }
     $filtered = array();
-    $skip = array('action', 'levels', 'greyscales');
+    $skip = array('action', 'levels', 'grayscales');
     foreach ($config as $k => $v) {
       if (in_array($k, $skip)) {
         continue;
@@ -514,7 +527,6 @@ switch ($config['action']) {
 
     } else if (strtolower(substr($config['input'], -4)) === '.pdf') {
       $exifdata = getexifdata($config['input']);
-      var_dump($exifdata);
       echo $config['input']."\n";
       echo '  Container:'."\n";
       foreach ($exifdata[0] as $dataline) { # 0 = container
@@ -542,11 +554,11 @@ switch ($config['action']) {
       if (!count($exifdata)) {
         if ($mtime > time() - $config['metadata_timeout']) {
           echo $file.' - metadata missing, within timeout, will set'."\n";
-          $exifdata[] = array_merge(array(tzdate($mtime), getversion('simple-scan')), $config['scanmeta']);
+          $exifdata[] = array_merge(array(tzdate($mtime), getimagedim($file), getversion('simple-scan')), $config['scanmeta']);
           setexifdata($file, $exifdata);
         } else {
           echo $file.' - metadata missing, outside of timeout, will write creation date'."\n";
-          $exifdata[] = array(tzdate($mtime));
+          $exifdata[] = array(tzdate($mtime), getimagedim($file));
           setexifdata($file, $exifdata);
         }
       } else {
@@ -651,7 +663,7 @@ switch ($config['action']) {
       # not in metadata for this mtime
       if ($exifdataindex === false && $metadataindex === false) {
         echo $file.' - time does not exist in metadata file nor EXIF, adding it to metadata'."\n";
-        $metadata[$metafileindex]['exifdata'][] = array(tzdate($mtime));
+        $metadata[$metafileindex]['exifdata'][] = array(tzdate($mtime), getimagedim($file));
         $metadata_write = true;
         continue;
       }
