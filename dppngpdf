@@ -1,484 +1,751 @@
 #!/usr/bin/php
 <?php
 
-    # dppngpdf - adjust scanned png files and output a pdf with meta data
-    # by robert klebe, dotpointer
+# dppngpdf - adjust scanned png files and output a pdf with meta data
+# by robert klebe, dotpointer
 
-    # changelog
-    # 2018-09-19 22:04:00 - parts done
-    # 2018-09-20 19:13:35 - intial version
-    # 2018-09-21 19:56:00 - bugfixes and cleanup
-    # 2018-09-21 22:22:26 - adding a4crop, metaclear
+# changelog
+# 2018-09-19 22:04:00 - parts done
+# 2018-09-20 19:13:35 - intial version
+# 2018-09-21 19:56:00 - bugfixes and cleanup
+# 2018-09-21 22:22:26 - adding a4crop, metaclear
+# 2018-09-22 18:47:00 - adding metakeep, metasync, configs and
+#   and configwrite, replacing contrast adjustment with level
+#   adjustment for quality
 
-  $action = false;
-  $opts = getopt('a:c:i:gho:x:');
-  $greyscale = false;
-  $contrasts = array();
-  $greyscales = array();
-  $default_contrast = 50;
-  $editext = '.dppngpdf-edit.png';
-  $metadata_timeout = 86400 * 10;
-  $input = false;
-  $output = false;
-  $crop_adjustments = array('x' => 0, 'y' => 0, 't' => 0);
+/**
+ * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
+ * keys to arrays rather than overwriting the value in the first array with the duplicate
+ * value in the second array, as array_merge does. I.e., with array_merge_recursive,
+ * this happens (documented behavior):
+ *
+ * array_merge_recursive(array('key' => 'org value'), array('key' => 'new value'));
+ *	 => array('key' => array('org value', 'new value'));
+ *
+ * array_merge_recursive_distinct does not change the datatypes of the values in the arrays.
+ * Matching keys' values in the second array overwrite those in the first array, as is the
+ * case with array_merge, i.e.:
+ *
+ * array_merge_recursive_distinct(array('key' => 'org value'), array('key' => 'new value'));
+ *	 => array('key' => 'new value');
+ *
+ * Parameters are passed by reference, though only for performance reasons. They're not
+ * altered by this function.
+ *
+ * @param array $array1
+ * @param mixed $array2
+ * @author daniel@danielsmedegaardbuus.dk
+ * @return array
+ */
+function &array_merge_recursive_distinct(array &$array1, &$array2 = null) {
+  $merged = $array1;
 
-  # get parameters
-  foreach ($opts as $optkey => $optvalue) {
-    switch ($optkey) {
-      case 'a':
-        $action = $optvalue;
-        break;
-      case 'c':
-        $contrasts = explode(",", $optvalue);
-        break;
-      case 'g':
-        $greyscales = explode(",", $optvalue);
-        break;
-      case 'h':
+  if (is_array($array2)) {
+    foreach ($array2 as $key => $val) {
+      if (is_array($array2[$key])) {
+        $merged[$key] = isset($merged[$key]) && is_array($merged[$key]) ? array_merge_recursive_distinct($merged[$key], $array2[$key]) : $array2[$key];
+      } else {
+        $merged[$key] = $val;
+      }
+    }
+  }
+  return $merged;
+}
+
+# format json
+function formatjson($data) {
+  $json = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+  return preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json);
+}
+
+# get exif data from a file
+function getexifdata($file) {
+  # get exif data
+  $c = 'exiftool -j '.escapeshellarg($file);
+  exec($c, $o, $r);
+  if ($r) {
+    echo 'Failed: '.$c."\n";
+    die(1);
+  }
+
+  $exifdata = json_decode(implode("", $o), true);
+  if ($exifdata === null) {
+    echo 'Failed decoding exif JSON data.'."\n";
+    die(1);
+  }
+  $exifdata = $exifdata[0];
+
+  $description = isset($exifdata['Description']) ? $exifdata['Description'] : false;
+  if ($description && strlen($description)) {
+    $description = json_decode($description, true);
+    if ($description === null) {
+        echo 'Failed JSON decoding description'."\n";
+        die(1);
+    }
+  } else {
+    $description = array();
+  }
+  return $description;
+}
+
+# get program versions
+function getversion($what) {
+  switch ($what) {
+    case 'imagemagick':
+      $c = 'convert --version';
+      exec($c, $o, $r);
+      if ($r) {
+          echo 'Failed: '.$c."\n";
+          die(1);
+      }
+      $v = substr($o[0], strpos($o[0], ':') + 2);
+      return substr($v, 0, strrpos($v, 'http') - 1);
+    case 'simple-scan':
+      # get exif data
+      $c = 'simple-scan --version 2>&1';
+      exec($c, $o, $r);
+      if ($r) {
+          echo 'Failed: '.$c."\n";
+          die(1);
+      }
+      return $o[0];
+  }
+}
+
+# get list of png files
+function getfiles($includeedits = false) {
+  global $config;
+  # find all files
+  $c = 'find . -type f -iname "*.png"';
+  exec($c, $o, $r);
+  if ($r) {
+    echo 'Failed: '.$c."\n";
+    die(1);
+  }
+  # sort
+  sort($o);
+
+  # remove edited files
+  $files = array();
+  foreach ($o as $file) {
+    if ($includeedits === false && substr(strtolower($file), -strlen($config['editext'])) === $config['editext']) {
+      continue;
+    }
+    $files[] = $file;
+  }
+  return $files;
+}
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+  $s = explode("\n", $s);
+  foreach ($s as $k => $v) {
+    $s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+  return implode("\n", $s);
+}
+
+# write exifdata to file, preserve dates
+function setexifdata($file, $data) {
+  # extra precaution, store modify date
+  clearstatcache();
+  $mtime = filemtime($file);
+  # ask to set description
+  $c = 'exiftool -P -overwrite_original -XMP-dc:Description='.escapeshellarg(json_encode($data)).' '.escapeshellarg($file);
+  exec($c, $o, $r);
+  if ($r) {
+      echo 'Failed: '.$c."\n";
+      die(1);
+  }
+  # re-set the modify date
+  touch($file, $mtime);
+}
+
+# get a date with timezone
+function tzdate($date = false) {
+  if ($date === false) {
+      $date = time();
+  }
+  return date("c", $date);
+}
+
+$config = array(
+  'action' => false,
+  'levels' => array(),
+  'crop_adjustments' => array('x' => 0, 'y' => 0, 't' => 0),
+  'default_level' => array('25%', '75%'),
+  'editext' => '.dppngpdf-edit.png',
+  'greyscales' => array(),
+  'input' => false,
+  'metadata_timeout' => 86400 * 10,
+  'metafile' => basename(__FILE__).'-metadata.txt',
+  'output' => false,
+  'scanmeta' => array('PNG')
+);
+
+# get parameters
+$opts = getopt('a:l:i:gho:x:');
+
+# config files
+$configfiles = array(
+  '/etc/dptools/'.basename(__FILE__),
+  '~/.dptools/'.basename(__FILE__),
+  './.'.basename(__FILE__)
+);
+
+# get parameters - 1, before reading configs
+foreach ($opts as $optkey => $optvalue) {
+  switch ($optkey) {
+    case 'a':
+      $config_opt['action'] = $optvalue;
+      break;
+    case 'g':
+      $config_opt['greyscales'] = explode(",", $optvalue);
+      break;
+    case 'h':
 ?>Usage: <?php echo basename(__FILE__); ?> <options>
 
 Options:
   -a <action>
     Do an action, may be one of the following:
 
+      a4crop, crop a file of 300 dpi to 2480 x 3508 pixels A4 size, use -x to
+      set adjustments. Makes edit files, use comply action to accept changes.
+
+      adjust, to adjust level and greyscale if wanted, will write to
+      <filename><?php echo $config['editext']; ?>. Use -c and -g to set properties
+      and the comply action to accept changes.
+
+      comply, to overwrite png files with the edited files.
+
+      configwrite, write config file. Use -o <filename> to set name.
+      Default locations for config files are:
+        <?php echo implode("\n      ", $configfiles)."\n" ?>
+
+      drop, remove edit files.
+
+      list, list metadata for PNG:s.
+
       meta, to write meta data description to images, writes simple-scan as
       the first line if no meta data is available previously and the image
       was made less than 3 days ago.
 
-      a4crop, crop a file of 300 dpi to 2490 x 3510 pixels A4 size, use -x to
-      set adjustments. Makes edit files, use comply action to accept changes.
+      metakeep, to output PNG file metadata to a metadata file named
+      <?php echo $config['metafile']?>. See also metasync.
 
-      list, list metadata for PNG:s.
-
-      drop, remove edit files.
-
-      adjust, to adjust contrast and greyscale if wanted, will write to
-      <filename><?php echo $editext; ?>. Use -c and -g to set properties.
-
-      comply, to overwrite png files with the edited files.
+      metasync, to write changes in the metadata file to the file EXIF data.
+      Suggested workflow: run metakeep, edit files, run metasync.
 
       pdf, to write png files to a pdf. Use -o <filename> to set name.
-  -c <contrast1,contrast2...>
-    Set contrast values for each image. Default is <?php echo $default_contrast; ?>
-    Use a number to set contrast, leave empty to not set a contrast.
+
+  -l <value1%:value2%,value1%:value2%...>
+    Set level values for each image. Default is <?php echo implode(', ', $config['default_level']); ?>.
+    Use a number to set level, leave empty to not set a level.
+
   -g <image-index1,image-index2...>
     Make selected images greyscale.
+
   -h
     Print this information.
+
   -i <filename>
     Set input file, only used with list action.
 
   -o <filename>
     Set output file, defaults to <first filename>.pdf.
+
   -x <x>,<y>[,<0/1>]
     Set cropping adjustments, use with a4crop. Set the last parameter to 1 to
     draw a rectangle to show where the crop will be.
 <?php
-        break;
-      case 'i':
-        $input = $optvalue;
-        break;
-      case 'o':
-        $output = $optvalue;
-        break;
-      case 'x':
-        $tmp = explode(',', $optvalue);
-        $crop_adjustments['x'] = (int)$tmp[0];
-        $crop_adjustments['y'] = isset($tmp[1]) ? (int)$tmp[1] : $crop_adjustments['y'];
-        $crop_adjustments['t'] = isset($tmp[2]) ? (int)$tmp[2] : $crop_adjustments['t'];
-        break;
-    }
+      break;
+    case 'i':
+      $config_opt['input'] = $optvalue;
+      break;
+    case 'o':
+      $config_opt['output'] = $optvalue;
+      break;
+    case 'x':
+      $tmp = explode(',', $optvalue);
+      $config_opt['crop_adjustments']['x'] = (int)$tmp[0];
+      $config_opt['crop_adjustments']['y'] = isset($tmp[1]) ? (int)$tmp[1] : $config['crop_adjustments']['y'];
+      $config_opt['crop_adjustments']['t'] = isset($tmp[2]) ? (int)$tmp[2] : $config['crop_adjustments']['t'];
+      break;
+  }
+}
+
+do {
+  # shift one config file of the list of config files
+  $configfile = array_shift($configfiles);
+
+  # if this config file exists
+  if (!file_exists($configfile)) {
+    continue;
   }
 
-  # get a date with timezone
-  function tzdate($date = false) {
-    if ($date === false) {
-        $date = time();
-    }
-    return date("c", $date);
+  echo 'Reading config file: '.$configfile."\n";
+
+  # failed reading config
+  if (!$configtmp = file_get_contents($configfile)) {
+    cl(false, 'Failed reading configuration file, check rights: '.$configfile, VERBOSE_ERROR);
+    continue;
   }
 
-  # get exif data from a file
-  function getexifdata($input) {
-    # get exif data
-    $c = 'exiftool -j '.escapeshellarg($input);
-    exec($c, $o, $r);
-    if ($r) {
-      echo 'Failed: '.$c."\n";
+  # try to read json
+  $configtmp = json_decode(remove_comments($configtmp), true);
+  if ($configtmp === NULL) {
+    cl(false, 'Invalid configuration file, check JSON syntax: '.$configfile, VERBOSE_ERROR);
+    continue;
+  }
+
+  # remove default profile
+  $config = array_merge_recursive_distinct($config, $configtmp);
+
+} while (count($configfiles)); # do-while-configfiles
+
+# make sure the config from parameters override all
+$config = array_merge_recursive_distinct($config, $config_opt);
+
+# compare date lines by the date
+function compare_datelines($a, $b) {
+  $a = strtotime($a[0]);
+  $b = strtotime($b[0]);
+  if ($a == $b) {
+      return 0;
+  }
+  return ($a < $b) ? -1 : 1;
+}
+
+# find out what action to take
+switch ($config['action']) {
+  case 'a4crop':
+
+    if ($config['input'] === false || !file_exists(($config['input']))) {
+      echo 'Input file must be given and it must exist.'."\n";
       die(1);
     }
-
-    $exifdata = json_decode(implode("", $o), true);
-    if ($exifdata === null) {
-      echo 'Failed decoding exif JSON data.'."\n";
-      die(1);
-    }
-    $exifdata = $exifdata[0];
-
-    $description = isset($exifdata['Description']) ? $exifdata['Description'] : false;
-    if ($description && strlen($description)) {
-      $description = json_decode($description, true);
-      if ($description === null) {
-          echo 'Failed JSON decoding description'."\n";
-          die(1);
-      }
-    } else {
-      $description = array();
-    }
-    return $description;
-  }
-
-  # get program version
-  function getversion($what) {
-    switch ($what) {
-        case 'simple-scan':
-            # get exif data
-            $c = 'simple-scan --version 2>&1';
-            exec($c, $o, $r);
-            if ($r) {
-                echo 'Failed: '.$c."\n";
-                die(1);
-            }
-            return $o[0];
-        case 'imagemagick':
-            $c = 'convert --version';
-            exec($c, $o, $r);
-            if ($r) {
-                echo 'Failed: '.$c."\n";
-                die(1);
-            }
-            $v = substr($o[0], strpos($o[0], ':') + 2);
-            return substr($v, 0, strrpos($v, 'http') - 1);
-    }
-  }
-
-  # get list of png files
-  function getfiles($includeedits = false) {
-    global $editext;
-    # find all files
-    $c = 'find . -type f -iname "*.png"';
-    exec($c, $o, $r);
-    if ($r) {
-      echo 'Failed: '.$c."\n";
-      die(1);
-    }
-    # sort
-    sort($o);
-
-    # remove edited files
-    $files = array();
-    foreach ($o as $file) {
-      if ($includeedits === false && substr(strtolower($file), -strlen($editext)) === $editext) {
-        continue;
-      }
-      $files[] = $file;
-    }
-    return $files;
-  }
-
-  # write exifdata to file, preserve dates
-  function setexifdata($file, $data) {
-    # extra precaution, store modify date
+    $file = $config['input'];
+    $width = 2480;
+    $height = 3508;
+    $im = array();
+    # get modify time
     clearstatcache();
     $mtime = filemtime($file);
-    # ask to set description
-    $c = 'exiftool -P -overwrite_original -XMP-dc:Description='.escapeshellarg(json_encode($data)).' '.escapeshellarg($file);
+    # make a command
+    $exifdata = getexifdata($file);
+
+    if ($config['crop_adjustments']['t'] === 1 || $config['crop_adjustments']['t'] === 2) {
+      $im[] = '-fill none -strokewidth 1 -stroke red -draw "rectangle '.$config['crop_adjustments']['x'].','.$config['crop_adjustments']['y'].' '.($config['crop_adjustments']['x'] + $width - 1).','.($config['crop_adjustments']['y'] + $height - 1).'"';
+    }
+
+    if ($config['crop_adjustments']['t'] === 0 || $config['crop_adjustments']['t'] === 2) {
+      $x = $config['crop_adjustments']['x'] >= 0 ? '+'.$config['crop_adjustments']['x'] : $config['crop_adjustments']['x'];
+      $y = $config['crop_adjustments']['y'] >= 0 ? '+'.$config['crop_adjustments']['y'] : $config['crop_adjustments']['y'];
+      $im[] = '-crop '.$width.'x'.$height.$x.$y.' +repage';
+    }
+
+    $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+    $c = strtr($cexif, array(
+      '{in}' => escapeshellarg($file),
+      '{out}' => escapeshellarg($file.$config['editext'])
+    ));
+    echo $cexif."\n";
     exec($c, $o, $r);
     if ($r) {
         echo 'Failed: '.$c."\n";
         die(1);
     }
-    # re-set the modify date
-    touch($file, $mtime);
-  }
+    # get date from the edited file for exif data
+    clearstatcache();
+    $exifdata[] = array(tzdate(filemtime($file.$config['editext'])), getversion('imagemagick'), $cexif);
+    # prepare and set exif data
+    setexifdata($file.$config['editext'], $exifdata);
+    # set mtime back
+    touch($file.$config['editext'], $mtime);
 
-  $level = 0;
+    break;
+  case 'adjust':
+    $files = getfiles();
 
-  switch ($action) {
-    case 'meta':
+    foreach ($files as $fileindex => $file) {
+      # get settings for this file, if there are any
+      $level = isset($config['levels'][$fileindex]) ? explode(':',$config['levels'][$fileindex]) : $config['default_level'];
+      $greyscale = isset($config['greyscales'][$fileindex]) && (int)$config['greyscales'][$fileindex] === 1;
 
-      $files = getfiles();
+      $already_level = false;
+      $already_greyscale = false;
+      # get the exifdata for this file
+      $exifdata = getexifdata($file);
+      foreach ($exifdata as $dataline) {
+        if (!isset($dataline[1]) || !isset($dataline[2])) continue;
+        # 0 = date
+        # 1 = program
+        # 2 = command line
+        if (strpos($dataline[1], 'ImageMagick') !== false) {
+          if (strpos($dataline[2], '-level') !== false) {
+            $already_level = true;
+          }
+          if (strpos($dataline[2], '-colorspace Gray') !== false) {
+            $already_greyscale = true;
+          }
+        }
+      }
 
-      foreach ($files as $file) {
+      $im = array();
+      # no previous level and no level defined
+      if ($already_level) {
+        echo $file.' - level is already adjusted'."\n";
+      } else if ($level[0] === '') {
+        echo $file.' - level empty, not adjusting'."\n";
+      } else {
+        echo $file.' - level not adjusted, setting to '.implode(', ', $level)."\n";
+        $im[] = '-level '.$level[0].','.$level[1];
+      }
 
-        $exifdata = getexifdata($file);
+      # no previous  and no level defined
+      if ($already_greyscale) {
+        echo $file.' - greyscale is already done'."\n";
+      } else if ($greyscale === 1) {
+        echo $file.' - greyscale not done, doing'."\n";
+        $im[] = '-colorspace Gray';
+      } else {
+        echo $file.' - greyscale disabled, not doing'."\n";
+      }
+
+      if (count($im)) {
+        # get modify time
         clearstatcache();
         $mtime = filemtime($file);
-        if (!count($exifdata)) {
-          if ($mtime > time() - $metadata_timeout) {
-            echo $file.' - metadata missing, within timeout, will set'."\n";
-
-            $exifdata[] = array(tzdate($mtime), getversion('simple-scan'), 'PNG');
-            setexifdata($file, $exifdata);
-          } else {
-            echo $file.' - metadata missing, outside of timeout, will write creation date'."\n";
-            $exifdata[] = array(tzdate($mtime));
-            setexifdata($file, $exifdata);
-          }
-        } else {
-          echo $file.' - metadata exists'."\n";
+        # make a command
+        $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+        $c = strtr($cexif, array(
+          '{in}' => escapeshellarg($file),
+          '{out}' => escapeshellarg($file.$config['editext'])
+        ));
+        echo $cexif."\n";
+        exec($c, $o, $r);
+        if ($r) {
+            echo 'Failed: '.$c."\n";
+            die(1);
         }
-      }
-
-      break;
-    case 'metaclear':
-
-      $files = getfiles();
-      foreach ($files as $file) {
-        $exifdata = getexifdata($file);
+        # get date from the edited file for exif data
         clearstatcache();
-        setexifdata($file, array());
-        echo $file.' - metadata clearing'."\n";
+        $exifdata[] = array(tzdate(filemtime($file.$config['editext'])), getversion('imagemagick'), $cexif);
+        # prepare and set exif data
+        setexifdata($file.$config['editext'], $exifdata);
+        # set mtime back
+        touch($file.$config['editext'], $mtime);
+      }
+    }
+
+    break;
+  case 'comply':
+    $files = getfiles();
+
+    foreach ($files as $file) {
+      if (!file_exists($file.$config['editext'])) {
+        echo $file.' - no edited version, not touching'."\n";
+        continue;
+      }
+      if (!is_file($file) || !mime_content_type($file) === 'image/png') {
+        echo $file.' - not a file or not a PNG file, not touching';
+        continue;
+      }
+      echo $file.$config['editext'].' -> '.$file."\n";
+      if (!unlink($file)) {
+        echo 'Failed removing: '.$file."\n";
+        die(1);
       }
 
-      break;
-    case 'adjust':
-      $files = getfiles();
-
-      foreach ($files as $fileindex => $file) {
-        # get settings for this file, if there are any
-        $contrast = isset($contrasts[$fileindex]) ? (int)$contrasts[$fileindex] : $default_contrast;
-        $greyscale = isset($greyscales[$fileindex]) && (int)$greyscales[$fileindex] === 1;
-
-        $already_contrast = false;
-        $already_greyscale = false;
-        # get the exifdata for this file
-        $exifdata = getexifdata($file);
-        foreach ($exifdata as $dataline) {
-          if (!isset($dataline[1]) || !isset($dataline[2])) continue;
-          # 0 = date
-          # 1 = program
-          # 2 = command line
-          if (strpos($dataline[1], 'ImageMagick') !== false) {
-            if (strpos($dataline[2], '-brightness-contrast') !== false) {
-              $already_contrast = true;
-            }
-            if (strpos($dataline[2], '-colorspace Gray') !== false) {
-              $already_greyscale = true;
-            }
-          }
-        }
-
-        $im = array();
-        # no previous contrast and no contrast defined
-        if ($already_contrast) {
-          echo $file.' - contrast is already adjusted'."\n";
-        } else if ($contrast === 0) {
-          echo $file.' - contrast set to 0, not adjusting'."\n";
-        } else {
-          echo $file.' - contrast not adjusted, setting to '.((int)$contrast)."\n";
-          $im[] = '-brightness-contrast 0x'.(int)$contrast;
-        }
-
-        # no previous contrast and no contrast defined
-        if ($already_greyscale) {
-          echo $file.' - greyscale is already done'."\n";
-        } else if ($greyscale === 1) {
-          echo $file.' - greyscale not done, doing'."\n";
-          $im[] = '-colorspace Gray';
-        } else {
-          echo $file.' - greyscale disabled, not doing'."\n";
-        }
-
-        if (count($im)) {
-          # get modify time
-          clearstatcache();
-          $mtime = filemtime($file);
-          # make a command
-          $cexif = 'convert '.implode(' ', $im).' {in} {out}';
-          $c = strtr($cexif, array(
-            '{in}' => escapeshellarg($file),
-            '{out}' => escapeshellarg($file.$editext)
-          ));
-          echo $cexif."\n";
-          exec($c, $o, $r);
-          if ($r) {
-              echo 'Failed: '.$c."\n";
-              die(1);
-          }
-          # get date from the edited file for exif data
-          clearstatcache();
-          $exifdata[] = array(tzdate(filemtime($file.$editext)), getversion('imagemagick'), $cexif);
-          # prepare and set exif data
-          setexifdata($file.$editext, $exifdata);
-          # set mtime back
-          touch($file.$editext, $mtime);
-        }
+      if (!rename($file.$config['editext'], $file)) {
+        echo 'Failed renaming '.$file.$config['editext'].' to '.$file."\n";
+        die(1);
       }
-
-      break;
-    case 'comply':
-      $files = getfiles();
-
-      foreach ($files as $file) {
-        if (!file_exists($file.$editext)) {
-          echo $file.' - no edited version, not touching'."\n";
-          continue;
-        }
-        if (!is_file($file) || !mime_content_type($file) === 'image/png') {
-          echo $file.' - not a file or not a PNG file, not touching';
-          continue;
-        }
-        echo $file.$editext.' -> '.$file."\n";
-        if (!unlink($file)) {
+    }
+    break;
+  case 'configwrite':
+    if (!$config['output']) {
+      echo 'No output file specified, set one with -o'."\n";
+      die(1);
+    }
+    $filtered = array();
+    $skip = array('action', 'levels', 'greyscales');
+    foreach ($config as $k => $v) {
+      if (in_array($k, $skip)) {
+        continue;
+      }
+      $filtered[$k] = $v;
+    }
+    echo 'Writing configuration to '.$config['output']."\n";
+    file_put_contents($config['output'], formatjson($filtered));
+    break;
+  case 'drop':
+    $files = getfiles();
+    foreach ($files as $file) {
+      if (file_exists($file.$config['editext'])) {
+        echo $file.$config['editext'].' - removing'."\n";
+        if (!unlink($file.$config['editext'])) {
           echo 'Failed removing: '.$file."\n";
           die(1);
         }
-
-        if (!rename($file.$editext, $file)) {
-          echo 'Failed renaming '.$file.$editext.' to '.$file."\n";
-          die(1);
-        }
+        continue;
       }
-      break;
-    case 'a4crop':
-
-      if ($input === false || !file_exists(($input))) {
-        echo 'Input file must be given and it must exist.'."\n";
-        die(1);
-      }
-      $file = $input;
-      $width = 2490;
-      $height = 3510;
-      $im = array();
-      # get modify time
-      clearstatcache();
-      $mtime = filemtime($file);
-      # make a command
-      $exifdata = getexifdata($file);
-
-      if ($crop_adjustments['t'] === 1 || $crop_adjustments['t'] === 2) {
-        $im[] = '-fill none -strokewidth 1 -stroke red -draw "rectangle '.$crop_adjustments['x'].','.$crop_adjustments['y'].' '.($crop_adjustments['x'] + $width - 1).','.($crop_adjustments['y'] + $height - 1).'"';
-      }
-
-      if ($crop_adjustments['t'] === 0 || $crop_adjustments['t'] === 2) {
-        $x = $crop_adjustments['x'] >= 0 ? '+'.$crop_adjustments['x'] : $crop_adjustments['x'];
-        $y = $crop_adjustments['y'] >= 0 ? '+'.$crop_adjustments['y'] : $crop_adjustments['y'];
-        $im[] = '-crop '.$width.'x'.$height.$x.$y.' +repage';
-      }
-
-      $cexif = 'convert '.implode(' ', $im).' {in} {out}';
-      $c = strtr($cexif, array(
-        '{in}' => escapeshellarg($file),
-        '{out}' => escapeshellarg($file.$editext)
-      ));
-      echo $cexif."\n";
-      exec($c, $o, $r);
-      if ($r) {
-          echo 'Failed: '.$c."\n";
-          die(1);
-      }
-      # get date from the edited file for exif data
-      clearstatcache();
-      $exifdata[] = array(tzdate(filemtime($file.$editext)), getversion('imagemagick'), $cexif);
-      # prepare and set exif data
-      setexifdata($file.$editext, $exifdata);
-      # set mtime back
-      touch($file.$editext, $mtime);
-
-      break;
-    case 'drop':
-      $files = getfiles();
+    }
+    break;
+  case 'list':
+    if ($config['input'] === false) {
+      # default, list all PNG:s
+      $files = getfiles(true);
       foreach ($files as $file) {
-        if (file_exists($file.$editext)) {
-          echo $file.$editext.' - removing'."\n";
-          if (!unlink($file.$editext)) {
-            echo 'Failed removing: '.$file."\n";
-            die(1);
-          }
-          continue;
-        }
-      }
-      break;
-    case 'list':
-      if ($input === false) {
-        # default, list all PNG:s
-        $files = getfiles(true);
-        foreach ($files as $file) {
-
-          echo $file."\n";
-
-          $exifdata = getexifdata($file);
-
-          foreach ($exifdata as $dataline) {
-            echo '  '.implode('  ', $dataline)."\n";
-          }
-        }
-      } else if (strtolower(substr($input, -4)) === '.png') {
-
-        $exifdata = getexifdata($input);
+        $imagesize = getimagesize($file);
+        echo $file.' '.$imagesize[0].' x '.$imagesize[1]."\n";
+        $exifdata = getexifdata($file);
 
         foreach ($exifdata as $dataline) {
           echo '  '.implode('  ', $dataline)."\n";
         }
+      }
+    } else if (strtolower(substr($config['input'], -4)) === '.png') {
 
-      } else if (strtolower(substr($input, -4)) === '.pdf') {
-        $exifdata = getexifdata($input);
-        var_dump($exifdata);
-        echo $input."\n";
-        echo '  Container:'."\n";
-        foreach ($exifdata[0] as $dataline) { # 0 = container
-          echo '    '.implode('  ', $dataline)."\n";
-        }
+      $exifdata = getexifdata($config['input']);
 
-        echo '  Files:'."\n";
-        foreach ($exifdata[1] as $index => $file) { # 1 = files
-          echo '    '.$index.':'."\n";
-          foreach ($file as $dataline) {
-            echo '      '.implode('  ', $dataline)."\n";
-          }
+      foreach ($exifdata as $dataline) {
+        echo '  '.implode('  ', $dataline)."\n";
+      }
+
+    } else if (strtolower(substr($config['input'], -4)) === '.pdf') {
+      $exifdata = getexifdata($config['input']);
+      var_dump($exifdata);
+      echo $config['input']."\n";
+      echo '  Container:'."\n";
+      foreach ($exifdata[0] as $dataline) { # 0 = container
+        echo '    '.implode('  ', $dataline)."\n";
+      }
+
+      echo '  Files:'."\n";
+      foreach ($exifdata[1] as $index => $file) { # 1 = files
+        echo '    '.$index.':'."\n";
+        foreach ($file as $dataline) {
+          echo '      '.implode('  ', $dataline)."\n";
         }
       }
-      break;
-    case 'pdf':
-      $pdf_exifdata = array(
-        array(), # index 0 = container
-        array()  # index 1 = files
+    }
+    break;
+  case 'meta': # write meta data
+
+    $files = getfiles();
+
+    foreach ($files as $file) {
+
+      $exifdata = getexifdata($file);
+      clearstatcache();
+      $mtime = filemtime($file);
+      if (!count($exifdata)) {
+        if ($mtime > time() - $config['metadata_timeout']) {
+          echo $file.' - metadata missing, within timeout, will set'."\n";
+          $exifdata[] = array_merge(array(tzdate($mtime), getversion('simple-scan')), $config['scanmeta']);
+          setexifdata($file, $exifdata);
+        } else {
+          echo $file.' - metadata missing, outside of timeout, will write creation date'."\n";
+          $exifdata[] = array(tzdate($mtime));
+          setexifdata($file, $exifdata);
+        }
+      } else {
+        echo $file.' - metadata exists'."\n";
+      }
+    }
+
+    break;
+  case 'metaclear':
+
+    $files = getfiles();
+    foreach ($files as $file) {
+      $exifdata = getexifdata($file);
+      clearstatcache();
+      setexifdata($file, array());
+      echo $file.' - metadata clearing'."\n";
+    }
+
+    break;
+  case 'metakeep':
+    $files = getfiles();
+    $metadata = array();
+    foreach ($files as $file) {
+      echo $file.' - reading EXIF data'."\n";
+      $exifdata = getexifdata($file);
+      $metadata[] = array(
+        'name' => $file,
+        'mtime' => tzdate(filemtime($file)),
+        'exifdata' => $exifdata
       );
+    }
 
-      $files = getfiles();
+    file_put_contents($config['metafile'], formatjson($metadata));
+    break;
+  case 'metasync':
 
-      if (!count($files)) {
-        echo 'No suitable PNG files are ready for PDF creation.'."\n";
+    # get metadata file
+    if (!file_exists($config['metafile'])) {
+      echo 'No '.$config['metafile'].' file exists in this directory.';
+      die(1);
+    }
+    $metadata = file_get_contents($config['metafile']);
+    if ($metadata === false) {
+      echo 'Failed reading '.$config['metafile']."\n";
+      die(1);
+    }
+    $metadata = json_decode($metadata, true);
+    if ($metadata === null) {
+      echo 'Failed JSON decoding '.$config['metafile']."\n";
+      die(1);
+    }
+
+    # walk files
+    $files = getfiles();
+    $metadata_write = false;
+    foreach ($files as $file) {
+      echo $file.' - reading EXIF data'."\n";
+      $exifdata = getexifdata($file);
+      $mtime = filemtime($file);
+
+      # is there a line in the file meta data for this mtime?
+      $exifdataindex = false;
+      foreach ($exifdata as $k => $dataline) {
+        if (strtotime($dataline[0]) === $mtime) {
+          $exifdataindex = $k;
+        }
+      }
+
+      # does the file exist in the metadata?
+      $metafileindex = false;
+      foreach ($metadata as $k => $metadatafile) {
+        if ($metadatafile['name'] === $file) {
+          $metafileindex = $k;
+        }
+      }
+
+      # not found in metadata file? add it
+      if ($metafileindex === false) {
+        echo $file.' - missing in metadata file, adding it';
+        $metadata[] = array(
+          'name' => $file,
+          'mtime' => tzdate(filemtime($file)),
+          'exifdata' => $exifdata
+        );
+        continue;
+      }
+
+      # file date mismatches metadata date
+      if ($mtime !== strtotime($metadata[$metafileindex]['mtime'])) {
+        echo $file.' - modify date mismatches metadata date, setting it back'."\n";
+        touch($file, strtotime($metadata[$metafileindex]['mtime']));
+      }
+
+      # is there a line in the metadata file for this mtime?
+      $metadataindex = false;
+      foreach ($metadata[$metafileindex]['exifdata'] as $k => $dataline) {
+        if (strtotime($dataline[0]) === $mtime) {
+          $metadataindex = $k;
+        }
+      }
+
+      # not in metadata for this mtime
+      if ($exifdataindex === false && $metadataindex === false) {
+        echo $file.' - time does not exist in metadata file nor EXIF, adding it to metadata'."\n";
+        $metadata[$metafileindex]['exifdata'][] = array(tzdate($mtime));
+        $metadata_write = true;
+        continue;
+      }
+
+      # only in exifdata - add it to metadata file
+      if ($exifdataindex !== false && $metadataindex === false) {
+        echo $file.' - time exists in EXIF, but not metadata, adding it there'."\n";
+        $metadata[$metafileindex]['exifdata'] = array_merge($metadata[$metafileindex]['exifdata'], $exifdata);
+        $metadata_write = true;
+        continue;
+      }
+
+      # only in metadata - add to exif
+      if ($exifdataindex === false && $metadataindex !== false) {
+        echo $file.' - time exists in metadata, but not EXIF, adding it to file'."\n";
+        $exifdata[] = $metadata[$metafileindex]['exifdata'][$metadataindex];
+        setexifdata($file, $exifdata);
+        continue;
+      }
+
+      # exists in both, make sure dates are sorted
+      $before_sort = $metadata[$metafileindex]['exifdata'];
+      usort($metadata[$metafileindex]['exifdata'], "compare_datelines");
+
+      if ($before_sort !== $metadata[$metafileindex]['exifdata']) {
+        echo $file.' - data lines unsorted, sorting'."\n";
+        $metadata_write = true;
+      }
+
+      # exists in both, make sure they are in sync
+      if (json_encode($metadata[$metafileindex]['exifdata']) !== json_encode($exifdata)) {
+        echo $file.' - EXIF data in file mismatches metadata, overriding with metadata'."\n";
+        setexifdata($file, $metadata[$metafileindex]['exifdata']);
+        continue;
+      }
+
+      echo $file.' - No changes needed, not touching EXIF data'."\n";
+    }
+
+    if ($metadata_write) {
+      echo 'Updating metadata file '.$config['metafile'].' please check it'."\n";
+      file_put_contents($config['metafile'], formatjson($metadata));
+    }
+
+    break;
+  case 'pdf':
+    $pdf_exifdata = array(
+      array(), # index 0 = container
+      array()  # index 1 = files
+    );
+
+    $files = getfiles();
+
+    if (!count($files)) {
+      echo 'No suitable PNG files are ready for PDF creation.'."\n";
+      die(1);
+    }
+
+    foreach ($files as $v) {
+      $image_exifdata = getexifdata($v);
+      # make sure each file has some meta data
+      if (!count($image_exifdata)) {
+        echo 'File missing exif meta data, will not continue, run meta or adjust: '.$v."\n";
         die(1);
       }
 
-      foreach ($files as $v) {
-        $image_exifdata = getexifdata($v);
-        # make sure each file has some meta data
-        if (!count($image_exifdata)) {
-          echo 'File missing exif meta data, will not continue, run meta or adjust: '.$v."\n";
-          die(1);
-        }
-
-        # make sure no edited versions are available
-        if (file_exists($v.$editext)) {
-          echo 'Edited versions of file exist, run comply or drop: '.$v."\n";
-          die(1);
-        }
-
-        $pdf_exifdata[1][] = $image_exifdata;
+      # make sure no edited versions are available
+      if (file_exists($v.$config['editext'])) {
+        echo 'Edited versions of file exist, run comply or drop: '.$v."\n";
+        die(1);
       }
-      # prepare
-      $imtmpfile = '.dppngpdf-tmp';
-      $filelistfiles = array();
-      foreach ($files as $v) {
-        $filelistfiles[] = escapeshellarg($v);
-      }
-      file_put_contents($imtmpfile, implode("\n", $filelistfiles));
-      $output = $output !== false && strlen($output) ? $output : $files[0].'.pdf';
-      $im[] = '-compress lzw';
-      $cexif = 'convert '.implode(' ', $im).' {in} {out}';
-      $c = strtr($cexif, array(
-        '{in}' => '@'.$imtmpfile,
-        '{out}' => escapeshellarg($output)
-      ));
-      # echo $c."\n";
-      exec($c, $o, $r);
-      unlink($imtmpfile);
-      clearstatcache();
-      $pdf_exifdata[0][] = array(tzdate(filemtime($output)), getversion('imagemagick'), $cexif);
-      setexifdata($output, $pdf_exifdata);
-      break;
-  }
+
+      $pdf_exifdata[1][] = $image_exifdata;
+    }
+    # prepare
+    $imtmpfile = '.dppngpdf-tmp';
+    $filelistfiles = array();
+    foreach ($files as $v) {
+      $filelistfiles[] = escapeshellarg($v);
+    }
+    file_put_contents($imtmpfile, implode("\n", $filelistfiles));
+    $output = $config['output'] !== false && strlen($config['output']) ? $config['output'] : $files[0].'.pdf';
+    echo 'Writing PDF to '.$output."\n";
+    $im[] = '-compress lzw';
+    $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+    $c = strtr($cexif, array(
+      '{in}' => '@'.$imtmpfile,
+      '{out}' => escapeshellarg($output)
+    ));
+    exec($c, $o, $r);
+    unlink($imtmpfile);
+    clearstatcache();
+    $pdf_exifdata[0][] = array(tzdate(filemtime($output)), getversion('imagemagick'), $cexif);
+    setexifdata($output, $pdf_exifdata);
+    break;
+}
 ?>
