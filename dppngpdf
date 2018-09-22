@@ -8,17 +8,19 @@
     # 2018-09-19 22:04:00 - parts done
     # 2018-09-20 19:13:35 - intial version
     # 2018-09-21 19:56:00 - bugfixes and cleanup
+    # 2018-09-21 22:22:26 - adding a4crop, metaclear
 
   $action = false;
-  $opts = getopt('a:c:i:gho:');
+  $opts = getopt('a:c:i:gho:x:');
   $greyscale = false;
   $contrasts = array();
   $greyscales = array();
   $default_contrast = 50;
   $editext = '.dppngpdf-edit.png';
-  $metadata_timeout = 86400 * 3;
+  $metadata_timeout = 86400 * 10;
   $input = false;
   $output = false;
+  $crop_adjustments = array('x' => 0, 'y' => 0, 't' => 0);
 
   # get parameters
   foreach ($opts as $optkey => $optvalue) {
@@ -38,9 +40,13 @@
 Options:
   -a <action>
     Do an action, may be one of the following:
+
       meta, to write meta data description to images, writes simple-scan as
       the first line if no meta data is available previously and the image
       was made less than 3 days ago.
+
+      a4crop, crop a file of 300 dpi to 2490 x 3510 pixels A4 size, use -x to
+      set adjustments. Makes edit files, use comply action to accept changes.
 
       list, list metadata for PNG:s.
 
@@ -64,6 +70,9 @@ Options:
 
   -o <filename>
     Set output file, defaults to <first filename>.pdf.
+  -x <x>,<y>[,<0/1>]
+    Set cropping adjustments, use with a4crop. Set the last parameter to 1 to
+    draw a rectangle to show where the crop will be.
 <?php
         break;
       case 'i':
@@ -71,6 +80,12 @@ Options:
         break;
       case 'o':
         $output = $optvalue;
+        break;
+      case 'x':
+        $tmp = explode(',', $optvalue);
+        $crop_adjustments['x'] = (int)$tmp[0];
+        $crop_adjustments['y'] = isset($tmp[1]) ? (int)$tmp[1] : $crop_adjustments['y'];
+        $crop_adjustments['t'] = isset($tmp[2]) ? (int)$tmp[2] : $crop_adjustments['t'];
         break;
     }
   }
@@ -206,6 +221,17 @@ Options:
       }
 
       break;
+    case 'metaclear':
+
+      $files = getfiles();
+      foreach ($files as $file) {
+        $exifdata = getexifdata($file);
+        clearstatcache();
+        setexifdata($file, array());
+        echo $file.' - metadata clearing'."\n";
+      }
+
+      break;
     case 'adjust':
       $files = getfiles();
 
@@ -304,6 +330,52 @@ Options:
           die(1);
         }
       }
+      break;
+    case 'a4crop':
+
+      if ($input === false || !file_exists(($input))) {
+        echo 'Input file must be given and it must exist.'."\n";
+        die(1);
+      }
+      $file = $input;
+      $width = 2490;
+      $height = 3510;
+      $im = array();
+      # get modify time
+      clearstatcache();
+      $mtime = filemtime($file);
+      # make a command
+      $exifdata = getexifdata($file);
+
+      if ($crop_adjustments['t'] === 1 || $crop_adjustments['t'] === 2) {
+        $im[] = '-fill none -strokewidth 1 -stroke red -draw "rectangle '.$crop_adjustments['x'].','.$crop_adjustments['y'].' '.($crop_adjustments['x'] + $width - 1).','.($crop_adjustments['y'] + $height - 1).'"';
+      }
+
+      if ($crop_adjustments['t'] === 0 || $crop_adjustments['t'] === 2) {
+        $x = $crop_adjustments['x'] >= 0 ? '+'.$crop_adjustments['x'] : $crop_adjustments['x'];
+        $y = $crop_adjustments['y'] >= 0 ? '+'.$crop_adjustments['y'] : $crop_adjustments['y'];
+        $im[] = '-crop '.$width.'x'.$height.$x.$y.' +repage';
+      }
+
+      $cexif = 'convert '.implode(' ', $im).' {in} {out}';
+      $c = strtr($cexif, array(
+        '{in}' => escapeshellarg($file),
+        '{out}' => escapeshellarg($file.$editext)
+      ));
+      echo $cexif."\n";
+      exec($c, $o, $r);
+      if ($r) {
+          echo 'Failed: '.$c."\n";
+          die(1);
+      }
+      # get date from the edited file for exif data
+      clearstatcache();
+      $exifdata[] = array(tzdate(filemtime($file.$editext)), getversion('imagemagick'), $cexif);
+      # prepare and set exif data
+      setexifdata($file.$editext, $exifdata);
+      # set mtime back
+      touch($file.$editext, $mtime);
+
       break;
     case 'drop':
       $files = getfiles();
