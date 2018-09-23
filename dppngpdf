@@ -13,6 +13,7 @@
 #   and configwrite, replacing contrast adjustment with level
 #   adjustment for quality
 # 2018-09-22 23:15:00 - adding image dimensions to metadata, grayscale bugfix
+# 2018-09-23 02:18:00 - adding pdfextract
 
 /**
  * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
@@ -223,7 +224,7 @@ Options:
       <filename><?php echo $config['editext']; ?>. Use -c and -g to set properties
       and the comply action to accept changes.
 
-      comply, to overwrite png files with the edited files.
+      comply, to overwrite PNG files with the edited files.
 
       configwrite, write config file. Use -o <filename> to set name.
       Default locations for config files are:
@@ -243,7 +244,9 @@ Options:
       metasync, to write changes in the metadata file to the file EXIF data.
       Suggested workflow: run metakeep, edit files, run metasync.
 
-      pdf, to write png files to a pdf. Use -o <filename> to set name.
+      pdf, to write PNG files to a PDF. Use -o <filename> to set name.
+
+      pdfextract, to write PNG files from a PDF. Use -i <filename> to specify PDF.
 
   -l <value1%:value2%,value1%:value2%...>
     Set level values for each image. Default is <?php echo implode(', ', $config['default_level']); ?>.
@@ -259,7 +262,7 @@ Options:
     Set input file, only used with list action.
 
   -o <filename>
-    Set output file, defaults to <first filename>.pdf.
+    Set output file, defaults to <first filename>.PDF.
 
   -x <x>,<y>[,<0/1>]
     Set cropping adjustments, use with a4crop. Set the last parameter to 1 to
@@ -503,6 +506,76 @@ switch ($config['action']) {
         continue;
       }
     }
+    break;
+  case 'pdfextract':
+
+    if ($config['input'] === false || !file_exists($config['input'])) {
+      echo 'Input file must be specified.'."\n";
+      die(1);
+    }
+
+    # get file metadata
+    $metadata = getexifdata($config['input']);
+
+    # check for files that can potentially match the target files
+    $c = 'find . -regextype posix-awk -regex "\.\/\-[0-9]{2}[0-9]+\.png" -type f';
+    exec($c, $o, $r);
+    if ($r) {
+      echo 'Failed: '.$c."\n";
+    }
+
+    if (count($o)) {
+      echo 'Cannot extract because the following filenames may interfere ';
+      echo 'with the metadata mapping process: '."\n";
+      echo implode("\n", $o)."\n";
+      die(1);
+    }
+
+    # ask for extraction
+    unset($c, $o, $r);
+    $c = 'pdfimages -all '.escapeshellarg($config['input']).' ./';
+    exec($c, $o, $r);
+    if ($r) {
+      echo 'Failed: '.$c."\n";
+      die(1);
+    }
+
+    # find all files
+    $c = 'find . -regextype posix-awk -regex "\.\/\-[0-9]{2}[0-9]+\.png" -type f';
+    exec($c, $o, $r);
+    if ($r) {
+      echo 'Failed: '.$c."\n";
+      die(1);
+    }
+
+    sort($o);
+
+    $files = $o;
+
+    echo 'Metadata posts in PDF: '.count($metadata[1])."\n";
+    echo 'Extracted files: '.count($files)."\n";
+
+    if (count($files) !== count($metadata[1])) {
+      echo 'Warning, there were '.count($files).' files found as extracted, but the metadata has '.count($metadata[1]).' files recorded.'."\n";
+    }
+
+    foreach ($metadata[1] as $k => $v) {
+      if (!isset($files[$k])) {
+        echo 'Out of extracted files, stopping even though there is unused metadata left.'."\n";
+        break;
+      }
+
+      echo $files[$k].' - writing metadata'."\n";
+      setexifdata($files[$k], $v);
+
+      # get the last line
+      $lastline = end($v);
+      if ($lastline !== false) {
+        echo $files[$k].' - setting modify date'."\n";
+        touch($files[$k], strtotime($lastline[0]));
+      }
+    }
+
     break;
   case 'list':
     if ($config['input'] === false) {
