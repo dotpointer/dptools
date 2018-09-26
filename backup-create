@@ -11,6 +11,7 @@
 # 2018-06-28 12:28:00 - adding confirmation
 # 2018-06-28 15:43:00 - description edit
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
+# 2018-09-26 18:48:00 - adding prompts for name and size and error checks
 
 # make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
@@ -18,37 +19,89 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-echo "This will create an image file for backup storage named imagefile.img in the current directory.";
+echo "This will create an encrypted image file for backup storage.";
+echo "To save transfer time run this directly on the storage host.";
 
-read -p "Type y to continue, or anything else to quit: " -n 1 -r
-echo    # (optional) move to a new line
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+# VRAM
+echo -ne "Name of image file (or leave empty to quit): ";
+read IMGNAME;
+if [ -z "$IMGNAME" ]; then
+  echo 'Name must be given, quitting.';
   exit 1;
 fi
 
-echo "Creating image file imagefile.img...";
+
+# VRAM
+echo -ne "Image size in MB (leave empty to quit): ";
+read IMGSIZE;
+if [ -z "$IMGSIZE" ]; then
+  echo 'Size must be given, quitting.';
+  exit 1;
+fi
+
+echo "Creating image file $IMGNAME with $IMGSIZE MB...";
 # create a x GB image file - do this locally
-dd if=/dev/urandom of=imagefile.img bs=1M count=20480
+#dd if=/dev/urandom of=$IMGNAME bs=1M count=$IMGSIZE status=progress
+#if [ $? -ne 0 ]; then
+#  echo "Failed, quitting.";
+#  exit 1;
+#fi
 
 echo "Creating loop device...";
 # make loop device - do this locally
-losetup /dev/loop0 imagefile.img
+losetup /dev/loop0 $IMGNAME
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
 
 echo "Wiping header of loop device...";
 # if we don't do this we get
 # "Cannot wipe header on device /dev/loop0."
-dd if=/dev/zero count=2048 of=/dev/loop0
+dd if=/dev/zero count=2048 of=/dev/loop0 status=progress
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
 
 echo "Inializing LUKS format on the loop device...";
 # initialize img file - do this locally - NOTE, write YES in uppercase
 cryptsetup luksFormat /dev/loop0
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
 
 echo "Opening LUKS device..."
 # create a device in /dev/mapper/name - do this locally
 cryptsetup luksOpen /dev/loop0 backuploop
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
 
 echo "Formatting LUKS device...";
 # format the device - do this locally
 mkfs.ext4 /dev/mapper/backuploop
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
+
+# close the luks mapping
+echo "Closing LUKS mapper: /dev/mapper/backuploop";
+cryptsetup luksClose /dev/mapper/backuploop
+if [[ $? != 0 ]]; then
+  echo "Failed closing LUKS mapper: /dev/mapper/backuploop";
+  exit 1;
+fi
+
+# delete the loop device
+echo "Deleting loop device: /dev/loop0";
+losetup -d /dev/loop0
+if [[ $? != 0 ]]; then
+  echo "Failed deleting loop device: /dev/loop0";
+  exit 1;
+fi
 
 echo "Done";

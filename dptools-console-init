@@ -24,6 +24,7 @@
 # 2018-07-19 - 17:13:00 - editing aliases, colors, prompt, setup script place
 # 2018-07-19 17:14:04
 # 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
+# 2018-09-26 20:00:00 - updating copy
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -49,9 +50,9 @@ alias cl='clear';
 alias clea='clear';
 alias clr='clear';
 alias cls='clear';
-alias copy='cp -i';
+alias copy='cp -i -a';
 alias correctlibreoffice='sudo sed -i "s/X-GIO-NoFuse=true/X-GIO-NoFuse=false/" /usr/share/applications/libreoffice-*';
-alias cp='cp --preserve';
+alias cp='cp -a';
 # alias date='date +"%n DATE: %Y-%m-%d%n TIME: %H:%M:%S%n"';
 alias delbackups='rm ./*~ 2> /dev/null; rm ./.*~ 2> /dev/null';
 alias delete='rm -i';
