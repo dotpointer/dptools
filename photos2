@@ -15,6 +15,9 @@
 # 2018-06-29 14:42:00 - cleanup
 # 2018-06-29 17:27:18
 # 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
+# 2018-12-16 12:56:00 - adding partly support for win
+
+$OS = strtolower(PHP_OS);
 
 # to clean an empty directory from folders
 function clear_empty_directories($path) {
@@ -26,8 +29,14 @@ function clear_empty_directories($path) {
     $dirs = shell_exec($cmd);
     if ($dirs === false) die('Could not do find.');
     $dirs = explode("\n", $dirs);
+    var_dump($dirs);
     foreach ($dirs as $dir) {
-      if (file_exists($dir) && !in_array(basename($dir), array('.', '..'))) {
+      if (
+        file_exists($dir) &&
+        is_dir($dir) &&
+        !in_array(basename($dir), array('.', '..')) &&
+        $dir !== $path
+      ) {
         $deleteddirs++;
         echo "Deleting empty directory: ".$dir."\n";
         rmdir($dir);
@@ -38,44 +47,76 @@ function clear_empty_directories($path) {
   } while ($deleted_a_dir);
 }
 
+if (!in_array($OS, array('linux', 'win'))) {
+  echo 'OS not supported.'."\n";
+  die(1);
+}
+
+# determine slash type
+$SLASH = $OS === 'linux' ? '/' : '\\';
+
 # php whine about timezone if we don't set it
 date_default_timezone_set("Europe/Stockholm");
 
-define('CONVERT_PATH', '/usr/bin/convert');
-
-if (!file_exists(CONVERT_PATH)) {
-  echo 'Could not find '.CONVERT_PATH.'. Try to install it: apt-get install imagemagick'."\n";
+if ($OS === 'linux') {
+  define('CONVERT_PATH', '/usr/bin/convert');
+} else if ($OS === 'win') {
+  # need to find imagemagick
   die();
 }
 
-# get ourselves
-$cmd = 'whoami';
-$o = array();
-exec($cmd, $o, $r);
-$whoami = isset($o[0]) ? $o[0] : '';
-if ($r !== 0 || !strlen($whoami)) die('Failed extracting username: '.$cmd."\n");
 
-if ($whoami === 'root') {
-  echo 'WARNING! You are running as ROOT, this may not work.'."\n";
+if (!file_exists(CONVERT_PATH)) {
+  if ($OS === 'linux') {
+    echo 'Could not find '.CONVERT_PATH.'. Try to install it: apt-get install imagemagick'."\n";
+    die();
+  } else {
+    echo 'Could not find '.CONVERT_PATH.'. Try to install it.'."\n";
+    die();
+  }
 }
 
-# get the desktop path
-$cmd = '/usr/bin/xdg-user-dir DESKTOP';
-$desktopdir = exec($cmd, $o, $r);
+if ($OS === 'linux') {
+  # get ourselves
+  $cmd = 'whoami';
+  $o = array();
+  exec($cmd, $o, $r);
+  $whoami = isset($o[0]) ? $o[0] : '';
+  if ($r !== 0 || !strlen($whoami)) die('Failed extracting username: '.$cmd."\n");
 
-# make sure we have desktop dir
-if ($r !== 0 || !file_exists($desktopdir) || !is_dir($desktopdir)) {
-  die('Failed extracting desktop dir: '.$cmd."\n");
+  if ($whoami === 'root') {
+    echo 'WARNING! You are running as ROOT, this may not work.'."\n";
+  }
+}
+
+if ($OS === 'linux') {
+  # get the desktop path
+  $cmd = '/usr/bin/xdg-user-dir DESKTOP';
+  $desktopdir = exec($cmd, $o, $r);
+
+  # make sure we have desktop dir
+  if ($r !== 0 || !file_exists($desktopdir) || !is_dir($desktopdir)) {
+    echo 'Failed extracting desktop dir: '.$cmd."\n";
+    die();
+  }
+} else if ($OS === 'win') {
+  $desktopdir = '%USERPROFILE%\Desktop';
+
+  if (!file_exists($desktopdir) || !is_dir($desktopdir)) {
+    echo 'Failed finding desktop dir: '.$desktopdir."\n";
+    die();
+  }
 }
 
 # path to the target dir
-$targetdir = $desktopdir.'/Kamerabilder/';
+$targetdir = $desktopdir.$SLASH.'Kamerabilder'.$SLASH;
 $targetrootdir = $targetdir;
 
 # make sure target dir exists
 if (!file_exists($targetdir)) {
   # make sure the target dir exists
   $o = array();
+  echo 'Creating '.$targetdir."\n";
   $cmd = 'mkdir -p '.escapeshellarg($targetdir);
   exec($cmd, $o, $r);
   if ($r !== 0) {
@@ -87,7 +128,7 @@ if (!file_exists($targetdir)) {
 }
 
 # path to photos
-$srcdir = '/media/'.$whoami.'/CANON_DC/';
+$srcdir = $SLASH.'media'.$SLASH.$whoami.$SLASH.'CANON_DC'.$SLASH;
 if (!file_exists($srcdir) || !is_dir($srcdir)) {
   # clear the directory from empty dirs
   clear_empty_directories($targetrootdir);
@@ -113,7 +154,7 @@ if (!count($files)) {
 sort($files);
 
 # path to the target dir + Y-m-d H.i.s
-$targetdir = $targetdir.date('Y-m-d H.i.s').'/';
+$targetdir = $targetdir.date('Y-m-d H.i.s').$SLASH;
 
 if (!file_exists($targetdir)) {
   # make sure the target dir exists
@@ -178,7 +219,7 @@ foreach ($files as $file) {
   # is this file no 1, 6, 12, 18, 24...
   if ($filenr === 0 || $filenr % 5 === 0) {
     $subnr += 1;
-    $targetsubdir = $targetdir . 'Auktion-'.$subnr . '/';
+    $targetsubdir = $targetdir . 'Auktion-'.$subnr . $SLASH;
     # make the target dir folder
     $o = array();
     $cmd = 'mkdir -p '.escapeshellarg($targetsubdir);
