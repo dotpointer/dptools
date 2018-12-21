@@ -8,6 +8,7 @@
 # 2015-06-06 12:38:51 - updated version for dptools
 # 2018-06-28 15:53:00 - cleanup
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
+# 2018-10-05 00:00:00 - adding checks for mounted status
 
 # credentials
 DIR_IMAGE="/mnt/backupimage";
@@ -30,12 +31,17 @@ if [[ $EUID -ne 0 ]]; then
    exit 1;
 fi
 
-# unmount the image dir
-echo "Unmounting image dir: $DIR_IMAGE";
-umount $DIR_IMAGE;
-if [[ $? != 0 ]]; then
-  echo "Failed unmounting dir: $DIR_IMAGE";
-  exit 1;
+if [[ $(findmnt -M "$DIR_IMAGE") ]]; then
+  # unmount the image dir
+  echo "Unmounting image dir: $DIR_IMAGE";
+  umount $DIR_IMAGE;
+  if [[ $? != 0 ]]; then
+    echo "Failed unmounting dir: $DIR_IMAGE";
+    exit 1;
+  fi
+else
+  echo "Not mounted, will not continue: $DIR_IMAGE."
+  exit;
 fi
 
 # close the luks mapping
@@ -54,14 +60,17 @@ if [[ $? != 0 ]]; then
   exit 1;
 fi
 
-# unmount the share dir
-echo "Unmounting share dir: $DIR_SHARE";
-umount $DIR_SHARE
-if [[ $? != 0 ]]; then
-  echo "Failed unmounting dir: $DIR_SHARE";
-  exit 1;
+if [[ $(findmnt -M "$DIR_SHARE") ]]; then
+  # unmount the share dir
+  echo "Unmounting share dir: $DIR_SHARE";
+  umount $DIR_SHARE
+  if [[ $? != 0 ]]; then
+    echo "Failed unmounting dir: $DIR_SHARE";
+    exit 1;
+  fi
+else
+  echo "Not mounted, will not unmounted: $DIR_SHARE";
 fi
 
 # tell that it went fine
 echo "Successfully closed backup";
-exit 0;
