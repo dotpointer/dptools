@@ -16,20 +16,125 @@
 # 2018-06-29 17:27:18
 # 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
 # 2018-12-16 12:56:00 - adding partly support for win
+# 2019-01-05 19:37:00 - adding configurations and full support for win
 
-$OS = strtolower(PHP_OS);
+# --- config start
+
+/**
+ * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
+ * keys to arrays rather than overwriting the value in the first array with the duplicate
+ * value in the second array, as array_merge does. I.e., with array_merge_recursive,
+ * this happens (documented behavior):
+ *
+ * array_merge_recursive(array('key' => 'org value'), array('key' => 'new value'));
+ *   => array('key' => array('org value', 'new value'));
+ *
+ * array_merge_recursive_distinct does not change the datatypes of the values in the arrays.
+ * Matching keys' values in the second array overwrite those in the first array, as is the
+ * case with array_merge, i.e.:
+ *
+ * array_merge_recursive_distinct(array('key' => 'org value'), array('key' => 'new value'));
+ *   => array('key' => 'new value');
+ *
+ * Parameters are passed by reference, though only for performance reasons. They're not
+ * altered by this function.
+ *
+ * @param array $array1
+ * @param mixed $array2
+ * @author daniel@danielsmedegaardbuus.dk
+ * @return array
+ */
+function &array_merge_recursive_distinct(array &$array1, &$array2 = null) {
+  $merged = $array1;
+
+  if (is_array($array2)) {
+    foreach ($array2 as $key => $val) {
+      if (is_array($array2[$key])) {
+        $merged[$key] = isset($merged[$key]) && is_array($merged[$key]) ? array_merge_recursive_distinct($merged[$key], $array2[$key]) : $array2[$key];
+      } else {
+        $merged[$key] = $val;
+      }
+    }
+  }
+  return $merged;
+}
+
+function cmp($a, $b) {
+  $a = substr_count($a, '/');
+  $b = substr_count($b, '/');
+    if ($a == $b) {
+        return 0;
+    }
+    return ($a > $b) ? -1 : 1;
+}
+
+function find_something($dir, $what, $collection = array()) {
+  global $config;
+  $items = scandir($dir);
+
+  $filtereditems = array();
+  foreach ($items as $item) {
+    if (in_array($item, array('.', '..'))) {
+      continue;
+    }
+
+    $filtereditems[] = $item;
+  }
+  $items = $filtereditems;
+
+  # nothing in this dir
+  if (!count($items)) {
+    # are we collecting empty dirs
+    if ($what === 'empty') {
+      # then add it
+      $collection[] = $dir;
+    }
+  # or something in this dir
+  } else {
+    # walk the items
+    foreach ($items as $item) {
+
+      $itempath = $dir.(substr($dir, -1) === '/' ? '' : '/').$item;
+
+
+      # is it a dir - run ourselves on it
+      if (is_dir($itempath)) {
+        $collection = array_merge($collection, find_something($itempath, $what, $collection));
+      # looking for jpeg and it is a jpeg - add it to collection
+      } else if (
+        $what === 'jpeg' &&
+        strpos($item, '.') !== false &&
+        in_array(
+          strtolower(substr($item, strrpos($item, '.') + 1, strlen($item) - strrpos($item, '.') - 1)),
+          array('jpg', 'jpeg')
+        )
+      ) {
+        $collection[] = $itempath;
+      }
+    }
+  }
+
+  usort($collection, "cmp");
+
+  return $collection;
+}
 
 # to clean an empty directory from folders
 function clear_empty_directories($path) {
+  global $config;
   $deleteddirs = 0;
   do {
+
     $deleted_a_dir = false;
     # get a list of empty directories
+    /*
     $cmd = 'find '.escapeshellarg($path).' -type d -empty';
     $dirs = shell_exec($cmd);
     if ($dirs === false) die('Could not do find.');
     $dirs = explode("\n", $dirs);
-    var_dump($dirs);
+    */
+    $dirs = find_something($path, 'empty');
+
     foreach ($dirs as $dir) {
       if (
         file_exists($dir) &&
@@ -39,45 +144,214 @@ function clear_empty_directories($path) {
       ) {
         $deleteddirs++;
         echo "Deleting empty directory: ".$dir."\n";
-        rmdir($dir);
+        if (!$config['dryrun']) {
+          rmdir($dir);
+        }
         $deleted_a_dir = true;
         continue;
       }
     }
-  } while ($deleted_a_dir);
+  } while ($deleted_a_dir && !$config['dryrun']);
 }
 
-if (!in_array($OS, array('linux', 'win'))) {
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+  $s = explode("\n", $s);
+
+  foreach ($s as $k => $v) {
+    $s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+
+  return implode("\n", $s);
+}
+
+# --- main ------------------------------------------------------------
+
+# generic config
+$config = array(
+  'dir_desktop' => false,
+  'dir_desktop_folder' => 'Skrivbord',
+  'dir_desktop_subfolder' => 'Kamerabilder',
+  'dryrun' => false,
+  'file_config' => array(),
+  'file_convert' => false,
+  'file_prefix' => 'Bild-',
+  'os' => strtolower(PHP_OS),
+  'sourcedir' => false,
+  'timezone' => 'Europe/Stockholm', # php whine about timezone if we don't set it
+);
+
+# os is linux
+if ($config['os'] === 'linux') {
+  $config['file_convert'] = '/usr/bin/convert';
+  $config['sourcedir'] = '/media/{USERNAME}/CANON_DC/';
+  $config['file_config'] = array(
+    '/etc/dptools/'.basename(__FILE__),
+    '~/.dptools/'.basename(__FILE__),
+    './'.basename(__FILE__).'.conf'
+  );
+# os is win
+} else if (in_array($config['os'], array('win', 'winnt'))) {
+  $config['file_convert'] = 'C:/Program/ImageMagick-7.0.8-Q16/convert.exe';
+  $config['sourcedir'] = 'D:/CANON_DC/';
+  $config['file_config'] = array(
+      basename(__FILE__).'.cfg'
+  );
+}
+
+# get arguments
+$arguments = getopt(
+  "hpw::",
+  array(
+    'help',
+    'print-config',
+    'write-config::'
+  )
+);
+
+# handle options
+foreach ($arguments as $k => $v) {
+  switch ($k) {
+    case 'h':
+    case 'help':
+?>
+Usage: <?php echo basename(__FILE__)?> [commands below]
+<?php echo basename(__FILE__)?> manages file synchronizations driven by other applications, such as rsync.
+
+  -w=<name>, --write-config=<name>  Write config to location in configuration
+  -p, --print-config        Print out config on screen
+
+Made by dotpointer, 2013-2018.
+<?php
+      die();
+
+    case 'p':
+    case 'print-config':
+      # print config in json format
+      echo json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+      die(0);
+
+      break;
+
+    # to write out the config
+    case 'w':
+    case 'write-config':
+
+      if (!strlen($v)) {
+        echo 'Configuration file must be specified.'."\n";
+        die(1);
+      }
+
+      $confdir = dirname($v);
+
+      if (!is_dir($confdir) && !file_exists($confdir)) {
+        if (!mkdir($confdir, 755, true)) {
+          echo 'Failed creating configuration file directory: '.$confdir."\n";
+          die(1);
+        }
+      }
+
+      if (!is_writable($confdir)) {
+        echo 'Configuration file directory '.$confdir.' is not writable, try with a different file name or a different user.'."\n";
+        die(1);
+      }
+
+      $json = json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+      # indent by 2 spaces
+      $json = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json);
+
+        # write config to file
+      if (in_array($config['os'], array('win', 'winnt'))) {
+        $json = str_replace("\n", "\r\n", $json);
+      }
+      file_put_contents($v, $json);
+      die(0);
+  }
+}
+
+$configfiles = $config['file_config'];
+
+$configfiles_read = 0;
+
+do {
+
+  # shift one config file of the list of config files
+  $configfile = array_shift($configfiles);
+
+  # if this config file exists
+  if (file_exists($configfile)) {
+
+    echo 'Reading config file: '.$configfile."\n";
+
+    # failed reading config
+    if (!$configtmp = file_get_contents($configfile)) {
+      echo 'Failed reading configuration file, check rights: '.$configfile."\n";
+      continue;
+    }
+    # try to read json
+    $configtmp = json_decode(remove_comments($configtmp), true);
+    if ($configtmp === NULL) {
+      echo 'Invalid configuration file, check JSON syntax: '.$configfile."\n";
+      continue;
+    }
+
+    # remove default profile
+    $config = array_merge_recursive_distinct($config, $configtmp);
+    $configfiles_read++;
+  # or config file does not exit
+  } #else {
+     # echo 'Skipping nonexistant config file: '.$configfile."\n";
+  #}
+
+} while (count($configfiles)); # do-while-configfiles
+
+# no configs read
+if (!$configfiles_read) {
+  echo 'No config files were read. ';
+  echo 'Please run php '.basename(__FILE__);
+  echo ' -w=';
+  if ($config['os'] === 'linux') {
+    echo '~/.dptools/'.basename(__FILE__);
+  } else if (in_array($config['os'], array('win', 'winnt'))) {
+    echo basename(__FILE__).'.cfg';
+  } else {
+    echo '<name of config file>';
+  }
+  echo ' to generate a config, then check it so it is correct.'."\n";
+  die();
+}
+
+# make sure the config from parameters override all
+$config = array_merge_recursive_distinct($config, $config_opt);
+
+if (!in_array($config['os'], array('linux', 'win', 'winnt'))) {
   echo 'OS not supported.'."\n";
   die(1);
 }
 
-# determine slash type
-$SLASH = $OS === 'linux' ? '/' : '\\';
-
 # php whine about timezone if we don't set it
-date_default_timezone_set("Europe/Stockholm");
+echo 'Setting timezone: '.$config['timezone']."\n";
+date_default_timezone_set($config['timezone']);
 
-if ($OS === 'linux') {
-  define('CONVERT_PATH', '/usr/bin/convert');
-} else if ($OS === 'win') {
-  # need to find imagemagick
-  die();
-}
+# --- config end
 
-
-if (!file_exists(CONVERT_PATH)) {
-  if ($OS === 'linux') {
-    echo 'Could not find '.CONVERT_PATH.'. Try to install it: apt-get install imagemagick'."\n";
+# no convert found
+if (!file_exists($config['file_convert'])) {
+  if ($config['os'] === 'linux') {
+    echo 'Could not find '.$config['file_convert'].'. Try to install it: apt-get install imagemagick. Then set the path to it in the config as file_config.'."\n";
     die();
   } else {
-    echo 'Could not find '.CONVERT_PATH.'. Try to install it.'."\n";
+    echo 'Could not find '.$config['file_convert'].'.'."\n";
+    echo 'Go to https://imagemagick.org/script/download.php, then download the latest -dll.exe version.'."\n";
+    echo 'Make sure to check the box to install legacy components (convert) during the installation.'."\n";
+    echo 'Then set the path to it in config as file_config.'."\n";
     die();
   }
 }
 
-if ($OS === 'linux') {
-  # get ourselves
+# os is linux
+if ($config['os'] === 'linux') {
+  # get username
   $cmd = 'whoami';
   $o = array();
   exec($cmd, $o, $r);
@@ -87,29 +361,39 @@ if ($OS === 'linux') {
   if ($whoami === 'root') {
     echo 'WARNING! You are running as ROOT, this may not work.'."\n";
   }
+
+  # set source dir
+  if (strpos($config['sourcedir'], '{USERNAME}') !== false) {
+    $config['sourcedir'] = str_replace('{USERNAME}', $whoami, $config['sourcedir']);
+  }
+
+  # set desktop dir
+  if ($config['dir_desktop'] === false) {
+    # get the desktop path
+    $cmd = '/usr/bin/xdg-user-dir DESKTOP';
+    $config['dir_desktop'] = exec($cmd, $o, $r);
+
+    # make sure we have desktop dir
+    if ($r !== 0 || !file_exists($config['dir_desktop']) || !is_dir($config['dir_desktop'])) {
+      echo 'Failed extracting desktop dir: '.$cmd."\n";
+      die();
+    }
+  }
 }
 
-if ($OS === 'linux') {
-  # get the desktop path
-  $cmd = '/usr/bin/xdg-user-dir DESKTOP';
-  $desktopdir = exec($cmd, $o, $r);
-
-  # make sure we have desktop dir
-  if ($r !== 0 || !file_exists($desktopdir) || !is_dir($desktopdir)) {
-    echo 'Failed extracting desktop dir: '.$cmd."\n";
-    die();
-  }
-} else if ($OS === 'win') {
-  $desktopdir = '%USERPROFILE%\Desktop';
-
-  if (!file_exists($desktopdir) || !is_dir($desktopdir)) {
-    echo 'Failed finding desktop dir: '.$desktopdir."\n";
+# os is win - no desktop
+if (in_array($config['os'], array('win', 'winnt')) && $config['dir_desktop'] === false) {
+  $config['dir_desktop'] = str_replace('\\', '/', $_SERVER['USERPROFILE']).'/'.$config['dir_desktop_folder'];
+  if (!is_dir($config['dir_desktop'])) {
+    echo 'Failed finding desktop dir: '.$config['dir_desktop']."\n";
     die();
   }
 }
+
+# echo json_encode($config, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
 
 # path to the target dir
-$targetdir = $desktopdir.$SLASH.'Kamerabilder'.$SLASH;
+$targetdir = $config['dir_desktop'].'/'.$config['dir_desktop_subfolder'].'/';
 $targetrootdir = $targetdir;
 
 # make sure target dir exists
@@ -117,18 +401,19 @@ if (!file_exists($targetdir)) {
   # make sure the target dir exists
   $o = array();
   echo 'Creating '.$targetdir."\n";
-  $cmd = 'mkdir -p '.escapeshellarg($targetdir);
-  exec($cmd, $o, $r);
-  if ($r !== 0) {
-    die('Failed making target root dir: '.$cmd."\n");
+  if (!mkdir($targetdir, 0777, true)) {
+    die('Failed making target root dir: '.$targetdir."\n");
   }
-  chmod($targetdir, 0777);
+  if ($config['os'] === 'linux' && !$config['dryrun']) {
+    chmod($targetdir, 0777);
+  }
 } else if (!is_dir($targetdir)) {
   die('Target root dir is not a dir: '.$targetdir);
 }
 
 # path to photos
-$srcdir = $SLASH.'media'.$SLASH.$whoami.$SLASH.'CANON_DC'.$SLASH;
+$srcdir = $config['sourcedir'];
+
 if (!file_exists($srcdir) || !is_dir($srcdir)) {
   # clear the directory from empty dirs
   clear_empty_directories($targetrootdir);
@@ -137,13 +422,7 @@ if (!file_exists($srcdir) || !is_dir($srcdir)) {
 
 #  find all files on src, make a list
 $o = array();
-$cmd = 'find '.escapeshellarg($srcdir).' -type f \( -iname "*.jpg" -o -iname "*.jpeg" \)';
-exec($cmd, $o, $r);
-$files = $o;
-if ($r !== 0) {
-  die('Failed finding source files: '.$cmd."\n");
-}
-
+$files = find_something($srcdir, 'jpeg');
 
 # make sure there were source files
 if (!count($files)) {
@@ -154,29 +433,22 @@ if (!count($files)) {
 sort($files);
 
 # path to the target dir + Y-m-d H.i.s
-$targetdir = $targetdir.date('Y-m-d H.i.s').$SLASH;
+$targetdir = $targetdir.date('Y-m-d H.i.s').'/';
 
 if (!file_exists($targetdir)) {
   # make sure the target dir exists
   $o = array();
-  $cmd = 'mkdir -p '.escapeshellarg($targetdir);
-  exec($cmd, $o, $r);
-  if ($r !== 0) {
-    die('Failed making target root dir: '.$cmd."\n");
+  if (!mkdir($targetdir, 0777, true)) {
+    die('Failed making target root dir: '.$targetdir."\n");
   }
-  chmod($targetdir, 0777);
 } else if (!is_dir($targetdir)) {
   die('Target root dir is not a dir: '.$targetdir."\n");
 }
 
-# make the target dir folder
-$o = array();
-$cmd = 'mkdir -p '.escapeshellarg($targetdir);
-exec($cmd, $o, $r);
-if ($r !== 0 || !file_exists($targetdir)) {
-  die('Failed making target dir: '.$cmd."\n");
+if ($config['os'] === 'linux' && !$config['dryrun']) {
+  chmod($targetdir, 0777);
 }
-chmod($targetdir, 0777);
+
 # subfolder nr
 $subnr = 0;
 
@@ -219,30 +491,22 @@ foreach ($files as $file) {
   # is this file no 1, 6, 12, 18, 24...
   if ($filenr === 0 || $filenr % 5 === 0) {
     $subnr += 1;
-    $targetsubdir = $targetdir . 'Auktion-'.$subnr . $SLASH;
+    $targetsubdir = $targetdir . 'Auktion-'.$subnr . '/';
     # make the target dir folder
     $o = array();
-    $cmd = 'mkdir -p '.escapeshellarg($targetsubdir);
-    exec($cmd, $o, $r);
-    if ($r !== 0 || !file_exists($targetsubdir)) {
-      die('Failed making target dir: '.$cmd."\n");
+    if (!mkdir($targetsubdir, 0777, true) || !file_exists($targetsubdir)) {
+      die('Failed making target dir: '.$targetsubdir."\n");
     }
-    chmod($targetsubdir, 0777);
+    if ($config['os'] === 'linux' && !$config['dryrun']) {
+      chmod($targetsubdir, 0777);
+    }
 
   }
 
   # increment file nr
   $filenr += 1;
 
-  # extract basename without ending, file.jpg -> file
-  # $name = substr($name, 0, strpos($name, '.'));
-
-  # add _1024x768 if not there, to be compatible with gallery
-  # if (strpos($name, '_1024x768') === false) {
-  # 	$name .= '_1024x768';
-  # }
-
-  $name = 'Bild-'.$filenr;
+  $name = $config['file_prefix'].$filenr;
   $targetfile = $targetsubdir.$name.'.jpg';
   echo 'Outputting data to '.$targetfile."\n";
 
@@ -253,13 +517,17 @@ foreach ($files as $file) {
   # 100 gives 2,7 MB files
   # 95 gives 1 MB files
   # 90 gives 700 kB files
-  $cmd = CONVERT_PATH.' '.escapeshellarg($file).' -quality 90 -auto-orient -strip -sample 2048x1536 '.escapeshellarg($targetfile);
+  $cmd = $config['file_convert'].' '.escapeshellarg($file).' -quality 90 -auto-orient -strip -sample 2048x1536 '.escapeshellarg($targetfile);
   exec($cmd, $o, $r);
   if ($r === 0 && file_exists($targetfile)) {
-  chmod($targetfile, 0777);
+    if ($config['os'] === 'linux' && !$config['dryrun']) {
+      chmod($targetfile, 0777);
+    }
+    echo 'Deleting '.$file."\n";
     # remove source file - IDFC_IMG.JPG
-    unlink($file);
-  echo 'Deleting '.$file."\n";
+    if (!$config['dryrun']) {
+      unlink($file);
+    }
   } else {
     echo 'Failed making resize: '.$cmd."\n";
   }
