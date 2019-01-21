@@ -25,6 +25,7 @@
 # 2018-07-19 17:14:04
 # 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 # 2018-09-26 20:00:00 - updating copy
+# 2019-01-21 16:48:00 - updating prompt, adding git status for uncommitted changes
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -366,11 +367,18 @@ parse_git_branch() {
 
   # not empty?
   if [[ ! -z $DATA ]]; then
+
+    # add status for uncommited changes
+    if [[ ! -z $(git status --porcelain 2> /dev/null) ]]; then
+        DATA="$DATA+";
+    fi
+
     # write branch
     # important for colors is -e
     # \001-\002 escape gives garbage on numeric branch names
     # no escape makes bash think prompt is longer than it is
     # \[-\] escape adds \[\[ to the beginning of the string
+
     echo -e "${DATA}";
   else
     echo "\$";
