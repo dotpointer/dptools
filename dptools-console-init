@@ -26,6 +26,7 @@
 # 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 # 2018-09-26 20:00:00 - updating copy
 # 2019-01-21 16:48:00 - updating prompt, adding git status for uncommitted changes
+# 2019-01-23 20:22:00 - splitting git status and git porcelain
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -368,11 +369,6 @@ parse_git_branch() {
   # not empty?
   if [[ ! -z $DATA ]]; then
 
-    # add status for uncommited changes
-    if [[ ! -z $(git status --porcelain 2> /dev/null) ]]; then
-        DATA="$DATA+";
-    fi
-
     # write branch
     # important for colors is -e
     # \001-\002 escape gives garbage on numeric branch names
@@ -382,6 +378,18 @@ parse_git_branch() {
     echo -e "${DATA}";
   else
     echo "\$";
+  fi
+}
+
+parse_git_porcelain() {
+  DATA=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/");
+  # not empty?
+  if [[ ! -z $DATA ]]; then
+    # add status for uncommited changes
+    if [[ ! -z $(git status --porcelain 2> /dev/null) ]]; then
+        DATA="$DATA";
+      echo -e "+";
+    fi
   fi
 }
 
@@ -412,7 +420,7 @@ getw() {
 # it won't run it every time
 PS1="${COLOR_MARKER}<${PCOLOR_BWT}\t${COLOR_MARKER}|${PCOLOR_BWT}\$(getu)";
 PS1+="${COLOR_MARKER}@${PCOLOR_BWT}\h${COLOR_MARKER}:${PCOLOR_BWT}\$(getw)${COLOR_MARKER}";
-PS1+=":${PCOLOR_BWT}\$(parse_git_branch)";
+PS1+=":${PCOLOR_BWT}\$(parse_git_branch)\$(parse_git_porcelain)";
 PS1+="${COLOR_MARKER}>${PCOLOR_BWT} ";
 export PS1=$PS1
 
