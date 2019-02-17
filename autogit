@@ -6,6 +6,7 @@
 
 # changelog
 # 2019-02-14 00:00:00 - initial version
+# 2019-02-17 16:34:00 - adding commit message option
 
 # to run commands and return various output formats
 function run($c, $opts = false) {
@@ -18,59 +19,6 @@ function run($c, $opts = false) {
   $opts['interactive'] = isset($opts['interactive']) ? $opts['interactive'] : false;
 
   if ($opts['interactive']) {
-
-  /*
-    $descriptors = array(
-      # array('file', '/dev/tty', 'r'),
-      # array('file', '/dev/tty', 'w'),
-      # array('file', '/dev/tty', 'w')
-      0 => array("pipe", "r"),  // stdin is a pipe that the child will read from
-      1 => array("pipe", "w"),  // stdout is a pipe that the child will write to
-      2 => array("pipe", "w") // stderr is a file to write to
-    );
-    $c = 'exec '.$c;
-    $process = proc_open($c, $descriptors, $pipes);
-
-    # no blocking output or message
-    stream_set_blocking($pipes[1], 0);
-    stream_set_blocking($pipes[2], 0);
-
-    # can only get exit code the first time called
-    # but it has to be called to get process id and also
-    # process exitcode and also to make process quit
-    #$status = proc_get_status($process);
-
-    #echo 'Status: '.$status['pid']."\n";
-    #echo 'Exitcode: '.$status['exitcode']."\n";
-
-    if(is_resource($process)) {
-    sleep(3);
-      while(true){
-        # read contents
-        stream_get_contents($pipes[1]);
-        stream_get_contents($pipes[2]);
-        if (
-          true === true
-          # process exists until this is called
-          # proc_get_status($process)['running'] == false # &&
-
-          # !file_exists("/proc/".$status["pid"])
-        ){
-          break;
-        }
-
-        echo 'Kollar: '."/proc/".$status["pid"]."\n";
-        sleep(1);
-      }
-    }
-
-    $status = proc_get_status($process);
-    echo 'Status: '.$status['pid']."\n";
-    echo 'Exitcode: '.$status['exitcode']."\n";
-
-    $r = $status['exitcode'];
-    */
-
     $descriptorspec = array(
        0 => array('file', '/dev/tty', 'r'),
        1 => array('file', '/dev/tty', 'w'),
@@ -79,19 +27,7 @@ function run($c, $opts = false) {
     );
     $c = $c.";echo $? >&3";
     $proc = proc_open($c, $descriptorspec, $pipes);
-    # fclose($pipes[0]);
     $output = array();
-    //comment next line to get correct exicode
-
-    # while (!feof($pipes[1])) {
-    #  array_push($output, rtrim(fgets($pipes[1],1024),"\n"));
-    #}
-    # fclose($pipes[1]);
-
-    # while (!feof($pipes[2])) {
-    #  array_push($output, rtrim(fgets($pipes[2],1024),"\n"));
-    # }
-    # fclose($pipes[2]);
 
     # read exit code pipe
     if (!feof($pipes[3])) {
@@ -101,7 +37,6 @@ function run($c, $opts = false) {
     fclose($pipes[3]);
     # this waits for the process to quit
     proc_close($proc);
-    # print_r($output);
     $r = (int)$output['exitcode'];
     $o = array();
   } else {
@@ -148,11 +83,14 @@ function cl($text) {
   echo date('Y-m-d H:i:s').' '.$text."\n";
 }
 
+# default options
+$commitmessage = '{gsp-c}';
 $dir = getcwd();
 $verbose = false;
 
-$opts = getopt('dhv', array('dir:', 'help', 'verbose'));
+$opts = getopt('dhm:v', array('dir:', 'help', 'verbose'));
 
+# check options
 foreach ($opts as $key => $value) {
   switch ($key) {
     default:
@@ -171,6 +109,16 @@ foreach ($opts as $key => $value) {
 Usage: <?php echo basename(__FILENAME__); ?> <options>
 
 Options:
+  -m <msg>
+    Set commit message, defaults to "git status --porcelain".
+    Placeholders for the message:
+      {gs}    git status.
+      {gsp}   git status --porcelain.
+      {gsp-c} git status --porcelain with C-slashes stripped.
+          This prints out special characters with octal notation.
+      \n      newline.
+      \t      tab.
+    Message defaults to {gsp-c}.
   -d <dir>, --dir=<dir>
     Set working directory, defaults to current working directory.
   -h, --help
@@ -178,6 +126,9 @@ Options:
   -v, --verbose
     Be verbose
 <?php
+      break;
+    case 'm':
+      $commitmessage = $value;
       break;
     case 'v':
     case 'verbose':
@@ -206,20 +157,48 @@ if (!is_dir('.git')) {
 cl('Retrieving status');
 
 $c = 'git status --porcelain';
-$status = trim(run($c, array('return' => 'outputnewlined')));
+$gitstatusporcelain = trim(run($c, array('return' => 'outputnewlined')));
 
 # changes exist
-if (strlen($status)) {
-  cl('Staging all changes');
+if (strlen($gitstatusporcelain)) {
+
+  # commit message keyword replacements
+  $replacements = array(
+    '{gs}' => '',
+    '{gsp}' => $gitstatusporcelain,
+    '{gsp-c}' => stripcslashes($gitstatusporcelain),
+    '\n' => "\n",
+    '\t' => "\t",
+    '\{gs\}' => '{gs}',
+    '\{gsp\}' => '{gsp}',
+    '\{gsp-c\}' => '{gsp-c}'
+  );
+
+  # is {gs} present in the message
+  if (strpos($commitmessage, '{gs}') !== false) {
+    # then request status
+    $c = 'git status';
+    $replacements['{gs}'] = trim(run($c, array('return' => 'outputnewlined')));
+  }
+
+  # replace placeholders in commit message
+  $commitmessage = str_replace(
+    array_keys($replacements),
+    array_values($replacements),
+    $commitmessage
+  );
+
   # stage all changes
+  cl('Staging all changes');
   $c = 'git add -A';
   $e = run($c);
   if ($e !== 0) {
     fail('Failed '.$c.', exit code: '.$e);
   }
-  cl('Committing all changes');
+
   # commit changes
-  $c = 'git commit -m '.escapeshellarg($status);
+  cl('Committing all changes');
+  $c = 'git commit -m '.escapeshellarg($commitmessage);
   $e = run($c);
   if ($e !== 0) {
     fail('Failed '.$c.', exit code: '.$e);
@@ -227,5 +206,4 @@ if (strlen($status)) {
 } else {
   cl('No changes noted');
 }
-
 ?>
