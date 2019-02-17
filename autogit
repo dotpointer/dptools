@@ -1,0 +1,231 @@
+#!/usr/bin/php
+<?php
+
+# autogit - automatically initiate, stage and commit changes
+# by Robert Klebe, dotpointer
+
+# changelog
+# 2019-02-14 00:00:00 - initial version
+
+# to run commands and return various output formats
+function run($c, $opts = false) {
+
+  $opts = is_array($opts) ? $opts : array();
+
+  $opts['failexit'] = isset($opts['failexit']) ? $opts['failexit'] : true;
+  $opts['failwarn'] = isset($opts['failwarn']) ? $opts['failwarn'] : true;
+  $opts['return'] = isset($opts['return']) ? $opts['return'] : 'exitcode';
+  $opts['interactive'] = isset($opts['interactive']) ? $opts['interactive'] : false;
+
+  if ($opts['interactive']) {
+
+  /*
+    $descriptors = array(
+      # array('file', '/dev/tty', 'r'),
+      # array('file', '/dev/tty', 'w'),
+      # array('file', '/dev/tty', 'w')
+      0 => array("pipe", "r"),  // stdin is a pipe that the child will read from
+      1 => array("pipe", "w"),  // stdout is a pipe that the child will write to
+      2 => array("pipe", "w") // stderr is a file to write to
+    );
+    $c = 'exec '.$c;
+    $process = proc_open($c, $descriptors, $pipes);
+
+    # no blocking output or message
+    stream_set_blocking($pipes[1], 0);
+    stream_set_blocking($pipes[2], 0);
+
+    # can only get exit code the first time called
+    # but it has to be called to get process id and also
+    # process exitcode and also to make process quit
+    #$status = proc_get_status($process);
+
+    #echo 'Status: '.$status['pid']."\n";
+    #echo 'Exitcode: '.$status['exitcode']."\n";
+
+    if(is_resource($process)) {
+    sleep(3);
+      while(true){
+        # read contents
+        stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        if (
+          true === true
+          # process exists until this is called
+          # proc_get_status($process)['running'] == false # &&
+
+          # !file_exists("/proc/".$status["pid"])
+        ){
+          break;
+        }
+
+        echo 'Kollar: '."/proc/".$status["pid"]."\n";
+        sleep(1);
+      }
+    }
+
+    $status = proc_get_status($process);
+    echo 'Status: '.$status['pid']."\n";
+    echo 'Exitcode: '.$status['exitcode']."\n";
+
+    $r = $status['exitcode'];
+    */
+
+    $descriptorspec = array(
+       0 => array('file', '/dev/tty', 'r'),
+       1 => array('file', '/dev/tty', 'w'),
+       2 => array('file', '/dev/tty', 'w'),
+       3 => array('pipe', 'w'), // stderr is a pipe that the child will write to
+    );
+    $c = $c.";echo $? >&3";
+    $proc = proc_open($c, $descriptorspec, $pipes);
+    # fclose($pipes[0]);
+    $output = array();
+    //comment next line to get correct exicode
+
+    # while (!feof($pipes[1])) {
+    #  array_push($output, rtrim(fgets($pipes[1],1024),"\n"));
+    #}
+    # fclose($pipes[1]);
+
+    # while (!feof($pipes[2])) {
+    #  array_push($output, rtrim(fgets($pipes[2],1024),"\n"));
+    # }
+    # fclose($pipes[2]);
+
+    # read exit code pipe
+    if (!feof($pipes[3])) {
+      $output['exitcode'] = rtrim(fgets($pipes[3],5),"\n");
+    }
+
+    fclose($pipes[3]);
+    # this waits for the process to quit
+    proc_close($proc);
+    # print_r($output);
+    $r = (int)$output['exitcode'];
+    $o = array();
+  } else {
+    unset($o, $r);
+    exec($c, $o, $r);
+  }
+
+  if ($r !== 0) {
+    if ($opts['failwarn']) {
+      echo 'Failed '.$c.', '.implode(" ", $o).' ('.$r.')'."\n";
+    }
+    if ($opts['failexit']) {
+      die($r);
+    }
+  }
+
+  switch ($opts['return']) {
+    default:
+    case 'exitcode':
+      return $r;
+    case 'output':
+      return $o;
+    case 'outputfirstline':
+      return isset($o[0]) ? trim($o[0]) : '';
+    case 'outputnewlined':
+      return implode("\n", $o);
+    case 'outputspaced':
+      return implode(" ", $o);
+  }
+}
+
+# die on fail
+function fail($text, $code = 1) {
+  echo $text;
+  die($code);
+}
+
+# output
+function cl($text) {
+  global $verbose;
+  if (!$verbose) {
+    return false;
+  }
+  echo date('Y-m-d H:i:s').' '.$text."\n";
+}
+
+$dir = getcwd();
+$verbose = false;
+
+$opts = getopt('dhv', array('dir:', 'help', 'verbose'));
+
+foreach ($opts as $key => $value) {
+  switch ($key) {
+    default:
+      fail('Unknown option: '.$key);
+      break;
+    case 'd:':
+    case 'dir':
+      $dir = realpath($value);
+      if (!is_dir($dir)) {
+        fail('Working directory '.$dir.' does not exist');
+      }
+      break;
+    case 'h':
+    case 'help':
+?>
+Usage: <?php echo basename(__FILENAME__); ?> <options>
+
+Options:
+  -d <dir>, --dir=<dir>
+    Set working directory, defaults to current working directory.
+  -h, --help
+    Print this help.
+  -v, --verbose
+    Be verbose
+<?php
+      break;
+    case 'v':
+    case 'verbose':
+      $verbose = true;
+      break;
+  }
+}
+
+# wd is not the target and (chdir to it or wd is not the target)
+if (getcwd() !== $dir && (!chdir($dir) || getcwd() !== $dir)) {
+  fail('Working directory could not be set to '.$dir);
+}
+
+cl('Working directory is '.$dir);
+
+# no git dir, try to make it
+if (!is_dir('.git')) {
+    cl('Initiating git repository');
+  $c = 'git init';
+  $e = run($c);
+  if ($e !== 0) {
+    fail('Failed '.$c.', exit code: '.$e);
+  }
+}
+
+cl('Retrieving status');
+
+$c = 'git status --porcelain';
+$status = trim(run($c, array('return' => 'outputnewlined')));
+
+# changes exist
+if (strlen($status)) {
+  cl('Staging all changes');
+  # stage all changes
+  $c = 'git add -A';
+  $e = run($c);
+  if ($e !== 0) {
+    fail('Failed '.$c.', exit code: '.$e);
+  }
+  cl('Committing all changes');
+  # commit changes
+  $c = 'git commit -m '.escapeshellarg($status);
+  $e = run($c);
+  if ($e !== 0) {
+    fail('Failed '.$c.', exit code: '.$e);
+  }
+} else {
+  cl('No changes noted');
+}
+
+?>
