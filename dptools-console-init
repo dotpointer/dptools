@@ -5,28 +5,29 @@
 # by robert klebe, dotpointer
 
 # changelog
-# 2006-xx-xx - first version
-# 2012-12-20 - cleaning up
-# 2014-04-26 - adding automatic coloring based on hostname md5sum
-# 2016-03-04 - adding colors for less
-# 2017-04-12 - adding git branches to PS1
-# 2017-07-28 - 12:56:00	domain edit
-# 2017-08-07 - adding desktop command
-# 2017-08-24 - use vi for jed
-# 2017-08-26 - allow dmesg for all users, like in debian 8
-# 2017-08-26 - reverting dmesg fix, not working for non-root users
-# 2018-03-14 - adding wget resume and removing retry limit
-# 2018-03-17 - adding batstat
-# 2018-04-26 - 17:34:00	adding jpegtran preference
-# 2018-06-29 - 16:37:00 - adding commands present in the dptools directory, cleanup
-# 2018-06-29 - 17:45:00 - rename from dp console setup.sh to dptools-console-init
-# 2018-07-18 - 22:27:00 - updating colors and prompt
-# 2018-07-19 - 17:13:00 - editing aliases, colors, prompt, setup script place
+# 2006-xx-xx 00:00:00 - first version
+# 2012-12-20 00:00:00 - cleaning up
+# 2014-04-26 00:00:00 - adding automatic coloring based on hostname md5sum
+# 2016-03-04 00:00:00 - adding colors for less
+# 2017-04-12 00:00:00 - adding git branches to PS1
+# 2017-07-28 12:56:00 -	domain edit
+# 2017-08-07 00:00:00 - adding desktop command
+# 2017-08-24 00:00:00 - use vi for jed
+# 2017-08-26 00:00:00 - allow dmesg for all users, like in debian 8
+# 2017-08-26 00:00:00 - reverting dmesg fix, not working for non-root users
+# 2018-03-14 00:00:00 - adding wget resume and removing retry limit
+# 2018-03-17 00:00:00 - adding batstat
+# 2018-04-26 17:34:00	adding jpegtran preference
+# 2018-06-29 16:37:00 - adding commands present in the dptools directory, cleanup
+# 2018-06-29 17:45:00 - rename from dp console setup.sh to dptools-console-init
+# 2018-07-18 22:27:00 - updating colors and prompt
+# 2018-07-19 17:13:00 - editing aliases, colors, prompt, setup script place
 # 2018-07-19 17:14:04
 # 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
 # 2018-09-26 20:00:00 - updating copy
 # 2019-01-21 16:48:00 - updating prompt, adding git status for uncommitted changes
 # 2019-01-23 20:22:00 - splitting git status and git porcelain
+# 2019-03-12 08:46:00 - adding aliases
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -74,6 +75,7 @@ alias edt='edit';
 alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
 # alias funk="function gd() { echo $1; } gd;";
 alias glance='glances';
+alias got='git';
 # alias grepa2="grep --color -f ./ -rn";
 alias iostat='iostat -m';
 alias ipcfg='ifconfig';
@@ -108,6 +110,7 @@ alias ppp-up='ppp-on';
 alias ps='ps -e';
 alias putty='ssh -C';
 alias q='exit';
+alias qclea='clear';
 alias reboot='reboot';
 alias reprofile='source ~/.profile';
 alias restart='reboot';
