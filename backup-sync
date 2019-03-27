@@ -9,6 +9,7 @@
 # 2018-06-28 13:32:00 - cleanup
 # 2018-06-28 15:48:11
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
+# 2019-03-27 20:00:00 - adding more sync commands
 
 # make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
@@ -84,3 +85,49 @@ if [ -n "$SYNC_CMD5" ]; then
   exit 1;
   fi
 fi
+
+if [ -n "$SYNC_CMD6" ]; then
+  echo "Running sync: $SYNC_CMD6";
+  $SYNC_CMD6
+  if [[ $? != 0 ]]; then
+  echo "Sync failed will not continue";
+  exit 1;
+  fi
+fi
+
+if [ -n "$SYNC_CMD7" ]; then
+  echo "Running sync: $SYNC_CMD7";
+  $SYNC_CMD7
+  if [[ $? != 0 ]]; then
+  echo "Sync failed will not continue";
+  exit 1;
+  fi
+fi
+
+if [ -n "$SYNC_CMD8" ]; then
+  echo "Running sync: $SYNC_CMD8";
+  $SYNC_CMD8
+  if [[ $? != 0 ]]; then
+  echo "Sync failed will not continue";
+  exit 1;
+  fi
+fi
+
+if [ -n "$SYNC_CMD9" ]; then
+  echo "Running sync: $SYNC_CMD9";
+  $SYNC_CMD9
+  if [[ $? != 0 ]]; then
+  echo "Sync failed will not continue";
+  exit 1;
+  fi
+fi
+
+if [ -n "$SYNC_CMD10" ]; then
+  echo "Running sync: $SYNC_CMD10";
+  $SYNC_CMD10
+  if [[ $? != 0 ]]; then
+  echo "Sync failed will not continue";
+  exit 1;
+  fi
+fi
+
