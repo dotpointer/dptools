@@ -16,6 +16,7 @@
 # 2018-09-23 02:18:00 - adding pdfextract
 # 2019-05-15 18:48:00 - adding meta-scanner and meta-no-scanner
 # 2019-05-17 18:57:00 - editing scanmeta format, removing meta-no-scanner
+# 2019-05-17 22:06:00 - removing debug output
 
 /**
  * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
@@ -119,8 +120,6 @@ function getversion($what) {
 # get correct scan meta line
 function getscanmeta($mtime, $scanmeta) {
   $metafound = false;
-  echo date('Y-m-d', $mtime)."\n";
-
   # walk scan meta try to find matching meta
   foreach ($scanmeta as $meta) {
     # get the first two items in the array, they are from and to dates

@@ -8,12 +8,13 @@
 
 # changelog
 # 2019-05-17 20:37:00 - initial version
+# 2019-05-17 22:11:00 - output corrections
 
 # get header
 function getheader($i, $linecount, $stats, $text) {
   return '['.
-    str_pad($i, strlen($linecount)).'/'.$linecount.' '.
-    str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'% '.
+    str_pad($i, strlen($linecount), '0', STR_PAD_LEFT).'/'.$linecount.' '.
+    str_pad(round($i / $linecount *  100), 3, '0', STR_PAD_LEFT).'% '.
     str_pad($stats['ok'], strlen($linecount)).' OK/'.str_pad($stats['mismatch'], strlen($linecount)).' mismatch/'.str_pad($stats['missing'], strlen($linecount)).' missing'.
     '] '.$text;
 }
