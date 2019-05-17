@@ -14,6 +14,8 @@
 #   adjustment for quality
 # 2018-09-22 23:15:00 - adding image dimensions to metadata, grayscale bugfix
 # 2018-09-23 02:18:00 - adding pdfextract
+# 2019-05-15 18:48:00 - adding meta-scanner and meta-no-scanner
+# 2019-05-17 18:57:00 - editing scanmeta format, removing meta-no-scanner
 
 /**
  * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
@@ -114,6 +116,56 @@ function getversion($what) {
   }
 }
 
+# get correct scan meta line
+function getscanmeta($mtime, $scanmeta) {
+  $metafound = false;
+  echo date('Y-m-d', $mtime)."\n";
+
+  # walk scan meta try to find matching meta
+  foreach ($scanmeta as $meta) {
+    # get the first two items in the array, they are from and to dates
+    # they may also be numbers to calculate from current date
+    $fromdate = array_shift($meta);
+    $todate = array_shift($meta);
+
+    # are dates set to default, then this is default meta
+    if ($fromdate === 'default' && $todate === 'default') {
+      $metafound = $meta;
+      continue;
+    }
+
+    # get from and to dates
+    $fromdate = getscanmetadate($fromdate);
+    $todate = getscanmetadate($todate);
+
+    # match
+    if ($mtime >= $fromdate && $mtime <= $todate) {
+      $metafound = $meta;
+      break;
+    }
+  }
+  # was meta found, fix placeholders
+  if ($metafound) {
+    foreach ($metafound as $k => $v) {
+      $metafound[$k] = str_replace('[SIMPLESCAN]', SIMPLE_SCAN_VERSION, $v);
+    }
+  }
+
+  return $metafound;
+}
+
+function getscanmetadate($date) {
+    # fromdate is a number - take it as days
+    if (is_numeric($date)) {
+      return time() + (int)$date * 86400;
+    } else if (validdate($date)){
+      return strtotime($date);
+    } else {
+      echo 'Fatal error, scanmeta contain invalid from or to date data.'."\n";
+      die(1);
+    }
+}
+
 # get list of png files
 function getfiles($includeedits = false) {
   global $config;
@@ -177,6 +229,10 @@ function tzdate($date = false) {
   return date("c", $date);
 }
 
+function validdate($x) {
+    return (date('Y-m-d', strtotime($x)) == $x);
+}
+
 $config = array(
   'action' => false,
   'levels' => array(),
@@ -185,11 +241,19 @@ $config = array(
   'editext' => '.dppngpdf-edit.png',
   'grayscales' => array(),
   'input' => false,
-  'metadata_timeout' => 86400 * 10,
   'metafile' => basename(__FILE__).'-metadata.txt',
   'output' => false,
-  'scanmeta' => array('PNG')
+  # note, scanmeta is completely overridden by the config
+  'scanmeta' => array(
+    array(
+      'default', 'default', 'PNG',
+      -10, 0, '[SIMPLESCAN]', 'PNG'
+    )
+  )
 );
+
+
+define('SIMPLE_SCAN_VERSION', getversion('simple-scan'));
 
 # get parameters
 $opts = getopt('a:l:i:g:ho:x:');
@@ -238,6 +302,11 @@ Options:
       the first line if no meta data is available previously and the image
       was made less than 3 days ago.
 
+      meta-find-png, find and list PNG files with modify date, an asterisk
+      if they have EXIF-data, current simple-scan version and path.
+
+      meta-no-scanner, same as meta but do not write simple-scan regardless of timeout.
+
       metakeep, to output PNG file metadata to a metadata file named
       <?php echo $config['metafile']?>. See also metasync.
 
@@ -285,6 +354,7 @@ Options:
 }
 
 do {
+
   # shift one config file of the list of config files
   $configfile = array_shift($configfiles);
 
@@ -297,20 +367,25 @@ do {
 
   # failed reading config
   if (!$configtmp = file_get_contents($configfile)) {
-    cl(false, 'Failed reading configuration file, check rights: '.$configfile, VERBOSE_ERROR);
-    continue;
+    echo 'Failed reading configuration file, check rights: '.$configfile."\n";
+    die(1);
   }
 
   # try to read json
   $configtmp = json_decode(remove_comments($configtmp), true);
   if ($configtmp === NULL) {
-    cl(false, 'Invalid configuration file, check JSON syntax: '.$configfile, VERBOSE_ERROR);
-    continue;
+    echo 'Invalid configuration file, check JSON syntax: '.$configfile."\n";
+    die(1);
+  }
+
+  # is scanmeta set, then overwrite current
+  if (isset($configtmp['scanmeta'])) {
+    # clear the default scanmeta, otherwise it will interfere
+    $config['scanmeta'] = array();
   }
 
   # remove default profile
   $config = array_merge_recursive_distinct($config, $configtmp);
-
 } while (count($configfiles)); # do-while-configfiles
 
 # make sure the config from parameters override all
@@ -615,8 +690,76 @@ switch ($config['action']) {
       }
     }
     break;
-  case 'meta': # write meta data
 
+  case 'meta-find-png':
+
+    # file = read and write a file, pipe = read and write a pipe in php
+    $descriptorspec = array(
+       0 => array('file', '/dev/tty', 'r'), # stdin
+       # 1 => array('file', '/dev/tty', 'w'), # stdout
+       1 => array('pipe', 'w'), # stdout
+       2 => array('file', '/dev/tty', 'w'), # stderr
+       # 2 => array('pipe', 'w'), # stderr
+       3 => array('pipe', 'w'), # exit code
+    );
+
+    $c = 'find . -iname "*.png"';
+
+    flush();
+
+    $proc = proc_open($c, $descriptorspec, $pipes);
+
+    $datelength = strlen(date('Y-m-d H:i:s'));
+
+    if (is_resource($proc)) {
+      while ($path = fgets($pipes[1])) {
+        $path = realpath(trim($path));
+        if (!file_exists($path)) {
+          echo 'Error, not existing: '.$path."\n";
+          flush();
+          continue;
+        }
+
+        $mtime = filemtime($path);
+        $exifdata = getexifdata($path);
+        # YYYY-MM-DD HH:MM:SS
+        $mtime = str_pad(date('Y-m-d H:i:s', $mtime), $datelength);
+
+        $exifdata = getexifdata($path);
+        $simplescan = '';
+        if (count($exifdata)) {
+          $exifexists = true;
+          foreach ($exifdata as $exifpost) {
+            foreach ($exifpost as $exifcell) {
+              if (strpos($exifcell, 'simple-scan') !== false) {
+                $simplescan = $exifcell;
+              }
+            }
+          }
+        } else {
+          $exifexists = false;
+        }
+        echo $mtime.' ';
+        echo ($exifexists ? '*' : ' ').' ';
+        # simple-scan-x.yy.z'
+        echo str_pad($simplescan, 18).' ';
+        echo $path."\n";
+
+        flush();
+      }
+    }
+
+    # read exit code pipe
+    if (!feof($pipes[3])) {
+      $exitcode = rtrim(fgets($pipes[3],5),"\n");
+    }
+    fclose($pipes[3]);
+    # this waits for the process to quit
+    proc_close($proc);
+
+    die();
+  case 'meta': # write meta data
+  case 'meta-no-scanner':
     $files = getfiles();
 
     foreach ($files as $file) {
@@ -624,18 +767,32 @@ switch ($config['action']) {
       $exifdata = getexifdata($file);
       clearstatcache();
       $mtime = filemtime($file);
-      if (!count($exifdata)) {
-        if ($mtime > time() - $config['metadata_timeout']) {
-          echo $file.' - metadata missing, within timeout, will set'."\n";
-          $exifdata[] = array_merge(array(tzdate($mtime), getimagedim($file), getversion('simple-scan')), $config['scanmeta']);
-          setexifdata($file, $exifdata);
-        } else {
-          echo $file.' - metadata missing, outside of timeout, will write creation date'."\n";
-          $exifdata[] = array(tzdate($mtime), getimagedim($file));
-          setexifdata($file, $exifdata);
-        }
-      } else {
+
+      if (count($exifdata)) {
         echo $file.' - metadata exists'."\n";
+        continue;
+      }
+
+      # get scan meta based on mtime and scanmeta data
+      $scanmeta =  $config['action'] === 'meta' ? getscanmeta($mtime, $config['scanmeta']) : false;
+
+      # action is meta and scanmeta data exists for this mtime
+      if (
+        $config['action'] === 'meta' && $scanmeta
+      ) {
+        echo $file.' - metadata missing, scanner meta requested and exists, will set'."\n";
+        $exifdata[] = array_merge(
+          array(
+            tzdate($mtime),
+            getimagedim($file),
+          ),
+          $scanmeta
+        );
+        setexifdata($file, $exifdata);
+      } else {
+        echo $file.' - metadata missing, no scanner meta requested or or does not exist, will write creation date'."\n";
+        $exifdata[] = array(tzdate($mtime), getimagedim($file));
+        setexifdata($file, $exifdata);
       }
     }
 
@@ -649,7 +806,6 @@ switch ($config['action']) {
       setexifdata($file, array());
       echo $file.' - metadata clearing'."\n";
     }
-
     break;
   case 'metakeep':
     $files = getfiles();

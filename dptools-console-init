@@ -28,6 +28,7 @@
 # 2019-01-21 16:48:00 - updating prompt, adding git status for uncommitted changes
 # 2019-01-23 20:22:00 - splitting git status and git porcelain
 # 2019-03-12 08:46:00 - adding aliases
+# 2019-05-17 20:41:00 - adding title alias
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -118,6 +119,10 @@ alias smesg='cat /var/log/syslog';
 alias ssh='ssh -C';
 alias tail='tail -n30';
 # alias time='date +"%n DATE: %Y-%m-%d%n TIME: %H:%M:%S%n"';
+function set_title() {
+  echo -ne "\033]0;${1}\007"
+}
+alias title=set_title;
 alias tlist='ps';
 alias tracert='traceroute';
 alias type='cat';

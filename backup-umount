@@ -9,6 +9,19 @@
 # 2018-06-28 15:53:00 - cleanup
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 # 2018-10-05 00:00:00 - adding checks for mounted status
+# 2019-04-08 00:04:00 - adding init info
+
+# script info for when script is linked in /etc/rc0.d
+### BEGIN INIT INFO
+# Provides:          backup-umount
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Unmounts encrypted backup image over Samba.
+# Description:       Unmounts encrypted backup image over Samba.
+### END INIT INFO
+
 
 # credentials
 DIR_IMAGE="/mnt/backupimage";

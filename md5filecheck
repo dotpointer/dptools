@@ -1,0 +1,104 @@
+#!/usr/bin/php
+<?php
+
+# md5 file sums file checker
+# by robert klebe, dotpointer
+
+# create list by md5deep -r -e -l -of * > files.md5
+
+# changelog
+# 2019-05-17 20:37:00 - initial version
+
+# get header
+function getheader($i, $linecount, $stats, $text) {
+  return '['.
+    str_pad($i, strlen($linecount)).'/'.$linecount.' '.
+    str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'% '.
+    str_pad($stats['ok'], strlen($linecount)).' OK/'.str_pad($stats['mismatch'], strlen($linecount)).' mismatch/'.str_pad($stats['missing'], strlen($linecount)).' missing'.
+    '] '.$text;
+}
+
+$file = isset($argv[1]) ? $argv[1] : '';
+
+if (!strlen($file)) {
+  echo 'Please specify md5 file sum file.'."\n";
+  die(1);
+}
+
+if ($file === '-h' || $file === '--help') {
+  echo 'Usage: '.basename(__FILE__).' <file with md5 sums and paths>'."\n";
+  die();
+}
+
+if (!file_exists($file)) {
+  echo 'File not found: '.$file."\n";
+  die(1);
+}
+
+# count lines
+$file=$file;
+$linecount = 0;
+$f = fopen($file, "r");
+if (!$f) {
+  echo 'Failed opening: '.$file."\n";
+  die(1);
+}
+
+# calculate lines
+while(!feof($f)){
+  $line = fgets($f, 4096);
+  $linecount = $linecount + substr_count($line, PHP_EOL);
+}
+
+if (!rewind($f)) {
+  echo 'Failed rewinding '.$file."\n";
+  fclose($f);
+  die(1);
+}
+
+#
+$i=0;
+$stats = array(
+  'mismatch' => 0,
+  'missing' => 0,
+  'ok' => 0
+);
+
+# loop files
+while ($line = fgets($f)) {
+  $i++;
+  $line = trim($line);
+  preg_match('/([a-zA-Z0-9]+)\s+(.*)/', $line, $matches);
+
+  if (!isset($matches[1], $matches[2])) {
+    echo 'Failed splitting line '.$i."\n";
+    continue;
+  }
+
+  $md5 = $matches[1];
+  $path = realpath($matches[2]);
+  $filesize = filesize($path);
+
+  $header = getheader($i, $linecount, $stats, 'MD5-summing '.$path.' '.$filesize.' b');
+  echo $header."\r";
+
+  if (!file_exists($path)) {
+    $currentstatus = 'MISSING';
+    $stats['missing']++;
+  } else {
+    if (md5_file($path) === $md5) {
+      $stats['ok'] ++;
+      $currentstatus = 'OK';
+    } else {
+      $stats['mismatch'] ++;
+      $currentstatus = 'MISMATCH';
+    }
+  }
+  # clear previous line
+  echo str_repeat(' ', strlen($header))."\r";
+  # print result
+  echo getheader($i, $linecount, $stats, $currentstatus.' '.$path."\n");
+}
+
+fclose($f);
+?>
