@@ -75,6 +75,9 @@ Enjoy the commands in a Linux shell, script or a cronjob.
 
 A list of available commands, some may not be listed here,
 also have a look in the installation directory.
+### autogit
+
+Automatically initiate, stage and make commits to a git repository.
 
 ### backup-create, backup-mount, backup-sync, backup-umount
 

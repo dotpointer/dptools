@@ -1,12 +1,13 @@
 #!/usr/bin/php
 <?php
 
-# autogit - automatically initiate, stage and commit changes
+# autogit - automatically initiate, stage and make commits to a git repository
 # by Robert Klebe, dotpointer
 
 # changelog
 # 2019-02-14 00:00:00 - initial version
 # 2019-02-17 16:34:00 - adding commit message option
+# 2019-06-12 20.58:00 - bugfix, help did not show filename and continued execution, updating description
 
 # to run commands and return various output formats
 function run($c, $opts = false) {
@@ -106,7 +107,7 @@ foreach ($opts as $key => $value) {
     case 'h':
     case 'help':
 ?>
-Usage: <?php echo basename(__FILENAME__); ?> <options>
+Usage: <?php echo basename(__FILE__); ?> <options>
 
 Options:
   -m <msg>
@@ -126,7 +127,7 @@ Options:
   -v, --verbose
     Be verbose
 <?php
-      break;
+      die();
     case 'm':
       $commitmessage = $value;
       break;
