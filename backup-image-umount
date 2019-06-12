@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# unmount backup image
+# by robert klebe, dotpointer
+
+# changelog
+# 2019-06-12 20:22:00
+
+if [ "$1" == "-h" ]; then
+  echo "Usage: $0 <mount path> <loop device number to use>";
+  exit;
+fi
+
+if [ -z "$1" ]; then
+  echo "No filename given.";
+  exit;
+fi
+
+re='^[0-8]+$'
+if ! [[ $2 =~ $re ]] ; then
+  echo "No loop device given, must be an integer 0-8.";
+  exit;
+fi
+
+IMAGEFILE=$1;
+LOOPNR=$2;
+
+LOOPDEVICE="/dev/loop$LOOPNR";
+MAPPERNAME="backuploop$LOOPNR"
+DIR_IMAGE="/mnt/backupimage$LOOPNR"
+# is name given?
+
+if [[ $(findmnt -M "$DIR_IMAGE") ]]; then
+  # unmount the image dir
+  echo "Unmounting image dir: $DIR_IMAGE";
+  umount $DIR_IMAGE;
+  if [[ $? != 0 ]]; then
+    echo "Failed unmounting dir.";
+    exit 1;
+  fi
+else
+  echo "Not mounted, will not continue: $DIR_IMAGE."
+  exit;
+fi
+
+# close the luks mapping
+echo "Closing LUKS mapper: /dev/mapper/$MAPPERNAME";
+cryptsetup luksClose /dev/mapper/$MAPPERNAME
+if [[ $? != 0 ]]; then
+  echo "Failed closing LUKS mapper.";
+  exit 1;
+fi
+
+# delete the loop device
+echo "Deleting loop device: $LOOPDEVICE";
+losetup -d $LOOPDEVICE
+if [[ $? != 0 ]]; then
+  echo "Failed deleting loop device.";
+  exit 1;
+fi

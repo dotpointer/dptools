@@ -12,6 +12,7 @@
 # 2018-06-28 15:43:00 - description edit
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
 # 2018-09-26 18:48:00 - adding prompts for name and size and error checks
+# 2019-06-12 20:22:00 - adding ext4 tuning
 
 # make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
@@ -41,11 +42,11 @@ fi
 
 echo "Creating image file $IMGNAME with $IMGSIZE MB...";
 # create a x GB image file - do this locally
-#dd if=/dev/urandom of=$IMGNAME bs=1M count=$IMGSIZE status=progress
-#if [ $? -ne 0 ]; then
-#  echo "Failed, quitting.";
-#  exit 1;
-#fi
+dd if=/dev/urandom of=$IMGNAME bs=1M count=$IMGSIZE status=progress
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
 
 echo "Creating loop device...";
 # make loop device - do this locally
@@ -80,9 +81,17 @@ if [ $? -ne 0 ]; then
   exit 1;
 fi
 
-echo "Formatting LUKS device...";
+echo "Formatting LUKS device as Ext4...";
 # format the device - do this locally
 mkfs.ext4 /dev/mapper/backuploop
+if [ $? -ne 0 ]; then
+  echo "Failed, quitting.";
+  exit 1;
+fi
+
+echo "Tuning Ext4, freeing root and system reserved space";
+# format the device - do this locally
+tune2fs -m 0 /dev/mapper/backuploop
 if [ $? -ne 0 ]; then
   echo "Failed, quitting.";
   exit 1;

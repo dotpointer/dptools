@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# mount backup image
+# by robert klebe, dotpointer
+
+# changelog
+# 2019-06-12 20:22:00
+
+if [ "$1" == "-h" ]; then
+  echo "Usage: $0 <file.img> <loop device number to use>";
+  exit;
+fi
+
+if [ -z "$1" ]; then
+  echo "No filename given.";
+  exit;
+fi
+
+re='^[0-8]+$'
+if ! [[ $2 =~ $re ]] ; then
+  echo "No loop device given, must be an integer 0-8.";
+  exit;
+fi
+
+IMAGEFILE=$1;
+LOOPNR=$2;
+
+LOOPDEVICE="/dev/loop$LOOPNR";
+MAPPERNAME="backuploop$LOOPNR"
+DIR_IMAGE="/mnt/backupimage$LOOPNR"
+# is name given?
+
+# connecting loop device to image
+echo "Connecting $IMAGEFILE to $LOOPDEVICE";
+losetup $LOOPDEVICE $IMAGEFILE
+if [[ $? != 0 ]]; then
+  echo "Failed connecting loop device.";
+  exit 1;
+fi
+
+# open loop device
+echo "Opening loop device $LOOPDEVICE in LUKS mode, connecting it to mapper backuploop";
+cryptsetup luksOpen $LOOPDEVICE $MAPPERNAME
+if [[ $? != 0 ]]; then
+  echo "Failed opening loop device.";
+  exit 1;
+fi
+
+# check the image dir
+echo "Checking image dir: $DIR_IMAGE";
+if [ ! -d "$DIR_IMAGE" ]; then
+  # make a dir to mount on
+  echo "Creating outer mount dir: $DIR_IMAGE";
+  mkdir -p $DIR_IMAGE
+  if [[ $? != 0 ]]; then
+    echo "Failed creating dir.";
+    exit 1;
+  fi
+fi
+
+# mount the image
+#echo "Mounting mapper $MAPPERNAME to image dir $DIR_IMAGE";
+mount "/dev/mapper/$MAPPERNAME" $DIR_IMAGE
+if [[ $? != 0 ]]; then
+  echo "Failed mounting dir.";
+  exit 1;
+fi
