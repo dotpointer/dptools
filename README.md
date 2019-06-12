@@ -1,12 +1,91 @@
 # dptools
 
 A variated collection of useful tools in Linux shells, scripts and cronjobs.
+For a detailed list of see the Command List section.
+
+## Getting Started
+
+These instructions will get you a copy of the project up and running on your
+local machine for usage, development and testing purposes.
+
+### Prerequisites
+
+The following is necessary to install and run the software:
+
+```
+- Debian Linux 9 or similar system
+- Bash shell
+- Git
+- PHP
+- PHP-cURL
+- PHP-MySQLi
+- Rsync
+- Zenity
+```
+
+Some more things may be necessary for some of the tools.
+Try to run them to find out what is missing.
+
+Bash is usually installed by default.
+The rest can be installed using apt-get:
+
+```
+sudo apt-get install git php php-curl php-mysqli rsync zenity
+```
+
+### Installing
+
+The installation process involves git cloning and adding
+dptools-console-init to user profiles.
+
+Install for all users running as root installing to`/opt/dptools`:
+
+```
+apt-get install git
+git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
+/opt/dptools/dptools-update -a
+```
+
+If you want to add dptools to more users, then do this for each user:
+
+```
+/opt/dptools/dptools-update -a username
+```
+
+Single user install in home directory at `opt/dptools/`.
+```
+apt-get install git
+git clone https://gitlab.com/dotpointer/dptools.git ~/opt/dptools
+~/opt/dptools/dptools-update -a
+```
+
+The install directories suggested above can be altered.
+Some commands require a configuration in `/etc/dptools` and
+are therefore not supporting single user installs.
+
+## Updating
+
+Run `dptools-update` in a root shell to update dptools.
+
+## Usage
+
+Enjoy the commands in a Linux shell, script or a cronjob.
+
+## Command list
+
+A list of available commands, some may not be listed here,
+also have a look in the installation directory.
 
 ### backup-create, backup-mount, backup-sync, backup-umount
 
 Create an encrypted remote backup over SSH, mount it, backup
 to it and then unmount it. Made in Bash, configuration file
 is `/etc/dptools/backuptools`.
+
+### backup-image-mount, backup-image-umount
+
+Mount or unmount a local backup image by specifying image file and loop
+device number or mapper and loop device number. Made in Bash.
 
 ### backup-databases
 
@@ -102,6 +181,11 @@ Create nginx certificates. Made in Bash.
 
 Convert a file from ISO-8859-1 to UTF-8. Made in Bash.
 
+### md5filechecker
+
+Verify files listed in an MD5 checksum file but skip checking all other
+files and display results for each file.
+
 ### mp4tom4a
 
 Convert a MP4 file to a M4a file. Made in Bash.
@@ -160,6 +244,10 @@ so it can be stored in one file, may also delete original file if requested. Mad
 
 Move files from one location to another using rsync, ftp or other services using cron.
 Useful in cronjobs. Made in PHP, configuration file is `/etc/dptools/transfer`. Made in PHP.
+
+### turnpic
+
+Rotate a JPEG losslessly and keep meta data and modified date. Made in PHP.
 
 ### update-flash
 
@@ -260,74 +348,6 @@ VirtualBox, clear machine USB devices. Made in Bash.
 ## Other commands - aliases
 
 Please have a look of the commands defined as aliases in the `dptools-console-init` file.
-
-## Getting Started
-
-These instructions will get you a copy of the project up and running on your
-local machine for usage, development and testing purposes.
-
-### Prerequisites
-
-The following is necessary to install and run the software:
-
-```
-- Debian Linux 9 or similar system
-- Bash shell
-- Git
-- PHP
-- PHP-cURL
-- PHP-MySQLi
-- Rsync
-- Zenity
-```
-
-Some more things may be necessary for some of the tools.
-Try to run them to find out what is missing.
-
-Bash is usually installed by default.
-The rest can be installed using apt-get:
-
-```
-sudo apt-get install git php php-curl php-mysqli rsync zenity
-```
-
-### Installing
-
-The installation process involves git cloning and adding
-dptools-console-init to user profiles.
-
-Install for all users running as root installing to`/opt/dptools`:
-
-```
-apt-get install git
-git clone https://gitlab.com/dotpointer/dptools.git /opt/dptools
-/opt/dptools/dptools-update -a
-```
-
-If you want to add dptools to more users, then do this for each user:
-
-```
-/opt/dptools/dptools-update -a username
-```
-
-Single user install in home directory at `opt/dptools/`.
-```
-apt-get install git
-git clone https://gitlab.com/dotpointer/dptools.git ~/opt/dptools
-~/opt/dptools/dptools-update -a
-```
-
-The install directories suggested above can be altered.
-Some commands require a configuration in `/etc/dptools` and
-are therefore not supporting single user installs.
-
-## Updating
-
-Run `dptools-update` in a root shell to update dptools.
-
-## Usage
-
-Enjoy the commands in a Linux shell, script or a cronjob.
 
 ## Authors
 
