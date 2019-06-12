@@ -1,0 +1,64 @@
+#!/usr/bin/php
+<?php
+
+# turnpic
+# rotate image and keep details
+# by robert klebe, dotpointer
+
+# changelog
+# 2019-06-03 21:55:00 - initial version, -12
+
+# phase 1 - read the dates and files
+
+$files = array();
+
+$rotate = isset($argv[1]) ? $argv[1] : false;
+$file = isset($argv[2]) ? $argv[2] : false;
+
+if ($rotate === '-h') {
+  echo 'Usage: '.basename(__FILE__).' <rotation 90|180|270> <filename>'."\n";
+  die();
+}
+
+if (!file_exists($file)) {
+  echo 'File does not exist.'."\n";
+  die(1);
+}
+
+if (!is_numeric($rotate)) {
+  echo 'Numeric rotation needed.'."\n";
+  die(1);
+}
+
+clearstatcache();
+
+echo "Reading and remembering dates:";
+
+$mdate = filemtime($file);
+
+echo date('Y-m d H:i:s', $mdate)."\n";
+
+$tmp = 'tmp'.date('YmdHis');
+
+$c = 'jpegtran -copy all -rotate '.$rotate.' '.escapeshellarg($file).' > '.$tmp;
+
+echo $c."\n";
+exec($c, $o, $r);
+
+if ($r !== 0) {
+  echo 'Failed '.$c."\n";
+  die(1);
+}
+
+rename($tmp, $file);
+
+clearstatcache();
+
+$mdatenew = filemtime($file);
+
+if ($mdate !== $mdatenew) {
+  echo 'Resetting dates.';
+  touch($file, $mdate);
+}
+
+?>
