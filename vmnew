@@ -12,6 +12,7 @@
 # 2018-06-29 16:52:00 - cleanup
 # 2018-06-29 18:39:00 - bugfix, disk storage location was hardcoded
 # 2018-07-19 19:29:35 - indentation change, tab to 2 spaces
+# 2019-06-14 19:36:00 - setting storage controller port count to 2
 
 if [ ! -f /etc/dptools/virtualbox ]; then
   echo 'Please create /etc/dptools/virtualbox and add VIRTUALBOX_ROOT_DIR="/where/to/store/harddrives/"';
@@ -126,7 +127,7 @@ fi
 
 # try to add storage controller
 echo "-- Trying to add storage controller...";
-VBoxManage storagectl "$NAME" --name "SATA Controller" --add sata --controller IntelAHCI
+VBoxManage storagectl "$NAME" --name "SATA Controller" --add sata --controller IntelAHCI --portcount 2
 if [ ! $? -eq 0 ] ; then
   echo 'Failed';
   exit 1

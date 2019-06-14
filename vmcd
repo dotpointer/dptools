@@ -8,6 +8,7 @@
 # 2014-10-01 11:42:13
 # 2018-06-29 16:15:00 - cleanup
 # 2018-07-19 19:29:34 - indentation change, tab to 2 spaces
+# 2019-06-13 19:39:36 - forcing unmount by default
 
 NAME=$1
 MEDIUM=$2
@@ -26,4 +27,4 @@ if [[ ! $VMS == *"$1"* ]]; then
   echo "VM $1 not found.";
 fi
 
-VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium $MEDIUM
+VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium $MEDIUM -f
