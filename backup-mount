@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # backup-mount
-# mount a encrypted backup image over samba
+# mount a encrypted backup image over samba or sshfs
 # by robert klebe, dotpointer
 
 # changelog
@@ -10,12 +10,43 @@
 # 2018-06-28 13:32:00 - cleanup
 # 2018-06-28 15:44:00 - description edit and cleanup
 # 2018-07-19 19:29:29 - indentation change, tab to 2 spaces
+# 2019-06-16 00:52:00 - adding sshfs support
 
+# credentials - defaults - a typical /etc/dptools/backuptools may look like this
 
-# Make sure only root can run our script
+DIR_IMAGE="/mnt/backupimage/";
+DIR_SHARE="/mnt/backupshare/";
+LOOPDEVICE="/dev/loop0";
+MAPPERNAME="backuploop";
+VERBOSE=0;
+# then use this to go by samba
+# CONNECTION_TYPE="samba";
+# SAMBA_PATH_SHARE="<ip-or-hostname>/<sharename>$";
+# SAMBA_PATH_IMAGE="</path/inside/share/to/file.img>"
+# SAMBA_USER="<samba username>";
+# SAMBA_PASSWORD="<samba password>";
+# or this to go by sshfs
+# CONNECTION_TYPE="sshfs";
+# SSHFS_HOST="<hostname>"
+# SSHFS_USER="<ssh username>"
+# SSHFS_PATH="</path/inside/host/to/file.img/without/filename>"
+# SSHFS_IMAGE="<file.img>"
+# (setup an ssh authentication key to login with)
+# then add this to transfer files from and to the image file
+# SYNC_CMD<1-9>="rsync -avu --progress --inplace </source/of/data> $DIR_IMAGE"
+# or this to transfer files outside the image file, but still on the host
+# SYNC_CMD<1-9>="rsync -avu --progress --inplace </source/of/data> $DIR_SHARE"
+# or this to transfer files outside the connection
+# sync_cmd<1...>() {
+#   rsync -aAXxv --sparse --progress -e "ssh -T -c aes128-gcm@openssh.com -o Compression=no -x" <user>@<source-host>:</source/path> </target/path/>
+#   return 0;
+# }
+# SYNC_CMD<1...>=sync_cmd<1...>;
+
+# make sure only root can run our script
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root"
-   exit 1
+   echo "This script must be run as root."
+   exit 1;
 fi
 
 # read the config file
@@ -26,120 +57,157 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1;
 fi
 
-# credentials - defaults - a typical /etc/dptools/backuptools may look like this
-DIR_IMAGE="/mnt/backupimage";
-DIR_SHARE="/mnt/backupshare";
-LOOPDEVICE="/dev/loop0";
-MAPPERNAME="backuploop";
-# SAMBA_PATH_SHARE="ip/sharename$";
-# SAMBA_PATH_IMAGE="/path/inside/share/to/file.img"
-# SAMBA_USER="username";
-# SAMBA_PASSWORD="password";
-# SYNC_CMD1...5="rsync -avu --progress --inplace /source/of/data $DIR_IMAGE"
-
 # read config file
 source $CONFIG_FILE;
-
 # check parameters
 
+# verbosity override
+if [ "$1" == "-v" ] || [ "$1" == "--verbose" ]; then
+  VERBOSE=1;
+fi
+
 if [ -z "$DIR_SHARE" ]; then
-  echo "DIR_SHARE not set";
+  echo "Error, DIR_SHARE not set";
   exit 1;
-fi
-echo "Samba share mount point: $DIR_SHARE";
-
-if [ -z "$DIR_IMAGE" ]; then
-  echo "DIR_IMAGE not set";
+elif [ -z "$DIR_IMAGE" ]; then
+  echo "Error, DIR_IMAGE not set";
   exit 1;
-fi
-echo "Image file mount point : $DIR_IMAGE";
-
-if [ -z "$LOOPDEVICE" ]; then
-  echo "LOOPDEVICE not set";
+elif [ -z "$LOOPDEVICE" ]; then
+  echo "Error, LOOPDEVICE not set";
   exit 1;
-fi
-echo "Loop device: $LOOPDEVICE";
-
-if [ -z "$MAPPERNAME" ]; then
-  echo "MAPPERNAME not set";
-  exit 1;
-fi
-echo "Device mapper: /dev/mapper/$MAPPERNAME";
-
-if [ -z "$SAMBA_USER" ]; then
-  echo "SAMBA_USER not set";
-  exit 1;
-fi
-echo "Samba user: $SAMBA_USER";
-
-if [ -z "$SAMBA_PASSWORD" ]; then
-  echo "SAMBA_PASSWORD not set";
+elif [ -z "$MAPPERNAME" ]; then
+  echo "Error, MAPPERNAME not set";
   exit 1;
 fi
 
-if [ -z "$SAMBA_PATH_SHARE" ]; then
-  echo "SAMBA_PATH_SHARE not set";
-  exit 1;
+if [ $VERBOSE -eq 1 ]; then
+  echo "Share mount: $DIR_SHARE";
+  echo "Loop device: $LOOPDEVICE";
+  echo "Device mapper: /dev/mapper/$MAPPERNAME";
+  echo "Image file mount: $DIR_IMAGE";
 fi
-echo "Samba share path: $SAMBA_PATH_SHARE";
 
-if [ -z "$SAMBA_PATH_IMAGE" ]; then
-  echo "SAMBA_PATH_IMAGE not set";
+if [ -z "$CONNECTION_TYPE" ] || [ "$CONNECTION_TYPE" == "samba" ]; then
+  if [ $VERBOSE -eq 1 ]; then
+    echo "Samba connection type";
+  fi
+  CONNECTION_TYPE="samba";
+  if [ -z "$SAMBA_USER" ]; then
+    echo "Error, SAMBA_USER not set";
+    exit 1;
+  elif [ -z "$SAMBA_PASSWORD" ]; then
+    echo "Error, SAMBA_PASSWORD not set";
+    exit 1;
+  elif [ -z "$SAMBA_PATH_SHARE" ]; then
+    echo "Error, SAMBA_PATH_SHARE not set";
+    exit 1;
+  elif [ -z "$SAMBA_PATH_IMAGE" ]; then
+    echo "Error, SAMBA_PATH_IMAGE not set";
+    exit 1;
+  fi
+  if [ $VERBOSE -eq 1 ]; then
+    echo "Samba: //${SAMBA_PATH_SHARE}${SAMBA_PATH_IMAGE}, user: $SAMBA_USER";
+  fi
+elif [ "$CONNECTION_TYPE" == "sshfs" ]; then
+  if [ $VERBOSE -eq 1 ]; then
+    echo "SSHFS connection type";
+  fi
+  if [ -z "SSHFS_HOST" ]; then
+    echo "Error, SSHFS_HOST not set";
+    exit 1;
+  elif [ -z "SSHFS_USER" ]; then
+    echo "Error, SSHFS_USER not set";
+    exit 1;
+  elif [ -z "SSHFS_PATH" ]; then
+    echo "Error, SSHFS_PATH not set";
+    exit 1;
+  elif [ -z "SSHFS_IMAGE" ]; then
+    echo "Error, SSHFS_IMAGE not set";
+    exit 1;
+  fi
+  if [ $VERBOSE -eq 1 ]; then
+    echo "SSHFS: $SSHFS_USER@$SSHFS_HOST:${SSHFS_PATH}${SSHFS_IMAGE}"
+  fi
+else
+  echo "Error, unknown connection type in CONNECTION_TYPE"
   exit 1;
 fi
-echo "Samba image path inside Samba share: $SAMBA_PATH_IMAGE";
 
 # make sure outer container dir is there
-echo "Checking share dir: $DIR_SHARE";
 if [ ! -d "$DIR_SHARE" ]; then
   # make a dir to mount on
-  echo "Creating outer mount dir: $DIR_SHARE";
+  if [ $VERBOSE -eq 1 ]; then
+    echo "Creating share mount dir: $DIR_SHARE";
+  fi
   mkdir -p $DIR_SHARE
   if [[ $? != 0 ]]; then
-    echo "Failed creating dir: $DIR_SHARE";
+    echo "Error, failed creating share mount dir: $DIR_SHARE";
+    echo "Hint, if the $DIR_SHARE is occupied by a ??? endpoint, try fusermount -uz $DIR_SHARE";
     exit 1;
   fi
 fi
 
-# mount the outer cifs bridge over samba
-echo "Mounting samba share $SAMBA_PATH_SHARE to share dir $DIR_SHARE";
-mount -t cifs -o username=$SAMBA_USER,password=$SAMBA_PASSWORD //$SAMBA_PATH_SHARE $DIR_SHARE
-if [[ $? != 0 ]]; then
-  echo "Failed mounting samba share: $SAMBA_PATH_SHARE -> $DIR_SHARE";
-  exit 1;
+if [ "$CONNECTION_TYPE" == "samba" ]; then
+  # mount the outer cifs bridge over samba
+  if [ $VERBOSE -eq 1 ]; then
+    echo "Mounting Samba share $SAMBA_PATH_SHARE to $DIR_SHARE";
+  fi
+  mount -t cifs -o username=$SAMBA_USER,password=$SAMBA_PASSWORD //$SAMBA_PATH_SHARE $DIR_SHARE
+  if [[ $? != 0 ]]; then
+    echo "Failed mounting samba share: $SAMBA_PATH_SHARE -> $DIR_SHARE";
+    echo "Hint, if you get errors about write protection then check username and password"
+    exit 1;
+  fi
+  LOOPIMAGEPATH=${DIR_SHARE}${SAMBA_PATH_IMAGE};
+elif [ "$CONNECTION_TYPE" == "sshfs" ]; then
+  # mount the outer cifs bridge over samba
+  if [ $VERBOSE -eq 1 ]; then
+    echo "Mounting SSHFS $SSHFS_USER@$SSHFS_HOST:$SSHFS_PATH to $DIR_SHARE";
+  fi
+  sshfs -o allow_other -o reconnect -o ServerAliveInterval=15 $SSHFS_USER@$SSHFS_HOST:$SSHFS_PATH $DIR_SHARE
+  if [[ $? != 0 ]]; then
+    echo "Failed mounting SSHFS $SSHFS_USER@$SSHFS_HOST:$SSHFS_PATH to $DIR_SHARE";
+    exit 1;
+  fi
+  LOOPIMAGEPATH=${DIR_SHARE}${SSHFS_IMAGE};
 fi
 
 # connecting loop device to image
-echo "Connecting $LOOPDEVICE to $DIR_SHARE$SAMBA_PATH_IMAGE";
-losetup $LOOPDEVICE $DIR_SHARE$SAMBA_PATH_IMAGE
+if [ $VERBOSE -eq 1 ]; then
+  echo "Connecting $LOOPDEVICE to $LOOPIMAGEPATH";
+fi
+losetup $LOOPDEVICE $LOOPIMAGEPATH
 if [[ $? != 0 ]]; then
-  echo "Failed mounting dir: $DIR_SHARE$SAMBA_PATH_IMAGE";
+  echo "Failed mounting $LOOPDEVICE to $LOOPIMAGEPATH";
   exit 1;
 fi
 
 # open loop device
-echo "Opening loop device $LOOPDEVICE in LUKS mode, connecting it to mapper $MAPPERNAME";
+if [ $VERBOSE -eq 1 ]; then
+  echo "Opening loop device $LOOPDEVICE in LUKS mode, connecting it to mapper $MAPPERNAME";
+fi
 cryptsetup luksOpen $LOOPDEVICE $MAPPERNAME
 
 # check the image dir
-echo "Checking image dir: $DIR_IMAGE";
 if [ ! -d "$DIR_IMAGE" ]; then
   # make a dir to mount on
   echo "Creating outer mount dir: $DIR_IMAGE";
   mkdir -p $DIR_IMAGE
   if [[ $? != 0 ]]; then
-    echo "Failed creating dir: $DIR_IMAGE";
+    echo "Failed creating outer mount dir: $DIR_IMAGE";
     exit 1;
   fi
 fi
 
 # mount the image
-echo "Mounting mapper /dev/mapper/$MAPPERNAME to image dir $DIR_IMAGE";
+if [ $VERBOSE -eq 1 ]; then
+  echo "Mounting mapper /dev/mapper/$MAPPERNAME to $DIR_IMAGE";
+fi
 mount /dev/mapper/$MAPPERNAME $DIR_IMAGE
 if [[ $? != 0 ]]; then
   echo "Failed mounting dir: $DIR_IMAGE";
   exit 1;
 fi
 
-echo "Image is now ready in $DIR_IMAGE";
+echo "Backup opened, share is at $DIR_SHARE and image is at $DIR_IMAGE";
 exit 0;
