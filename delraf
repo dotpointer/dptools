@@ -1,0 +1,34 @@
+#!/usr/bin/php
+<?php
+
+# delete .RAF files without corresponding .JPG files in current directory
+# by robert klebe, dotpointer
+
+# 2019-06-16 12:31:29 - initial version
+
+$files = scandir('.');
+sort($files);
+
+$cmd = isset($argv[1]) && $argv[1] === '-d';
+
+foreach ($files as $file) {
+  if (!is_file($file)) continue;
+
+  if (strtolower(substr($file, -4)) !== '.raf') continue;
+
+  $jpeg = substr($file, 0, strrpos($file, '.')).'.JPG';
+
+  if (!file_exists($jpeg)) {
+    echo 'DEL '.$file."\n";
+    if ($cmd) {
+      unlink($file);
+    }
+  } else {
+    echo 'OK  '.$file."\n";
+  }
+}
+
+if (!$cmd) {
+  echo 'Run with -d to do delete.'."\n";
+}
+?>
