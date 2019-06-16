@@ -30,6 +30,7 @@
 # 2019-03-12 08:46:00 - adding aliases
 # 2019-05-17 20:41:00 - adding title alias
 # 2019-06-12 20:26:00 - adding aliases
+# 2019-06-14 20:36:39 - adding vmsetuuid alias
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -134,6 +135,14 @@ alias watch='watch -n1';
 alias wget="wget --no-check-certificate --continue --tries=0";
 alias vmlist='echo "Machines:"; vboxmanage list vms';
 alias vmlistusb='vboxmanage list usbhost';
+function set_vmsetuuid() {
+  if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Usage: vmsetuuid <vdi file> <new uuid>";
+    return;
+  fi
+  VBoxManage internalcommands sethduuid "${1}" "${2}";
+}
+alias vmsetuuid=set_vmsetuuid;
 alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vwdial="wvdial";

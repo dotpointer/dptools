@@ -81,14 +81,16 @@ Automatically initiate, stage and make commits to a git repository.
 
 ### backup-create, backup-mount, backup-sync, backup-umount
 
-Create an encrypted remote backup over SSH, mount it, backup
+Create a LUKS encrypted remote backup over Samba or SSHFS, mount it, backup
 to it and then unmount it. Made in Bash, configuration file
 is `/etc/dptools/backuptools`.
 
 ### backup-image-mount, backup-image-umount
 
-Mount or unmount a local backup image by specifying image file and loop
-device number or mapper and loop device number. Made in Bash.
+Mount or unmount a local LUKS encrypted backup image by specifying image
+file and loop device number or mapper and loop device number. Made in Bash.
+
+To create the image use backup-create.
 
 ### backup-databases
 
@@ -335,6 +337,10 @@ VirtualBox, reset machine power state. Made in Bash.
 ### vmrestart
 
 VirtualBox, restart a machine. Made in Bash.
+
+### vmsetuuid
+
+VirtualBox, set UUID on a disk. Made in Bash.
 
 ### vmstart
 
