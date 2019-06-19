@@ -31,6 +31,7 @@
 # 2019-05-17 20:41:00 - adding title alias
 # 2019-06-12 20:26:00 - adding aliases
 # 2019-06-14 20:36:39 - adding vmsetuuid alias
+# 2019-06-19 23:18:00 - adding alias
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -44,6 +45,7 @@ fi
 PATH="$PATH:/var/scripts:/opt/dptools:/usr/sbin:/sbin"
 
 alias addgroup='groupadd';
+alias apt-install='apt install';
 alias array='cat /proc/scsi/rr172x/0';
 alias backupdir='tar -cvzf';
 alias batstat='upower -i /org/freedesktop/UPower/devices/battery_BAT0';
