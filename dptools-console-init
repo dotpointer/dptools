@@ -32,9 +32,10 @@
 # 2019-06-12 20:26:00 - adding aliases
 # 2019-06-14 20:36:39 - adding vmsetuuid alias
 # 2019-06-19 23:18:00 - adding alias
+# 2019-07-14 14:30:00 - excluding xterm from beep settings
 
 # is TERM variable defined, ssh sets it to dump when using scp
-if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
+if [[ -n "$TERM" && "$TERM" != "dumb" && "$TERM" != "xterm" ]]; then
   # ubuntu 14.10 cannot suddenly take blength and bfreq, so we must
   # make it shut up even if it fails
   setterm -blength 0 > /dev/null 2>&1

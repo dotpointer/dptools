@@ -10,6 +10,7 @@
 # 2019-05-17 20:37:00 - initial version
 # 2019-05-17 22:11:00 - output corrections
 # 2019-05-17 23:20:54 - updating output
+# 2019-07-14 04:26:00 - bugfix, file names with spaces were missed
 
 # get header
 function getheader($i, $linecount, $stats, $text) {
@@ -69,8 +70,8 @@ $stats = array(
 # loop files
 while ($line = fgets($f)) {
   $i++;
-  $line = trim($line);
-  preg_match('/([a-zA-Z0-9]+)\s+(.*)/', $line, $matches);
+  $line = $line;
+  preg_match('/([a-zA-Z0-9]+)  (.*)\r?\n?/', $line, $matches);
 
   if (!isset($matches[1], $matches[2])) {
     echo 'Failed splitting line '.$i."\n";
