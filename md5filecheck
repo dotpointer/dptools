@@ -11,6 +11,26 @@
 # 2019-05-17 22:11:00 - output corrections
 # 2019-05-17 23:20:54 - updating output
 # 2019-07-14 04:26:00 - bugfix, file names with spaces were missed
+# 2019-07-14 15:59:00 - adding options, adding error log output
+
+$fileerror = false;
+
+# open a log file if not already open, then append text to it
+function logtext(&$filepointer, $file, $text) {
+	# file not already opened
+	if (!$filepointer) {
+		# file not set get out
+		if (!$file) return;
+		# try to open file, put pointer to the beginning of it
+		$filepointer = fopen($file, 'w+');
+		if (!$filepointer) {
+			echo 'Failed opening log file '.$file."\n";
+			die(1);
+		}
+	}
+	# write the text to the file
+	fputs($filepointer, $text);
+}
 
 # get header
 function getheader($i, $linecount, $stats, $text) {
@@ -21,17 +41,41 @@ function getheader($i, $linecount, $stats, $text) {
     '] '.$text;
 }
 
-$file = isset($argv[1]) ? $argv[1] : '';
+$errorlog = false;
+$file = false;
+$fileerror = false;
+
+foreach (getopt('e:hi:', array('errorlog:', 'help', 'input:')) as $opt => $value) {
+	switch ($opt) {
+		case 'i':
+		case 'input':
+			$file = $value;
+			break;
+		case 'e':
+		case 'errorlog':
+			$errorlog = $value;
+			break;
+		case 'h':
+		case 'help':
+?>
+Usage: <?php echo basename(__FILE__); ?> <options>
+Options:
+	-e/--errorlog <filename>
+		Print errors to this file.
+	-h, --help
+		Print this help
+	-i/--input <filename>
+		Read checksums from this file (required).
+<?php
+			die();
+	}
+}
 
 if (!strlen($file)) {
-  echo 'Please specify md5 file sum file.'."\n";
+  echo 'Please specify md5 file sum file with -i.'."\n";
   die(1);
 }
 
-if ($file === '-h' || $file === '--help') {
-  echo 'Usage: '.basename(__FILE__).' <file with md5 sums and paths>'."\n";
-  die();
-}
 
 if (!file_exists($file)) {
   echo 'File not found: '.$file."\n";
@@ -100,8 +144,13 @@ while ($line = fgets($f)) {
   # clear previous line
   echo str_repeat(' ', strlen($header))."\r";
   # print result
-  echo getheader($i, $linecount, $stats, $currentstatus.' '.$path."\n");
+  $header = getheader($i, $linecount, $stats, $currentstatus.' '.$path."\n");
+
+  if ($currentstatus !== 'OK' && $errorlog !== false) {
+	logtext($fileerror, $errorlog, $header);
+  }
 }
 
 fclose($f);
+if ($fileerror) fclose($fileerror);
 ?>
