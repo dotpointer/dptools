@@ -12,6 +12,7 @@
 # 2019-05-17 23:20:54 - updating output
 # 2019-07-14 04:26:00 - bugfix, file names with spaces were missed
 # 2019-07-14 15:59:00 - adding options, adding error log output
+# 2019-07-16 03:19:00 - bugfix, files missing had paths resolved to empty strings
 
 $fileerror = false;
 
@@ -124,6 +125,12 @@ while ($line = fgets($f)) {
 
   $md5 = $matches[1];
   $path = realpath($matches[2]);
+
+  # did the realpath fail, then revert
+  if ($path === false) {
+	$path = $matches[2];
+  }
+
   $filesize = filesize($path);
 
   $header = getheader($i, $linecount, $stats, 'MD5-summing '.$path.' '.$filesize.' b');
