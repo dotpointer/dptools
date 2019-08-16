@@ -1,0 +1,161 @@
+#!/usr/bin/php
+<?php
+
+# md5 file sum files comparer
+# by robert klebe, dotpointer
+
+# create lists to compare by md5deep -r -e -l -of * > files.md5
+
+# changelog
+# 2019-08-17 01:07:00 - initial version, starting off from md5filecheck
+
+# index a file
+function index(&$data, $f, $key) {
+  # loop files
+  while ($line = fgets($f)) {
+    # $i++;
+    $line = trim($line);
+    preg_match('/([a-zA-Z0-9]+)\s+(.*)/', $line, $matches);
+
+    if (!isset($matches[1], $matches[2])) {
+      echo 'Failed splitting line '.$i."\n";
+      continue;
+    }
+
+    $md5 = $matches[1];
+    $name = $matches[2];
+
+    if (!isset($data[$name])) {
+      $data[$name] = array();
+    }
+    $data[$name]['md5'.$key] = $md5;
+  }
+}
+
+# create a printable title
+function title($title, $count) {
+  $title = $title.': '.$count;
+  return $title."\n".str_repeat('-', strlen($title))."\n";
+}
+
+$filea = isset($argv[1]) ? $argv[1] : '';
+$fileb = isset($argv[2]) ? $argv[2] : '';
+
+
+if ($filea === '-h' || $filea === '--help' && $fileb === '') {
+  echo 'Usage: '.basename(__FILE__).' <file with md5 sums and paths> <file with md5 sums and paths>'."\n";
+  die();
+}
+
+if (!strlen($filea) || !strlen($fileb)) {
+  echo 'Please specify 2 md5 file sum files.'."\n";
+  die(1);
+}
+
+if (!file_exists($filea)) {
+  echo 'File not found: '.$filea."\n";
+  die(1);
+}
+
+if (!file_exists($fileb)) {
+  echo 'File not found: '.$fileb."\n";
+  die(1);
+}
+
+$fa = fopen($filea, "r");
+if (!$fa) {
+  echo 'Failed opening: '.$filea."\n";
+  die(1);
+}
+
+$fb = fopen($fileb, "r");
+if (!$fb) {
+  echo 'Failed opening: '.$fileb."\n";
+  fclose($fa);
+  die(1);
+}
+
+$data = array();
+index($data, $fa, 'a');
+index($data, $fb, 'b');
+
+fclose($fa);
+fclose($fb);
+
+$stats = array(
+  'error' => 0,
+  'matching' => 0,
+  'mismatching' => 0,
+  'onlya' => 0,
+  'onlyb' => 0
+);
+
+define('STATUS_OK', 1);
+define('STATUS_MISMATCH', 2);
+define('STATUS_ONLY_A', 3);
+define('STATUS_ONLY_B', 4);
+define('STATUS_ERROR_FORMAT', 5);
+
+foreach ($data as $key => $item) {
+  $md5a = isset($item['md5a']) && strlen($item['md5a']) ? $item['md5a'] : false;
+  $md5b = isset($item['md5b']) && strlen($item['md5b']) ? $item['md5b'] : false;
+
+  if ($md5a !== false && $md5b !== false) {
+    if ($md5a === $md5b) {
+      $stats['matching']++;
+      $data[$key]['status'] = STATUS_OK;
+    } else {
+      $stats['mismatching']++;
+      $data[$key]['status'] = STATUS_MISMATCH;
+    }
+  } else if ($md5a) {
+    $stats['onlya']++;
+    $data[$key]['status'] = STATUS_ONLY_A;
+  } else if ($md5b) {
+    $stats['onlyb']++;
+    $data[$key]['status'] = STATUS_ONLY_B;
+  } else {
+    $stats['error']++;
+    $data[$key]['status'] = STATUS_ERROR_FORMAT;
+  }
+}
+
+# print matching
+echo title('Matching files', $stats['matching']);
+echo "\n";
+
+# print mismatching
+echo title('Mismatching files', $stats['mismatching']);
+foreach ($data as $key => $item) {
+  if ($item['status'] !== STATUS_MISMATCH) continue;
+  echo $item['md5a'].'  '.$item['md5b'].'  '.$key."\n";
+}
+echo "\n";
+
+# print only in a
+echo title('Files only in A', $stats['onlya']);
+foreach ($data as $key => $item) {
+  if ($item['status'] !== STATUS_ONLY_A) continue;
+  echo $item['md5a'].'  '.$key."\n";
+}
+echo "\n";
+
+# print only in b
+echo title('Files only in B', $stats['onlyb']);
+foreach ($data as $key => $item) {
+  if ($item['status'] !== STATUS_ONLY_B) continue;
+  echo $item['md5b'].'  '.$key."\n";
+}
+
+# print errors only if there were any
+if ($stats['error'] > 0) {
+  echo "\n";
+  echo title('Files with missing MD5', $stats['error']);
+  foreach ($data as $key => $item) {
+    if ($item['status'] !== STATUS_ERROR_FORMAT) continue;
+    echo $key."\n";
+  }
+  echo "\n";
+}
+
+?>
