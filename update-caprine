@@ -1,0 +1,194 @@
+#!/usr/bin/php
+<?php
+
+# changelog
+# 2019-08-20 00:00:00 initial version
+
+define('VERBOSE_NONE', 0);
+define('VERBOSE_ERROR', 1);
+define('VERBOSE_INFO', 2);
+
+function cl($s, $level=VERBOSE_ERROR) {
+  global $verbose;
+  if ($level > $verbose) return;
+  echo $s."\n";
+}
+
+function correctsandbox() {
+  $sandbox = '/opt/Caprine/chrome-sandbox';
+  if (file_exists($sandbox)) {
+    # ensure root
+    if (fileowner($sandbox) !== 0) {
+      cl('Correcting ownership on '.$sandbox, VERBOSE_INFO);
+      chown($sandbox, 'root');
+    }
+
+    # get chmod using ls since fileperms returns weird values
+    unset($c, $o, $r);
+    $c = 'ls -la '.$sandbox;
+    exec($c, $o, $r);
+    if ($r !== 0) {
+      cl('Failed ls');
+      die(1);
+    }
+
+    $o = implode("\r", $o);
+
+    # ensure 4755, set using chmod binary since function sets weird values
+    if (strpos($o, '-rwsr-xr-x') === false) {
+      cl('Correcting permissions on '.$sandbox, VERBOSE_INFO);
+      unset($c, $o, $r);
+      $c = 'chmod 4755 '.$sandbox;
+      exec($c, $o, $r);
+      if ($r !== 0) {
+        cl('Failed chmod');
+        die(1);
+      }
+
+    }
+  }
+}
+
+function removetemps() {
+  global $downloadpath;
+  if (!file_exists($downloadpath)) return;
+  cl('Removing '.$downloadpath, VERBOSE_INFO);
+  if (!unlink($downloadpath)) {
+    cl('Failed removing');
+    die(1);
+  }
+}
+
+$cache = '/var/cache/'.basename(__FILE__);
+$downloadpath = '/mnt/ramdisk/caprine-latest.deb';
+$downloadtimeout = 86400;
+$verbose = VERBOSE_ERROR;
+$force = 0;
+$opts = getopt('fhv::', array('force', 'help', 'verbose::'));
+
+foreach ($opts as $opt => $value) {
+  switch ($opt) {
+    case 'f':
+    case 'force':
+      $force = 1;
+      break;
+    case 'h':
+    case 'help':
+?>
+Usage: <?php echo basename(__FILE__) ?> <options>
+-f, --force
+  Override checks and run anyway.
+-h, --help
+  Print this help.
+-v[=v/<N>], --verbosity[=v/<N>]
+  Increase verbosity, defaults to error level
+  Available levels are:
+    0 = none, quiet
+    1 = errors
+    2 = info
+<?php
+      break;
+    case 'v':
+    case 'verbose':
+      $verbose = is_numeric($value) ? $value : (substr_count($value, 'v') + 1);
+      break;
+  }
+}
+
+# ensure root
+if (trim(shell_exec('whoami')) !== 'root') {
+  cl('Must be run as root');
+  die(1);
+}
+
+# check cache
+if (!$force && file_exists($cache) && filemtime($cache) > time() - $downloadtimeout) {
+  removetemps();
+  correctsandbox();
+  cl('Less than '.$downloadtimeout.'s since last update, use -f to override.', VERBOSE_INFO);
+  die();
+}
+touch($cache);
+
+# fetch latest release details
+cl('Getting latest releaste details', VERBOSE_INFO);
+$latest = file_get_contents('https://github.com/sindresorhus/caprine/releases/download/v2.36.0/latest-linux.yml');
+if ($latest === false) {
+  cl('Failed getting latest release details');
+  die(1);
+}
+
+/*
+$latest="
+version: 2.36.0
+files:
+  - url: caprine-2.36.0-x86_64.AppImage
+    sha512: rSXx1C5+VNwYluS73+8ln3Bwii7temtl+SfnMYj94oT8qYlRzL3KCIs3HsYQKVMQtqZx0KBkjrTR2cK0uJ2hvw==
+    size: 67740676
+    blockMapSize: 73032
+path: caprine-2.36.0-x86_64.AppImage
+sha512: rSXx1C5+VNwYluS73+8ln3Bwii7temtl+SfnMYj94oT8qYlRzL3KCIs3HsYQKVMQtqZx0KBkjrTR2cK0uJ2hvw==
+releaseDate: '2019-08-11T19:38:03.783Z'
+";*/
+
+# extract date
+$date = substr($latest, strpos($latest, 'releaseDate:') + 13);
+$date = substr($date, strpos($date, '\'') + 1);
+$date = substr($date, 0, strpos($date, "Z") + 1);
+$date = trim($date);
+$date = strtotime($date);
+
+# timeout, since the deb file is older than the release date
+$timeout = 60 * 10;
+
+if ($date === false) {
+  echo 'Failed date'."\n";
+  die(1);
+}
+$ftime = filemtime('/opt/Caprine/caprine');;
+
+$version = substr($latest, strpos($latest, 'version:') + 8);
+$version = substr($version, 0, strpos($version, "\n"));
+$version = trim($version);
+if (!strlen($version)) {
+  cl('Failed extracting part of name.');
+  die(1);
+}
+cl('Available version: '.$version, VERBOSE_INFO);
+cl('Current file date: '.date('Y-m-d H:i:s', $ftime), VERBOSE_INFO);
+cl('New release date:  '.date('Y-m-d H:i:s', $date), VERBOSE_INFO);
+cl('Allowed difference: '.$timeout.'s', VERBOSE_INFO);
+
+if (!$force && ($ftime + $timeout) >= $date) {
+  cl('Current version is up to date, not updating, use -f to override.', VERBOSE_INFO);
+  removetemps();
+  correctsandbox();
+  die();
+}
+
+# https://github.com/sindresorhus/caprine/releases/download/v2.36.0/caprine_2.36.0_amd64.deb
+$latest = 'https://github.com/sindresorhus/caprine/releases/download/v'.$version.'/caprine_'.$version.'_amd64.deb';
+$c = 'wget -q --no-check-certificate --continue --tries=0 -O'.$downloadpath.' '.escapeshellarg($latest);
+cl('Running: '.$c, VERBOSE_INFO);
+exec($c, $o, $r);
+if ($r !== 0) {
+  cl('Failed downloading');
+  die(1);
+}
+
+if (file_exists($downloadpath)) {
+  unset($c, $o, $r);
+  $c = 'dpkg -i '.$downloadpath;
+  cl('Running: '.$c, VERBOSE_INFO);
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    cl('Failed installing');
+    die(1);
+  }
+  removetemps();
+} else {
+  cl('Failed finding downloaded file at '.$downloadpath);
+  die(1);
+}
+correctsandbox();
+?>
