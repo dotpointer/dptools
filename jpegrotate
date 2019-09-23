@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# rotate images - a bash version of turnpic
+# by robert klebe, dotpointer
+
+# changelog
+# 2019-09-23 22:22:00 - initial version
+
+BASENAME=$(basename "$0");
+
+if [[ -z "$1" ]] || [[ -z "$2" ]]; then
+	echo "Usage: $BASENAME <90|180|270> <JPEG file>"
+	exit;
+fi
+
+TMPDIR="/tmp/";
+
+# is there a /media/ramdisk then use that
+if [[ -d "/media/ramdisk/" ]]; then
+        TMPDIR="/media/ramdisk/";
+fi
+
+# is there a /mnt/ramdisk then use that
+if [[ -d "/mnt/ramdisk/" ]]; then
+	TMPDIR="/mnt/ramdisk/";
+fi
+
+# is there a config file then read that
+if [[ -f /etc/dptools/$BASENAME ]]; then
+	source /etc/dptools/$BASENAME;
+fi
+
+# get current date
+DATE=$(date '+%Y-%m-%d_%H%M%S')
+
+# construct a temporary filename
+TMPFILE="${TMPDIR}${BASENAME}-${DATE}.jpg";
+
+# rotate, keep all meta data
+jpegtran -copy all -rotate $2 "$1" > $TMPFILE
+# set the date of the temp file to the original file
+touch --reference="$1" $TMPFILE
+# move the temp file in place of the original file
+mv $TMPFILE "$1";
