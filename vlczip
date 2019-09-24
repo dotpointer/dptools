@@ -1,0 +1,47 @@
+#!/usr/bin/php
+<?php
+
+# play media files inside zip files
+# by robert klebe, dotpointer
+
+# changelog
+# 2019-09-25 00:59:00 - initial version
+
+$zip = isset($argv[1]) ? $argv[1] : false;
+
+if ($zip === false || !file_exists($zip)) {
+  echo 'Usage: '.basename(__FILE__).' <zip file containing media file>'."\n";
+  exit;
+}
+
+exec('7z l '.escapeshellarg($zip), $o, $r);
+$mediaendings = array('avi', 'divx', 'flac', 'mp2', 'mp4','mp3', 'mpeg', 'mpg', 'ogg', 'ogm', 'opus', 'wma', 'wmv');
+$filesection = false;
+$zipfiles = array();
+foreach ($o as $line) {
+  if ($line === '------------------- ----- ------------ ------------  ------------------------') {
+    # already in files section
+    if ($filesection) {
+      # end reading
+      break;
+    }
+    # not in files section before, start it
+    $filesection = true;
+    continue;
+  }
+  # in files section
+  if ($filesection) {
+    preg_match('/[0-9]{3}[0-9]+\-[0-9]{2}\-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\s+[a-zA-Z0-9\.]+\s+\d+\s+\d+\s+(.*)/i', $line, $matches);
+    $file = $matches[1];
+
+    if (strpos($file, '.') !== false && in_array(strtolower(substr($file, strpos($file, '.') + 1)), $mediaendings)) {
+      $zipfiles[] = $file;
+    }
+  }
+}
+
+if (count($zipfiles)) {
+  exec('7z e -so '.escapeshellarg($zip).' '.escapeshellarg($zipfiles[0]).' | vlc -');
+}
+
+?>
