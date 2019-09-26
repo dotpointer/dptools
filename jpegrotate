@@ -5,6 +5,7 @@
 
 # changelog
 # 2019-09-23 22:22:00 - initial version
+# 2019-09-26 18:23:00 - bugfix, arguments were inverted
 
 BASENAME=$(basename "$0");
 
@@ -37,8 +38,8 @@ DATE=$(date '+%Y-%m-%d_%H%M%S')
 TMPFILE="${TMPDIR}${BASENAME}-${DATE}.jpg";
 
 # rotate, keep all meta data
-jpegtran -copy all -rotate $2 "$1" > $TMPFILE
+jpegtran -copy all -rotate $1 "$2" > $TMPFILE
 # set the date of the temp file to the original file
-touch --reference="$1" $TMPFILE
+touch --reference="$2" $TMPFILE
 # move the temp file in place of the original file
-mv $TMPFILE "$1";
+mv $TMPFILE "$2";
