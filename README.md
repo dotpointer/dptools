@@ -135,6 +135,14 @@ Console formatter with a lot of aliases. Made in Bash.
 
 Update dptools and add dptools-console-init to user profiles. Made in Bash.
 
+### dsc-to-pic
+
+Batch rename images created by Sony Xperia smartphones named as DSC_<nnnn>.JPG
+to the Android app DSC Auto Rename format of PIC_<yyyy><mm><dd>_<HH><MM><SS>.JPG
+where the date in the filename is the modification date of the file.
+
+Useful when unrenamed files has been transferred to the system.
+
 ### dynamichost-updater
 
 DynDNS 2 updating client. Made in PHP, configuration is in 

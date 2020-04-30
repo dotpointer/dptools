@@ -1,0 +1,36 @@
+#!/usr/bin/php
+<?php
+
+# correct missed dsc renamer app renamings
+
+# by robert klebe
+
+# changelog
+# 2019-06-02 20:07:00
+
+$c = 'find . -iname "DSC_*.JPG"';
+
+exec($c, $o, $r);
+
+if ($r !== 0) {
+  echo 'Fail '.$c."\n";
+}
+
+foreach ($o as $filename) {
+
+  $mtime = filemtime($filename);
+
+  $newname = 'PIC_'.date('Ymd_His', $mtime).'.JPG';
+
+  echo '"'.$filename.'" -> "'.$newname.'"'."\n";
+
+  
+  if (file_exists($newname)) {
+    echo 'File exists.'."\n";
+    die(1);
+  }
+  
+  rename($filename, $newname);
+}
+
+?>
