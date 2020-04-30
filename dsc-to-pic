@@ -1,36 +1,82 @@
 #!/usr/bin/php
 <?php
 
-# correct missed dsc renamer app renamings
-
+# batch rename DSC_<nnnn>.JPG files to PIC_<yyyy><mm><dd>_<HH><MM><SS>.JPG recursively
 # by robert klebe
 
 # changelog
 # 2019-06-02 20:07:00
+# 2020-04-30 18:51:00 - bugfix for fullpaths, adding confirmation and help
 
-$c = 'find . -iname "DSC_*.JPG"';
+$perform = false;
 
-exec($c, $o, $r);
+$opts = getopt('hp');
 
-if ($r !== 0) {
-  echo 'Fail '.$c."\n";
+foreach ($opts as $k => $unused) {
+  switch ($k) {
+    case 'h':
+?>
+Batch rename DSC_<nnnn>.JPG files to PIC_<yyyy><mm><dd>_<HH><MM><SS>.JPG recursively.
+Dates in filenames are modification dates.
+
+Usage: <?php echo basename(__FILE__); ?> <options>
+
+Options:
+  -h
+    Show this information.
+  -p
+    Perform changes, runs as dry-run by default.
+<?php
+      die();
+    case 'p':
+      $perform = true;
+      break;
+  }
 }
 
-foreach ($o as $filename) {
+$c = 'find . -iname "DSC_*.JPG"';
+exec($c, $o, $r);
+if ($r !== 0) {
+  echo 'Error: Failed to run "'.$c.'"'."\n";
+}
 
-  $mtime = filemtime($filename);
-
-  $newname = 'PIC_'.date('Ymd_His', $mtime).'.JPG';
-
-  echo '"'.$filename.'" -> "'.$newname.'"'."\n";
-
-  
-  if (file_exists($newname)) {
-    echo 'File exists.'."\n";
+foreach ($o as $oldfullpath) {
+  $oldfullpath = realpath($oldfullpath);
+  if ($oldfullpath === false) {
+    echo 'Error: Failed reading real path for "'.$oldfullpath.'"'."\n";
     die(1);
   }
-  
-  rename($filename, $newname);
+
+  $dir = dirname($oldfullpath);
+  $filename = basename($oldfullpath);
+
+  if (strpos($dir, '/') !== false && substr($dir, -1) !== '/') {
+    $dir .= '/';
+  } else if (strpos($dir, '\\') !== false && substr($dir, -1) !== '\\') {
+    $dir .= '\\';
+  }
+
+  $mtime = filemtime($oldfullpath);
+  if ($mtime === false) {
+    echo 'Error: Failed reading modification time for "'.$oldfullpath.'"'."\n";
+    die(1);
+  }
+  $filename = 'PIC_'.date('Ymd_His', $mtime).'.JPG';
+  $newfullpath = $dir . $filename;
+
+  echo '"'.$oldfullpath.'" -> "'.$newfullpath.'"'."\n";
+
+  if (file_exists($newfullpath)) {
+    echo 'Error: Target file "'.$newfullpath.'" exists already'."\n";
+    die(1);
+  }
+  if ($perform) {
+    rename($oldfullpath, $newfullpath);
+  }
+}
+
+if ($perform === false) {
+  echo 'Use -p to perform changes.'."\n";
 }
 
 ?>
