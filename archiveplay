@@ -1,0 +1,97 @@
+#!/usr/bin/php
+<?php
+
+# find and play media file inside archive file
+# requires 7z and vlc
+# by dotpointer
+
+# changelog
+# 2020-05-04 02:47:00 - first version
+
+$cmd = isset($argv[1]) ? $argv[1] : false;
+if (!$cmd) {
+  echo 'Error: Archive or archive part must be specified'."\n";
+  die(1);
+}
+
+if ($cmd === '-h' || $cmd === '--help') {
+?>
+Find and play media file inside archive file
+
+Requires 7z and VLC
+
+Usage: <?php echo basename(__FILE__) ?> <option|archive-file-containing-media-file>
+
+Options:
+  -h, --help
+    Print this help
+<?php
+  die();
+}
+
+$archive = $cmd;
+echo 'Archive: '.$archive."\n";
+
+# take part instead if possible
+if (substr($archive, -5) !== '.part') {
+  if (file_exists($archive.'.part')) {
+    echo 'Archive: '.$archive.' -> '.($archive.'.part')."\n";
+    $archive = $archive.'.part';
+  }
+}
+
+# get file list from archive
+$cmd = '7z l '.escapeshellarg($archive);
+echo 'Running: '.$cmd."\n";
+$listing = shell_exec($cmd);
+
+# find the file list beginning and end and narrow selection to it
+$delimiter = '------------------- ----- ------------ ------------  ------------------------';
+$start = strpos($listing, $delimiter);
+if ($start === false) {
+  echo '7z list delimiter not found'."\n";
+  die(1);
+}
+$start += strlen($delimiter);
+$end = strrpos($listing, $delimiter);
+$listing = trim(substr($listing, $start, $end - $start));
+
+# match list row
+$pattern = '/\d{3}\d+\-\d\d\-\d\d \d{2}:\d{2}:\d{2}\s+\.*\s+\d+\s+\d+\s+(.*)/';
+preg_match_all($pattern, $listing, $matches);
+
+$media_exts = array('264', '264', '3g2', '3gp', '3gp2', '3gpp',
+  '3gpp2', 'aaf', 'asf', 'asx', 'avi', 'divx', 'dvx', 'flac', 'flv',
+  'h264', 'm4e', 'm4u', 'm4v', 'mjpeg', 'mkv', 'mov', 'mp2', 'mp3',
+  'mp4', 'mp4v', 'mpe', 'mpeg', 'mpeg1', 'mpeg2', 'mpeg4', 'mpg',
+  'mpg2', 'mpg4', 'mpv', 'ogg', 'ogv', 'ogx', 'opus', 'swf', 'webm',
+  'wmv', 'xvid'
+);
+
+# check rows for matching file
+$found = false;
+foreach ($matches[1] as $filename) {
+  $filename = trim($filename);
+  echo 'Checking '.$filename.'...';
+  if (strpos($filename, '.') === false) {
+    echo 'no extension, skipping'."\n";
+    continue;
+  }
+  $ext = strtolower(substr($filename, strrpos($filename, '.') + 1));
+  if (!in_array($ext, $media_exts)) {
+    echo 'extension not matching, skipping'."\n";
+  }
+  echo 'match'."\n";
+  $found = $filename;
+  break;
+}
+
+if (!$found) {
+  echo 'No matching media files found'."\n";
+  die(1);
+}
+
+$cmd = '7z e -so '.escapeshellarg($archive).' '.escapeshellarg($found).' | vlc - &';
+echo 'Running: '.$cmd."\n";
+exec($cmd);
+?>

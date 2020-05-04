@@ -73,6 +73,9 @@ Enjoy the commands in a Linux shell, script or a cronjob.
 
 ## Command list
 
+### archiveplay
+Find and play media file inside archive file.
+
 A list of available commands, some may not be listed here,
 also have a look in the installation directory.
 ### autogit
