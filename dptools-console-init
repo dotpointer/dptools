@@ -33,6 +33,7 @@
 # 2019-06-14 20:36:39 - adding vmsetuuid alias
 # 2019-06-19 23:18:00 - adding alias
 # 2019-07-14 14:30:00 - excluding xterm from beep settings
+# 2020-03-14 15:32:00 - adding alias
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" && "$TERM" != "xterm" ]]; then
@@ -80,6 +81,7 @@ alias edit='jed';
 alias edt='edit';
 alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
 # alias funk="function gd() { echo $1; } gd;";
+alias g='git';
 alias gitdiffnow='git diff origin/master';
 alias glance='glances';
 alias got='git';
