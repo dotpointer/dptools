@@ -231,6 +231,10 @@ Replace PHP short tags (<?) with the longer recommended version (<?php). Made in
 Validates and publishes content from an internal project directory to a public directory
 by reading a `.dptools` configuration file in the project root folder. Made in PHP.
 
+### replaceinfiles
+
+Replace a string in all matching files recursively.
+
 ### sortbymodify
 
 Sort files into date subdirectories, based on the modify time of the files. Made in PHP.

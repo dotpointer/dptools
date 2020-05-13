@@ -1,0 +1,31 @@
+#!/usr/bin/php
+<?php
+# changelog
+# 2017-09-07 12:33:20 - bash version
+
+if (!isset($argv[1], $argv[2])) {
+	echo 'Search text and replacement text must be given.'."\n";
+	die(1);
+}
+
+# find . -type f -exec sed "s/$1/$2/g" {} \;
+# find . -type f | xargs sed --quiet "s/$1/$2/gp"
+
+function escape ($t) {
+	return str_replace(array(
+		'/',
+		'.',
+		'-'
+	), array(
+		'\/',
+		'\.',
+		'\-'
+	), $t);
+}
+
+# search and replace
+$c = 'find . -type f -exec sed -i "s/'.escape($argv[1]).'/'.escape($argv[2]).'/g" {} \;';
+shell_exec($c);
+
+echo 'Ran: '.$c."\n";
+?>
