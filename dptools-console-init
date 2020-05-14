@@ -34,6 +34,7 @@
 # 2019-06-19 23:18:00 - adding alias
 # 2019-07-14 14:30:00 - excluding xterm from beep settings
 # 2020-03-14 15:32:00 - adding alias
+# 2020-05-14 02:45:00 - adding iptraf
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" && "$TERM" != "xterm" ]]; then
@@ -89,7 +90,8 @@ alias got='git';
 alias iostat='iostat -m';
 alias ipcfg='ifconfig';
 alias ipconfig='ifconfig';
-alias iptraffic='iptraf';
+alias iptraf='iptraf-ng';
+alias iptraffic='iptraf-ng';
 alias jed='vi';
 alias jpegtran='jpegtran -copy all';
 alias jsonlint='python -m json.tool <';
