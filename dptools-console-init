@@ -86,7 +86,10 @@ alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
 alias g='git';
 alias gitbranchfiles='git diff --name-only master';
 alias gitdiffnow='git diff origin/master';
-alias gitresetfile='git checkout origin/master "$1"';
+function git_reset_file() {
+  git checkout origin/master "$1"
+}
+alias gitresetfile=git_reset_file;
 alias gitstats='git diff master --stat';
 alias glance='glances';
 alias got='git';
