@@ -36,6 +36,7 @@
 # 2020-03-14 15:32:00 - adding alias
 # 2020-05-14 02:45:00 - adding iptraf
 # 2020-05-15 12:08:00 - adding git commands
+# 2021-01-03 20:54:00 - adding ncget and ncoffer
 
 # is TERM variable defined, ssh sets it to dump when using scp
 if [[ -n "$TERM" && "$TERM" != "dumb" && "$TERM" != "xterm" ]]; then
@@ -118,6 +119,22 @@ alias lynx='lynx -accept_all_cookies';
 alias mmesg='cat /var/log/messages';
 alias move='mv -i';
 alias mysqlrepair='mysqlcheck --all-databases --auto-repair --check -u root -p';
+function ncget() {
+  if [ -z "${1}" ] || [ -z "${2}" ]; then
+    echo "Usage: ${0} <host> <output file to write to>";
+    exit 1;
+  fi
+  nc "${1}" 5555 | pv > "${2}"
+}
+alias ncget=ncget;
+function ncoffer() {
+  if [ -z "${1}" ]; then
+    echo "Usage: ${0} <input file to read from>";
+    exit;
+  fi
+  cat "${1}" | pv | nc -l -p 5555;
+}
+alias ncoffer=ncoffer;
 alias out='logout';
 alias phpcheck='php -l';
 alias phpc='php -l';
