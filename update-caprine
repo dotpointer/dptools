@@ -3,6 +3,7 @@
 
 # changelog
 # 2019-08-20 00:00:00 initial version
+# 2021-01-05 21:45:00 get latest release data
 
 define('VERBOSE_NONE', 0);
 define('VERBOSE_ERROR', 1);
@@ -110,13 +111,31 @@ if (!$force && file_exists($cache) && filemtime($cache) > time() - $downloadtime
 }
 touch($cache);
 
-# fetch latest release details
-cl('Getting latest releaste details', VERBOSE_INFO);
-$latest = file_get_contents('https://github.com/sindresorhus/caprine/releases/download/v2.36.0/latest-linux.yml');
-if ($latest === false) {
+# access denied returned with file_get_contents
+exec('curl https://api.github.com/repos/sindresorhus/caprine/releases/latest', $latest, $r);
+if ($latest === false || $r !== 0) {
   cl('Failed getting latest release details');
   die(1);
 }
+$latest = json_decode(implode("\n", $latest), true);
+
+if ($latest === NULL) {
+  cl('Failed decoding latest release JSON data');
+  die(1);
+}
+
+$latest_linux_yml = false;
+
+foreach ($latest['assets'] as $asset) {
+  var_dump($asset);
+  if ($asset['name'] === 'latest-linux.yml') {
+    $latest_linux_yml = $asset['browser_download_url'];
+  }
+}
+
+# fetch latest release details
+cl('Getting latest releaste details', VERBOSE_INFO);
+$latest = file_get_contents($latest_linux_yml);
 
 /*
 $latest="
