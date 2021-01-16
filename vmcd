@@ -1,7 +1,7 @@
-#!/bin/bash
-
+#!/usr/bin/php
+<?php
 # vmcd
-# set machine optical SATA device disc
+# attach or detach disk on the first suitable storage controller device
 # by robert klebe, dotpointer
 
 # changelog
@@ -9,22 +9,89 @@
 # 2018-06-29 16:15:00 - cleanup
 # 2018-07-19 19:29:34 - indentation change, tab to 2 spaces
 # 2019-06-13 19:39:36 - forcing unmount by default
+# 2021-01-17 00:12:00 - php version to find the appropriate device
 
-NAME=$1
-MEDIUM=$2
-if [ -z "$NAME" ]; then
-  echo "Name of VM must be given, path to disk can be given.";
-  exit 1;
-fi
+$name = isset($argv[1]) ? $argv[1] : false;
+$medium = isset($argv[2]) ? $argv[2] : false;
 
-if [ -z "$MEDIUM" ]; then
-  MEDIUM='emptydrive'
-fi
+if ($name === false || !strlen($name)) {
+  echo 'Name of VM must be given, path to disk can be given.';
+  exit(1);
+}
+
+if ($medium === false || !strlen($medium)) {
+  $medium = 'emptydrive';
+}
 
 # list and scan for VM:s
-VMS=$(VBoxManage list vms)
-if [[ ! $VMS == *"$1"* ]]; then
-  echo "VM $1 not found.";
-fi
+exec('VBoxManage list vms', $vms, $r);
 
-VBoxManage storageattach "$NAME" --storagectl "SATA Controller" --port 1 --device 0 --type dvddrive --medium $MEDIUM -f
+if (in_array($name, $vms)) {
+  echo "VM $name not found.";
+  exit(1);
+}
+
+exec("VBoxManage showvminfo $name", $info, $r);
+
+$controllers = array();
+$devices = array();
+
+foreach ($info as $line) {
+  # collect names
+  if (strpos($line, 'Storage Controller Name (') !== false) {
+    $controllers[] = trim(substr($line, strpos($line, ':') + 1));
+  }
+  # walk controllers
+  foreach ($controllers as $controller) {
+    # check if the controller is on this line
+    if (strpos($line, $controller.' (') !== false) {
+        $n1 = substr($line, strpos($line, ' (') + 2);
+        $n2 = $n1;
+        $n1 = substr($n1, 0, strpos($n1, ','));
+        $n2 = substr($n2, strpos($n2, ', ') + 2);
+        $n2 = substr($n2, 0, strpos($n2, ')'));
+        $mounted = trim(substr($line, strpos($line, ':') + 1));
+        $mounted_ext = false;
+        if ($mounted !== 'Empty') {
+          $mounted = substr($mounted, 0, strrpos($mounted, ' ('));
+          $mounted_ext = $mounted;
+          if (strpos($mounted_ext, '.') !== false) {
+            $mounted_ext = strtolower(substr($mounted_ext, strrpos($mounted_ext, '.') + 1));
+          }
+        }
+        $devices[] = array(
+          'controller' => $controller,
+          'n1' => $n1,
+          'n2' => $n2,
+          'mounted' => $mounted,
+          'mounted_ext' => $mounted_ext
+        );
+    }
+  }
+}
+# walk devices to change the first one
+foreach ($devices as $device) {
+  if (
+    $device['mounted'] === 'Empty' ||
+    !in_array($device['mounted_ext'], array('qed', 'qow', 'vdi', 'vhd', 'vhdx', 'vmdk'))
+  ) {
+    if ($medium === 'emptydrive') {
+      if ($device['mounted_ext'] === false) {
+        echo $name.', '.$device['controller'].' ('.$device['n1'].', '.$device['n2'].') is already empty.'."\n";
+        exit(0);
+      }
+      echo 'Detaching medium from '.$name.', '.$device['controller'].' ('.$device['n1'].', '.$device['n2'].')'."\n";
+    } else {
+      if (realpath($device['mounted']) === realpath($medium)) {
+        echo $medium.' is already attached to '.$name.', '.$device['controller'].' ('.$device['n1'].', '.$device['n2'].')'."\n";
+        exit(0);
+      }
+      echo 'Attaching '.$medium.' to '.$name.', '.$device['controller'].' ('.$device['n1'].', '.$device['n2'].')'."\n";
+    }
+    exec('VBoxManage storageattach '.escapeshellarg($name).' --storagectl '.escapeshellarg($device['controller']).' --port '.(int)$device['n1'].' --device '.(int)$device['n2'].' --type dvddrive --medium '.escapeshellarg($medium).' -f', $o, $r);
+    exit($r);
+  }
+}
+
+echo 'Error: failed finding suitable device to attach or detach on '.$name."\n";
+exit(1);
