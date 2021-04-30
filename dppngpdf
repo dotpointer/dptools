@@ -17,6 +17,7 @@
 # 2019-05-15 18:48:00 - adding meta-scanner and meta-no-scanner
 # 2019-05-17 18:57:00 - editing scanmeta format, removing meta-no-scanner
 # 2019-05-17 22:06:00 - removing debug output
+# 2021-04-30 21:00:41 - adding pdfnometa
 
 /**
  * array_merge_recursive does indeed merge arrays, but it converts values with duplicate
@@ -312,7 +313,8 @@ Options:
       metasync, to write changes in the metadata file to the file EXIF data.
       Suggested workflow: run metakeep, edit files, run metasync.
 
-      pdf, to write PNG files to a PDF. Use -o <filename> to set name.
+      pdf / pdfnometa, to write PNG files to a PDF. Use -o <filename> to set name.
+      Use pdfnometa to skip metadata in PDF description.
 
       pdfextract, to write PNG files from a PDF. Use -i <filename> to specify PDF.
 
@@ -938,10 +940,13 @@ switch ($config['action']) {
 
     break;
   case 'pdf':
-    $pdf_exifdata = array(
-      array(), # index 0 = container
-      array()  # index 1 = files
-    );
+  case 'pdfnometa':
+    if ($config['action'] === 'pdf') {
+      $pdf_exifdata = array(
+        array(), # index 0 = container
+        array()  # index 1 = files
+      );
+    }
 
     $files = getfiles();
 
@@ -951,11 +956,15 @@ switch ($config['action']) {
     }
 
     foreach ($files as $v) {
-      $image_exifdata = getexifdata($v);
-      # make sure each file has some meta data
-      if (!count($image_exifdata)) {
-        echo 'File missing exif meta data, will not continue, run meta or adjust: '.$v."\n";
-        die(1);
+      if ($config['action'] === 'pdf') {
+        $image_exifdata = getexifdata($v);
+        # make sure each file has some meta data
+        if (!count($image_exifdata)) {
+          echo 'File missing exif meta data, will not continue, run meta or adjust: '.$v."\n";
+          die(1);
+        }
+
+        $pdf_exifdata[1][] = $image_exifdata;
       }
 
       # make sure no edited versions are available
@@ -963,8 +972,6 @@ switch ($config['action']) {
         echo 'Edited versions of file exist, run comply or drop: '.$v."\n";
         die(1);
       }
-
-      $pdf_exifdata[1][] = $image_exifdata;
     }
     # prepare
     $imtmpfile = '.dppngpdf-tmp';
@@ -984,8 +991,10 @@ switch ($config['action']) {
     exec($c, $o, $r);
     unlink($imtmpfile);
     clearstatcache();
-    $pdf_exifdata[0][] = array(tzdate(filemtime($output)), getversion('imagemagick'), $cexif);
-    setexifdata($output, $pdf_exifdata);
+    if ($config['action'] === 'pdf') {
+      $pdf_exifdata[0][] = array(tzdate(filemtime($output)), getversion('imagemagick'), $cexif);
+      setexifdata($output, $pdf_exifdata);
+    }
     break;
 }
 ?>
