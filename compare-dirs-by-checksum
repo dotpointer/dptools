@@ -1,0 +1,105 @@
+#!/usr/bin/php
+<?php
+
+# check if files in reference directory exists in check directory by checksum
+# by dotpointer
+
+# changelog
+# 2021-05-05 18:48:00 - first version
+
+function lineecho($text) {
+  echo "\n".$text."\n".str_repeat('-', strlen($text))."\n";
+}
+
+$refdir = isset($argv[1]) ? $argv[1] : false;
+$checkdir = isset($argv[2]) ? $argv[2] : false;
+
+if ($refdir === '-h') {
+  echo 'Check if files in reference directory exists in check directory by checksum'."\n";
+  echo 'Usage: '.basename($argv[0]).' <reference directory> <check directory>'."\n";
+  exit;
+}
+
+if (!$refdir || !$checkdir || !is_dir($refdir) || !is_dir($checkdir)) {
+  echo 'Reference and check directory must be specified.'."\n";
+  exit(1);
+}
+
+echo 'Finding files in reference '.$refdir.'...';
+
+$c = 'find '.escapeshellarg($refdir).' -type f';
+exec($c, $reffiles, $r);
+if ($r !== 0) {
+  echo 'Failed '.$c."\n";
+  exit(1);
+}
+
+sort($reffiles);
+
+echo count($reffiles)."\n";
+
+echo 'Checksumming files in reference '.$refdir.'...';
+
+foreach ($reffiles as $k => $v) {
+  $reffiles[$k] = array(
+    'file' => $v,
+    'md5' => md5_file($v),
+    'matches' => array()
+  );
+}
+
+echo 'done'."\n";
+
+echo 'Finding files in check directory '.$checkdir.'...';
+
+$c = 'find '.escapeshellarg($checkdir).' -type f';
+exec($c, $checkfiles, $r);
+if ($r !== 0) {
+  echo 'Failed '.$c."\n";
+  exit(1);
+}
+
+sort($checkfiles);
+
+echo count($checkfiles)."\n";
+
+lineecho('Files in BOTH directories:');
+# walk check files to checksum and compare against reference files
+foreach ($checkfiles as $k => $v) {
+  $checkfiles[$k] = array(
+    'file' => $checkfiles[$k],
+    'md5' => md5_file($checkfiles[$k]),
+    'matches' => array()
+  );
+  # walk reference files to find matching md5 in check files
+  foreach ($reffiles as $refk => $refv) {
+    if ($checkfiles[$k]['md5'] === $refv['md5']) {
+      echo $refv['file'].' -> '.$checkfiles[$k]['file']."\n";
+      $checkfiles[$k]['matches'][] = $checkfiles[$k]['file'];
+      $reffiles[$refk]['matches'][] = $checkfiles[$k]['file'];
+    }
+  }
+  # check if all files are matched in reference
+  $all_files_matched = true;
+  foreach ($reffiles as $refv) {
+    if (!count($refv['matches'])) {
+      $all_files_matched = false;
+      break;
+    }
+  }
+  # stop if all files in reference are matched
+  if ($all_files_matched) {
+    echo 'All files in reference matched'."\n";
+    exit;
+  }
+}
+
+lineecho('Files ONLY in reference:');
+foreach ($reffiles as $v) {
+  if (count($v['matches'])) {
+    continue;
+  }
+  echo $v['file']."\n";
+}
+
+?>

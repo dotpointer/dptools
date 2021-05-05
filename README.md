@@ -115,6 +115,12 @@ lines. Made in PHP.
 
 Clear EXIF data in (image) files. Made in PHP.
 
+### compare-dirs-by-checksum
+
+Check if files in a reference directory exists in a check directory by checksum.
+Handy to check if files in one folder also exists in another folder regardless
+of what the filenames are. Made in PHP.
+
 ### datekeeper
 
 Store and restore modify dates on files in a directory. Run it, edit the files
