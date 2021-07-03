@@ -458,9 +458,10 @@ switch ($config['action']) {
     $files = getfiles();
 
     foreach ($files as $fileindex => $file) {
+      echo $fileindex.': '.$file."\n";
       # get settings for this file, if there are any
       $level = isset($config['levels'][$fileindex]) ? explode(':',$config['levels'][$fileindex]) : $config['default_level'];
-      $grayscale = isset($config['grayscales'][$fileindex]) && (int)$config['grayscales'][$fileindex] === 1;
+      $grayscale = in_array($fileindex, $config['grayscales']);
 
       $already_level = false;
       $already_grayscale = false;
