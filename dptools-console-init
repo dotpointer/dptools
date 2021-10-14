@@ -50,6 +50,8 @@ fi
 PATH="$PATH:/var/scripts:/opt/dptools:/usr/sbin:/sbin"
 
 alias addgroup='groupadd';
+alias apt-update='apt update';
+alias apt-upgrade='apt upgrade';
 alias apt-install='apt install';
 alias array='cat /proc/scsi/rr172x/0';
 alias backupdir='tar -cvzf';
