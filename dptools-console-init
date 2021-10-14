@@ -67,6 +67,7 @@ alias copy='cp -i -a';
 alias correctlibreoffice='sudo sed -i "s/X-GIO-NoFuse=true/X-GIO-NoFuse=false/" /usr/share/applications/libreoffice-*';
 alias cp='cp -a';
 # alias date='date +"%n DATE: %Y-%m-%d%n TIME: %H:%M:%S%n"';
+alias debian-version='lsb_release -a';
 alias delbackups='rm ./*~ 2> /dev/null; rm ./.*~ 2> /dev/null';
 alias delete='rm -i';
 alias del='rm -i';
