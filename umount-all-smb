@@ -1,0 +1,53 @@
+#!/usr/bin/php
+<?php
+
+# umount all samba shares
+# by robert klebe, dotpointer
+
+# change log
+# 2021-11-15 15:23:00 - initial version
+
+$mounts = array();
+
+# get mounts
+$c = 'gio mount --list';
+exec($c, $o, $r);
+
+if ($r !== 0) {
+  echo 'Failed: '.$c.', return: '.$r.', output: '.implode("\n", $o)."\n";
+  exit($r);
+}
+
+# walk mounts
+$return = 0;
+foreach ($o as $line) {
+
+  # not smb - go next
+  if (strpos($line, 'smb://') === false) {
+    continue;
+  }
+
+  # get arrow position
+  $arrow = strpos($line, '->');
+  if ($arrow === false) {
+    continue;
+  }
+
+  # get only path
+  $line = substr($line, $arrow + 3);
+
+  # umount it
+  $c2 = 'gio mount -u '.escapeshellarg($line);
+  exec($c2, $o2, $r2);
+  if ($r2 !== 0) {
+    echo 'Failed: '.$c2.', return: '.$r2.', output: '.implode("\n", $o2)."\n";
+    if ($return === 0) {
+      $return = $r2;
+    }
+  }
+  unset($o2, $r2);
+}
+
+exit($return);
+
+?>
