@@ -1,0 +1,195 @@
+#!/usr/bin/php
+<?php
+
+# suffixrenamer - add or remove suffixes on filenames
+# by dotpointer
+
+# changelog
+# 2022-01-19 12:46:00
+
+$opts = getopt('a:f:hpr:');
+
+$addsuffix = false;
+$filename = '*';
+$perform = false;
+$removesuffix = false;
+
+foreach ($opts as $k => $v) {
+  switch ($k) {
+    case 'a':
+      $addsuffix = $v;
+      break;
+
+    case 'f':
+      $filename = $v;
+      break;
+    case 'h':
+?>Usage: <?php echo basename(__FILE__) ?> <options>
+
+Add or remove suffixes on filenames
+
+Options:
+
+-a <suffix>
+  Add suffix, exclude . in suffix
+  Example: "ext", renames filename.example to filename.ext.example
+
+-r <suffix>
+  Remove suffix, exclude . in suffix
+  Example: "ext", renames filename.ext.example to filename.example
+
+-f <filename>
+  Filename to edit, can be a wildcard or path, default is "*"
+  Example: "*", searches for all files
+  Example: "*.ext", searches for all .ext files
+
+-h
+  Print this information.
+
+-p
+  Perform changes, will otherwise not make changes.
+
+<?php
+      exit;
+    case 'p':
+    $perform = true;
+      break;
+    case 'r':
+      $removesuffix = $v;
+      break;
+  }
+}
+
+if ($filename === false || ($addsuffix === false && $removesuffix === false)) {
+  echo 'Error, no rename actions specified, please use -h for options.'."\n";
+  exit(1);
+}
+
+$c = 'find . -type f -iname '.escapeshellarg($filename);
+exec($c, $o, $r);
+
+if ($r!==0) {
+  echo 'Command failed: '.$c."\n";
+  echo 'Output: '.implode("\n", $o)."\n";
+  echo 'Returned '.$r."\n";
+  exit;
+}
+$files = $o;
+
+$filesfound = 0;
+$filesfailed = 0;
+$filesrenamed = 0;
+$filesalreadyadded = 0;
+$filesalreadyremoved = 0;
+
+$newfilelist = array();
+
+foreach ($files as $inpath) {
+  if ($inpath === '.' || $inpath === '..') {
+    continue;
+  }
+  $dir = dirname($inpath);
+  if (substr($dir, -1) !== '/') {
+    $dir .= '/';
+  }
+  $out = basename($inpath);
+  if ($out === '.' || $out === '..') {
+    continue;
+  }
+
+  $filesfound++;
+
+  $filemtime = filemtime($inpath);
+  $filesize = filesize($inpath);
+
+  if ($filemtime === false) {
+    echo 'ERROR, COULD NOT READ FILE MOD TIME: '.$inpath."\n";
+    continue;
+  }
+  if ($filesize === false) {
+    echo 'ERROR, COULD NOT READ SIZE: '.$filesize."\n";
+    continue;
+  }
+
+  if ($addsuffix !== false) {
+
+    if(strpos($out, '.'.$addsuffix) === false) {
+      # no . in filename
+      if (strpos($out, '.') === false) {
+        $out .= '.'.$addsuffix;
+      # . in filename
+      } else if (strpos($out, '.') !== false ) {
+        # . is last character
+        if (strpos($out, '.') === strlen($out) - 1) {
+          $out .= $addsuffix;
+        } else {
+          $start = substr($out, 0, strrpos($out, '.'));
+          $end = substr($out, strrpos($out, '.'));
+          $out = $start.'.'.$addsuffix.$end;
+        }
+      }
+    } else {
+      $filesalreadyadded++;
+    }
+  }
+
+  # remove and .suffix in filename
+  if ($removesuffix !== false) {
+      if (strpos($out, '.'.$removesuffix) !== false) {
+      $out = str_replace('.'.$removesuffix, '', $out);
+      if (strlen($out) < 1 || $out === '.' || $out === '..') {
+        echo 'CANNOT RENAME: '.$inpath."\n";
+        $filesfailed++;
+        continue;
+      }
+    } else {
+      $filesalreadyremoved++;
+    }
+  }
+  if ($inpath === $dir.$out) {
+    continue;
+  }
+
+  echo 'RENAME: "'.$inpath.'" -> "'.$dir.$out."\"\n";
+  if (file_exists($out) || in_array($dir.$out, $newfilelist)) {
+      echo 'ERROR, FILE EXISTS: '.$out."\n";
+      $filesfailed++;
+      continue;
+  }
+
+  $filesrenamed++;
+
+  if ($perform) {
+    if (!rename($inpath, $dir.$out)) {
+      echo 'ERROR, RENAME FAILED: "'.$inpath.'" -> "'.$dir.$out."\"\n";
+      $filesfailed++;
+      continue;
+    }
+    if ($filemtime !== filemtime($dir.$out)) {
+      echo 'ERROR, FILE MOD TIME CHANGED: '.date('Y-m-d H:i:s', $filemtime).' -> '.date('Y-m-d H:i:s', filemtime($dir.$out))."\n";
+      $filesfailed++;
+    }
+    if ($filesize !== filesize($dir.$out)) {
+      echo 'ERROR, FILE SIZE CHANGED: '.date('Y-m-d H:i:s', $filemtime).' -> '.date('Y-m-d H:i:s', filemtime($dir.$out))."\n";
+      $filesfailed++;
+    }
+  }
+  $newfilelist[] = $dir.$out;
+}
+
+echo $filesfound.' found, ';
+if ($addsuffix !== false) {
+  echo $filesalreadyadded.' with suffix, ';
+}
+if ($removesuffix !== false) {
+  echo $filesalreadyremoved.' without suffix, ';
+}
+echo $filesfailed.' failed, ';
+echo $filesrenamed.' renamed'."\n";
+if (!$perform) {
+  echo 'Note: dry-run mode, add -p to perform changes.'."\n";
+}
+
+exit($filesfailed > 0 ? 1 : 0);
+
+?>
