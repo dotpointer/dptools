@@ -75,7 +75,7 @@ if ($r!==0) {
   exit;
 }
 $files = $o;
-
+asort($files);
 $filesfound = 0;
 $filesfailed = 0;
 $filesrenamed = 0;

@@ -86,6 +86,7 @@ alias dos2unix='dos2unix -k'
 alias edit='jed';
 alias edt='edit';
 alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
+alias fz='filezilla &';
 # alias funk="function gd() { echo $1; } gd;";
 alias g='git';
 alias gitbranchfiles='git diff --name-only master';
