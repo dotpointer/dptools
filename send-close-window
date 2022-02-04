@@ -1,0 +1,25 @@
+#!/bin/bash
+# changelog
+# 2019-09-02 00:05:35 initial version
+# 2020-02-26 11:40:01
+# 2021-10-15 00:15:00 - xdotool fails to send Ctrl+W to Firefox tabs, it reaches the outer window only, switching to xvkbd
+# to check key names run xev -event keyboard
+# 2021-11-15 21:15:00 - adding cases
+
+export DISPLAY=:0.0
+WND=$(xdotool getwindowfocus);
+TITLE=$(xdotool getwindowname $WND);
+sleep 0.1
+# xdotool key "Control_L+W"
+# xdotool key "Ctrl+W"
+# sleep 0.1
+# xdotool key "Escape"
+
+if [[ $TITLE == *"Kalkylator"* ]]; then
+  xdotool key --window $WND "Alt+F4"
+  exit;
+fi
+
+
+xvkbd -xsendevent -text '\Cw'
+

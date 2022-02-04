@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# changelog
+# 2019-09-11 12:36:40 initial version
+# 2021-10-18 00:48:00 debian 11, it refuses again
+dconf write /org/mate/desktop/keybindings/custom3/binding "'disabled'"
+sleep 3
+dconf write /org/mate/desktop/keybindings/custom3/binding "'section'"
