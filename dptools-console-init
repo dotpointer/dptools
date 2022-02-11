@@ -180,6 +180,7 @@ function set_vmsetuuid() {
 alias vmsetuuid=set_vmsetuuid;
 alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
+alias vscode="code";
 alias vwdial="wvdial";
 
 # this will not work when xsession/mdm tries to read the config
