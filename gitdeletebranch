@@ -1,0 +1,26 @@
+# delete a branch both locally and remotely
+
+# changelog
+# 2017-03-16 11:03:00 - initial version
+# 2017-04-11 11:39:58
+# 2018-07-12 16:41:00 - remote branch check
+
+# switch to master
+git checkout master
+
+# delete branch locally
+echo "Deleting branch $1 locally.";
+git branch -d $1
+if [ $? -ne 0 ]; then
+	exit 1;
+fi
+
+# check if it exists remotely
+#REMOTE=$(git branch -v -a|grep "remotes/origin/$1");
+
+#if [ -z "$REMOTE" ]; then
+#        echo "Not deleting branch $1 locally, because it did not exist.";
+#else
+echo "Deleting branch $1 remotely.";
+git push origin --delete $1
+#fi

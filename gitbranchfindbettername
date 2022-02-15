@@ -1,0 +1,47 @@
+#!/usr/bin/php
+<?php
+
+# changelog
+# 2020-11-11 17:34:39
+
+$wholename = isset($argv[1]) ? $argv[1] : '';
+
+if (!strlen($wholename)) {
+  die(1);
+}
+
+$basename = $wholename;
+# name is something-n...
+if (preg_match('/^.*\-\d+$/', $basename)) {
+  # remove all after the dash
+  $basename = substr($basename, 0, strrpos($basename, '-') + 1);
+# name does not end with a dash
+} else if (substr($basename, -1) !== '-') {
+  # append a dash
+  $basename = $basename.'-';
+}
+
+exec('git branch -va', $o, $r);
+if ($r !== 0) {
+  die(1);
+}
+
+foreach ($o as $k => $line) {
+  $line = trim($line);
+  $line = substr($line, 0, strpos($line, '  '));
+  if (strpos($line, '/') !== false) {
+    $line = substr($line, strrpos($line, '/') + 1, strlen($line) - strrpos($line, '/'));
+  }
+  $o[$k] = $line;
+}
+
+$i=0;
+$tryname = '';
+do {
+  $i++;
+  $tryname = $basename.$i;
+} while (in_array($tryname, $o));
+
+echo $tryname;
+
+?>

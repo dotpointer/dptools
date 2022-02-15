@@ -1,0 +1,28 @@
+#!/usr/bin/php
+<?php
+
+# changelog
+# 2020-02-26 11:40:01
+
+$c = 'git log|grep commit';
+exec($c, $o, $r);
+if ($r !== 0) {
+  echo 'Failed getting commit history. '.implode(' ', $o)."\n";
+  die(1);
+}
+
+foreach ($o as $line) {
+  $line = trim($line);
+  if (preg_match("/commit ([a-zA-Z0-9]+)/i", $line, $matches)) {
+    unset($c2, $o2, $r2);
+    $c2 = 'git show '.escapeshellarg($matches[1]);
+    $commit = shell_exec($c2);
+    if ($commit === false) {
+      echo 'Failed reading commit '.$matches[1]."\n";
+      die(1);
+    }
+    echo $commit;
+  }
+}
+
+?>

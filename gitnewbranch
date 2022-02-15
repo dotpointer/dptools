@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# changelog
+# 2017-03-15 15:14:00 - first version
+# 2018-07-31 14:43:00 - adding root check
+# 2018-08-11 10:21:00 - adding remote name check
+# 2018-10-16 13:17:00 - adding name keyword check
+# 2019-02-25 11:32:00 - adding allowance to create branch even if it exists
+# 2020-04-23 16:23:50
+# 2020-11-11 17:12:00 - adding better name finder
+# 2022-02-15 13:10:00 - no gh and rm prefixes
+
+ME=$(whoami);
+
+if [[ $ME == "root" ]]; then
+  echo "Cannot make branches as root.";
+  exit 1;
+fi
+
+NAME=$1;
+# make sure gh (GitHub) or rm (Redmine) is in the name, otherwise warn
+#if [[ ! $NAME == *"gh"* ]] && [[ ! $NAME == *"rm"* ]]; then
+#  read -p "Missing keywords gh and rm in branch name. Do you really want to continue? [y/n] " -n 1 -r;
+#  echo;
+#  if [[ ! $REPLY =~ ^[Yy]$ ]]
+#  then
+#    echo "Stopping, not creating the branch.";
+#    [[ "$0" = "$BASH_SOURCE" ]] && exit 1 || return 1 # handle exits from shell or function but don't exit interactive shell
+#  fi
+#fi
+
+# if the better name finder is available then run it
+if [[ -x "$(command -v gitbranchfindbettername)" ]]; then
+  BETTERNAME=$(gitbranchfindbettername "$NAME");
+  if [[ -n "$BETTERNAME" ]] && [[ "$NAME" != "$BETTERNAME" ]]; then
+    read -p "Will use $BETTERNAME instead, press [n] to use $NAME anyway: " -n 1 -r;
+      echo;
+      if [[ ! $REPLY =~ ^[Nn]$ ]]
+      then
+        NAME="$BETTERNAME";
+      fi
+  fi
+fi
+
+# problem: this does only check local remote status, a pull is requested
+git branch -v -a|grep "$NAME";
+
+if [ $? -ne 1 ]; then
+  echo 'Found already existing branches with that name or similar by running git branch -v -a.';
+  read -p "Do you really want to use $NAME anyway? [y/n] " -n 1 -r;
+    echo;
+    if [[ ! $REPLY =~ ^[Yy]$ ]]
+    then
+      echo "Stopping, not creating the branch.";
+        [[ "$0" = "$BASH_SOURCE" ]] && exit 1 || return 1 # handle exits from shell or function but don't exit interactive shell
+    fi
+fi
+
+# switch to master, it's based on that
+git checkout master
+# checkout a new branch locally
+git checkout -b $NAME
+# push the new branch remote, if the branch already exists then it will refuse without force
+git push origin $NAME:$NAME --force
+# set it to track the branch upstream
+git push --set-upstream origin $NAME
+# print out what branch that is currently active
+git branch

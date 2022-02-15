@@ -90,6 +90,7 @@ alias fz='filezilla &';
 # alias funk="function gd() { echo $1; } gd;";
 alias g='git';
 alias gitbranchfiles='git diff --name-only master';
+alias gitdelbranch='gitdeletebranch';
 alias gitdiffnow='git diff origin/master';
 function git_reset_file() {
   git checkout origin/master "$1"

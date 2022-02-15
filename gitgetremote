@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# changelog
+# 2020-02-26 11:40:01
+
+git branch $1 remotes/origin/$1
+git checkout $1
+git pull
