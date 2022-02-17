@@ -183,6 +183,10 @@ alias volumedown="amixer -q -c0 set Master 3-%";
 alias volumeup="amixer -q -c0 set Master 3+%";
 alias vscode="code";
 alias vwdial="wvdial";
+function run_x11su() {
+  su - -c "xauth add $(xauth list $DISPLAY); DISPLAY=$DISPLAY /bin/bash";
+}
+alias x11su=run_x11su;
 
 # this will not work when xsession/mdm tries to read the config
 # it does not understand functions
