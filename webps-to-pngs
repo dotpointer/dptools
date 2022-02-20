@@ -1,0 +1,61 @@
+#!/usr/bin/php
+<?php
+
+# changelog
+# 2022-02-19 17:42
+
+$perform = false;
+$opts = getopt('p');
+foreach ($opts as $k => $v) {
+
+  switch ($k) {
+    case 'h':
+    case 'help':
+?>Usage: <?php echo basename(__FILE__) ?> <options>
+
+Options:
+-h, --help
+  Print this information
+-p, --perform
+  Perform changes
+<?php
+      die();
+    case 'p':
+    case 'perform':
+      $perform = true;
+      break;
+  }
+}
+
+$c = 'find . -iname "*.webp" -type f';
+exec($c, $files, $r);
+if ($r) {
+  echo 'Failed: '.$c."\n";
+  exit($r);
+}
+
+foreach ($files as $file) {
+  $newfile = $file.'.png';
+
+  echo $file.' => '.$newfile."\n";
+
+  if (file_exists($newfile)) {
+    echo 'Note, target file exists, skipping make of: '.$newfile."\n";
+  }
+  if (!$perform) continue;
+  $c = 'convert '.escapeshellarg($file).' '.escapeshellarg($newfile);
+  unset($o, $r);
+  exec($c, $o, $r);
+  if ($r) {
+    echo 'Failed: '.$c."\n";
+    exit($r);
+  }
+}
+
+if (!$perform) {
+  if (count($files)) echo "\n";
+  echo 'Run with -p to perform changes.'."\n";
+}
+
+
+?>
