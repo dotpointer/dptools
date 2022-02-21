@@ -127,7 +127,7 @@ if ($latest === NULL) {
 $latest_linux_yml = false;
 
 foreach ($latest['assets'] as $asset) {
-  var_dump($asset);
+  # var_dump($asset);
   if ($asset['name'] === 'latest-linux.yml') {
     $latest_linux_yml = $asset['browser_download_url'];
   }
