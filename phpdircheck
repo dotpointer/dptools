@@ -25,6 +25,7 @@
 # 2018-06-29 14:56:00 - cleanup
 # 2018-06-29 15:13:56
 # 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
+# 2022-02-23 12:07:00 - adding -a, -g, -gp, -h
 
 function progressbar($part, $total) {
 
@@ -36,7 +37,7 @@ function progressbar($part, $total) {
   # calculate the total
   $pb_total = $pb_length;
 
-  return 
+  return
     '['.
     str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
 
@@ -44,7 +45,7 @@ function progressbar($part, $total) {
 
     str_repeat('.', $pb_total - $pb_part).
     '] '.
-    # the first number is the actual amount of characters in the 
+    # the first number is the actual amount of characters in the
     # resulting string, and we want 000.000, so that's 7
     sprintf("%07.3f", ($part > 0 && $total > 0) ? ($part / $total) * 100 : 0, 1).
     '% '.
@@ -55,28 +56,89 @@ function progressbar($part, $total) {
     ;
 }
 
-# check path
-if (!isset($argv[1]) || !file_exists($argv[1]) || !is_dir($argv[1])) {
-  echo 'Path must be specified'."\n";
+if (!isset($argv[1])) {
+    echo 'Option or path must be specified'."\n";
+    exit(1);
+}
+
+# git repo - all files
+if ($argv[1] === '-g') {
+  $c = 'git ls-tree --full-tree -r --name-only HEAD';
+  exec($c, $files, $r);
+  if ($r !== 0) {
+    echo 'Failed: '.$c."\n";
+    exit(2);
+  }
+  if (!count($files)) {
+    echo 'No files found.'."\n";
+    exit(2);
+  }
+# git diff - modified files
+} else if ($argv[1] === '-gp') {
+  $c = 'git status --porcelain';
+  exec($c, $files, $r);
+  if ($r !== 0) {
+    echo 'Failed: '.$c."\n";
+    exit(2);
+  }
+  if (!count($files)) {
+    echo 'No files found.'."\n";
+    exit(2);
+  }
+  foreach ($files as $k => $v) {
+    $files[$k] = substr($v, 3);
+  }
+
+# help
+} else if (in_array($argv[1], array('-h', '--help'))) {
+?>Usage: <?php echo basename(__FILE__) ?> <directory|options>
+
+Options:
+-a
+  Check all files in the current directory, not only .php files
+
+-g
+  Check all files in a git repository in the current directory
+  (git ls-tree --full-tree -r --name-only HEAD)
+
+-gp
+  Check modified files in a git repository in the current directory
+  (git diff --porcelain)
+
+-h, --help
+  Print this information
+<?php
   exit(1);
+
+# -a or path
+} else {
+
+  if ($argv[1] === '-a') {
+    $path = '.';
+  } else {
+    $path = $argv[1];
+  }
+  if (!file_exists($path) || !is_dir($path)) {
+    echo 'Directory does not exist: '.$path."\n";
+    exit(1);
+  }
+  # set working dir
+  chdir($path);
+
+  # do a find on the dir
+  $cmd = 'find '.escapeshellarg($path).($argv[1] === '-a' ? '' : ' -iname "*.php"');
+  $files = shell_exec($cmd);
+  if (!$files) {
+    echo 'No files found.'."\n";
+    exit(2);
+  }
+  # split the lines by newline
+  $files = explode("\n", trim($files));
 }
 
-# set working dir
-chdir($argv[1]);
-
-# do a find on the dir
-$cmd = 'find '.escapeshellarg($argv[1]).' -iname "*.php"';
-$files = shell_exec($cmd);
-if (!$files) {
-  echo 'No files found.'."\n";
-  exit(2);
-}
-
-# split the lines by newline
-$files = explode("\n", trim($files));
 $total = count($files);
 $l = strlen((string)$total);
-echo 'PHP Lint-checking '.$total.' files in '.$argv[1]."\n";
+echo 'PHP Lint-checking '.$total.' files'."\n";
 
 # walk files
 $prevfile = '';
@@ -91,11 +153,11 @@ foreach ($files as $nr => $file) {
   exec($cmd, $o, $r);
 
   if ($r) {
-    echo 'Fail: '.$file."\n";
-    echo (is_array($o) ? trim(implode("\n", $o)) : $o)."\n";   
+    echo "\n".'Fail: '.$file."\n";
+    echo (is_array($o) ? trim(implode("\n", $o)) : $o)."\n";
     exit(3);
   }
-  // echo sprintf('%0'.$l.'d',  ($nr + 1)).'/'.$total.' ('.( sprintf('%03d', round(( ($nr + 1)/$total)*100) )).'%) ok, checked: '.$file."\r";
+  # echo sprintf('%0'.$l.'d',  ($nr + 1)).'/'.$total.' ('.( sprintf('%03d', round(( ($nr + 1)/$total)*100) )).'%) ok, checked: '.$file."\r";
 
   # blank previous line
   echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
