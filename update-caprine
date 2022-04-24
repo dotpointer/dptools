@@ -4,6 +4,7 @@
 # changelog
 # 2019-08-20 00:00:00 initial version
 # 2021-01-05 21:45:00 get latest release data
+# 2022-04-24 12:56:00 updating for latest yml file rename change
 
 define('VERBOSE_NONE', 0);
 define('VERBOSE_ERROR', 1);
@@ -128,8 +129,11 @@ $latest_linux_yml = false;
 
 foreach ($latest['assets'] as $asset) {
   # var_dump($asset);
-  if ($asset['name'] === 'latest-linux.yml') {
+  if ($asset['name'] === 'latest.yml') {
     $latest_linux_yml = $asset['browser_download_url'];
+  } else if ($asset['name'] === 'latest.yml') {
+    $latest_linux_yml = $asset['browser_download_url'];
+    break;
   }
 }
 
