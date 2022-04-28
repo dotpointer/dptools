@@ -44,10 +44,8 @@ if [[ -n "$TERM" && "$TERM" != "dumb" && "$TERM" != "xterm" ]]; then
   # make it shut up even if it fails
   setterm -blength 0 > /dev/null 2>&1
   setterm -bfreq 0 > /dev/null 2>&1
+  xset b off > /dev/null 2>&1
 fi
-
-# disable beep, to check run xset q | grep bell
-xset b off
 
 # path - note that /usr/sbin is included for normal users, otherwise it isn't
 PATH="$PATH:/var/scripts:/opt/dptools:/usr/sbin:/sbin"
