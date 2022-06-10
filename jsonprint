@@ -12,10 +12,12 @@
 
 $filename = isset($argv[1]) ? $argv[1] : false;
 $string = isset($argv[2]) ? $argv[2] : false;
-if ($filename === '--help') {
+if ($filename === '--help' || $filename === '-h') {
 ?>
 Usage:
   <?php echo basename(__FILE__); ?> <filename> [optional/tree/path]
+
+  Substitute <filename> with php://stdin to read stdin.
 <?php
   die(0);
 }
@@ -25,14 +27,17 @@ if ($filename === false) {
   die(1);
 }
 
-if (!file_exists($filename)) {
-  echo 'File not found: '.$filename."\n";
+$f = fopen($filename, "r");
+if (!$f) {
+  echo 'Failed opening file '.$filename."\n";
   die(1);
 }
+while (false !== ($line = fgets($f))) {
+    $data .= $line;
+}
+fclose($f);
 
-$data = file_get_contents($filename);
-
-if (!$data) {
+if (!strlen($data)) {
   echo 'No data could be read from file.'."\n";
   die(1);
 }
