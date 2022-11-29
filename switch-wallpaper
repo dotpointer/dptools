@@ -1,21 +1,35 @@
 #!/usr/bin/php
 <?php
 
-# switch wallpaper
-
-# references:
-# https://github.com/alexsong93/momentum-desktop
-# https://askubuntu.com/questions/655238/as-root-i-can-use-su-to-make-dconf-changes-for-another-user-how-do-i-actually
-# https://unix.stackexchange.com/questions/337819/how-to-export-variable-for-use-with-sudo
-
 # 2018-07-10 18:37:00 first version in bash
 # 2018-07-12 first version in php
 # 2018-07-26 10:25:00 - adding support for extension version number changes
-# 2020-02-26 11:40:01
+# 2020-02-21 20:45:00 - reducing to use unsplash
+# 2020-03-12 14:00:00 - bugfix, files were not writeable for other users
+# 2020-04-27 09:40:00 - adding sleep timeout
+# 2020-06-01 09:56:01
+# 2021-02-16 22:23:00 - updating output filenames
+# 2021-02-16 23:33:00 - updating output filenames, using json log format
+# 2021-10-15 20:09:00 - using mate-screensaver dconf setting to change lock screen image
+# 2022-09-12 14:44:00 - adding wget retry
+#function logit($x) {
+#	file_put_contents('/tmp/log', $x, FILE_APPEND);
+#}
 
 # user in question
-$desktopuser="";
-$currentuser=trim(shell_exec("whoami"));
+$desktopuser = '';
+$currentuser = trim(shell_exec('whoami'));
+
+# check if there is an inet address available, except localhost and ipv6 addresses
+$sleeptimeout = 600;
+$sleepinterval = 5;
+while (strpos(shell_exec('ifconfig|grep inet|grep -v 127|grep -v inet6'), 'inet') === false) {
+  sleep($sleepinterval);
+  $sleeptimeout = $sleeptimeout - $sleepinterval;;
+  if ($sleeptimeout <= 0) {
+    die(1);
+  }
+}
 
 # requires a GUI session program that will always run:
 $process = trim(shell_exec("pgrep -u $desktopuser mate-panel"));
@@ -23,64 +37,104 @@ $process = trim(shell_exec("pgrep -u $desktopuser mate-panel"));
 $daddress = trim(shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'"));
 #$daddress = shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ | tr -d '\0' | sed 's/^[^=]*=//'");
 
-# image source directory
-# $imagedir = "/home/$desktopuser/.config/chromium/Default/Extensions/laookkfknpbbblfpciffpaejjkokdgca/1.0.2_0/backgrounds/";
+$unsplash = 'https://source.unsplash.com/1920x1080/?nature,water,beach,palmtree';
 
-$imagedir = "/home/$desktopuser/.config/chromium/Default/Extensions/laookkfknpbbblfpciffpaejjkokdgca/";
+$redirect = shell_exec('curl -k '.$unsplash);
 
-$items = scandir($imagedir);
-$versionfolders = array();
-foreach ($items as $file) {
-  if (in_array($file, array('.', '..'))) {
-    continue;
-  }
+$redirect = substr($redirect, strpos($redirect, 'href="') + 6);
+$redirect = substr($redirect, 0, strpos($redirect,'"'));
+if (strpos($redirect, '?') !== false) {
+  $redirect = substr($redirect, 0, strpos($redirect, '?'));
+}
 
-  if (
-    strpos($file, '.') !== false &&
-    strpos($file, '_') !== false &&
-    is_dir($imagedir . $file . '/backgrounds/')
-  ) {
-      $versionfolders[] = $file;
+$logfile = '/tmp/wallpaper-log.txt';
+$log = file_exists($logfile) ? file_get_contents($logfile) : array();
+if (is_string($log)) {
+  $log = json_decode($log, true);
+  if ($log === null) {
+    $log = array();
   }
 }
 
-if (!count($versionfolders)) {
-  die('No version folder in '.$imagedir);
-}
+$log['current'] = isset($log['current']) ? $log['current'] : array();
+$log['log'] = isset($log['log']) ? $log['log'] : array();
 
-rsort($versionfolders);
+$dir = '/tmp/';
 
-$imagedir = $imagedir . $versionfolders[0] . '/backgrounds/';
+$file = 'wallpaper_'.date('Y-m-d_His').'.jpg';
 
-$items = scandir($imagedir);
+$image = $dir.$file;
+$delete = array();
+do {
+  unset($c, $o, $r);
+  $c = 'wget --no-check-certificate -O '.escapeshellarg($image).' '.$unsplash;
+  # get random image
+  exec($c, $o, $r);
+} while ($r !== 0);
 
-$itemsfiltered = array();
-foreach ($items as $item) {
-
-  $fullpath = $imagedir.($item);
-
-  if ($item == '.' || $item == '..' || mime_content_type($fullpath) !== 'image/jpeg') {
-    continue;
-  }
-  $imagesize = getimagesize($fullpath);
-  $width = $imagesize[0];
-  $height = $imagesize[1];
-  if ($width >= 1920 && $height > 1200) {
-    $itemsfiltered[] = $fullpath;
-  }
-}
-
-# get random image
-$image = $itemsfiltered[array_rand($itemsfiltered)];
+# chmod($image, 0555);
+# chown($image, 'user');
 
 # set wallpaper for desktop user
-shell_exec('sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'');
+$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'';
+exec($c, $o, $r);
+if ($r !== 0) {
+  echo 'Failed setting desktop wallpaper'."\n";
+  exit($r);
+}
+
+if (isset($log['current'][$desktopuser.':wallpaper'])) {
+  $log['log'][] = array($desktopuser.':wallpaper', $log['current'][$desktopuser.':wallpaper'][0]);
+  $delete[] = $log['current'][$desktopuser.':wallpaper'][1];
+}
+$log['current'][$desktopuser.':wallpaper'] = array($redirect, $file);
 
 # if running as root, then also set lock screen
-if ($currentuser == "root") {
-  # get random image
-  $image = $itemsfiltered[array_rand($itemsfiltered)];
-  shell_exec('ln -s -f '.$image.' /etc/alternatives/desktop-background');
+/*
+if ($currentuser == 'root') {
+  exec('ln -s -f '.$image.' /etc/alternatives/desktop-login-background', $o, $r);
+  if ($r !== 0) {
+    echo 'Failed setting lock screen background'."\n";
+    # continue because of log output
+  } else {
+    if (isset($log['current']['root:lockscreen'])) {
+      $log['log'][] = array('root:lockscreen', $log['current']['root:lockscreen'][0]);
+      $delete[] = $log['current']['root:lockscreen'][1];
+    }
+    $log['current']['root:lockscreen'] = array($redirect, $file);
+  }
+  chown($logfile, 'root');
+}*/
+
+# set lockscreen for desktop user
+$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/screensaver/picture-filename \'"'.$image.'"\'';
+exec($c, $o, $r);
+if ($r !== 0) {
+  echo 'Failed setting screensaver image / lock screen'."\n";
+  exit($r);
 }
+
+$json_indented_by_4 = json_encode($log, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+$json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
+file_put_contents($logfile, $json_indented_by_2);
+chmod($logfile, 0666);
+chgrp($logfile, 'users');
+
+foreach ($delete as $file) {
+  $skip = false;
+  foreach ($log['current'] as $current) {
+    if ($current[1] === $file) {
+      $skip = true;
+      break;
+    }
+  }
+  if ($skip) continue;
+  $remove = $dir.$file;
+  if (file_exists($remove)) {
+    unlink($remove);
+  }
+}
+
+sleep(2);
 
 ?>
