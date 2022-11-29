@@ -1,6 +1,8 @@
 #!/usr/bin/php
 <?php
 
+# switch-wallpaper - get and set a random desktop wallpaper in Debian MATE
+
 # 2018-07-10 18:37:00 first version in bash
 # 2018-07-12 first version in php
 # 2018-07-26 10:25:00 - adding support for extension version number changes
@@ -12,71 +14,227 @@
 # 2021-02-16 23:33:00 - updating output filenames, using json log format
 # 2021-10-15 20:09:00 - using mate-screensaver dconf setting to change lock screen image
 # 2022-09-12 14:44:00 - adding wget retry
-#function logit($x) {
-#	file_put_contents('/tmp/log', $x, FILE_APPEND);
-#}
 
 # user in question
-$desktopuser = '';
 $currentuser = trim(shell_exec('whoami'));
 
-# check if there is an inet address available, except localhost and ipv6 addresses
-$sleeptimeout = 600;
-$sleepinterval = 5;
-while (strpos(shell_exec('ifconfig|grep inet|grep -v 127|grep -v inet6'), 'inet') === false) {
-  sleep($sleepinterval);
-  $sleeptimeout = $sleeptimeout - $sleepinterval;;
-  if ($sleeptimeout <= 0) {
+define('CONFIGMAIN', '/etc/dptools/'.basename(__FILE__));
+define('CONFIGUSER', posix_getpwuid(getmyuid())['dir'].DIRECTORY_SEPARATOR.'.config'.
+  DIRECTORY_SEPARATOR.'dptools'.DIRECTORY_SEPARATOR.basename(__FILE__));
+
+$config_default = array(
+  'desktopuser' => false,
+  'download-retry' => 5,
+  'download-retry-limit' => 5,
+  'logfile' => '/tmp/'.basename(__FILE__).'.log',
+  'network-retry-interval' => 5,
+  'network-retry-time' => 600,
+  'unsplash-url' => 'https://source.unsplash.com/1920x1080/?nature,water,beach,palmtree',
+  'verbose' => false,
+  'wallpaper-dir' => '/tmp/'
+);
+
+$config = $config_default;
+
+function array_merge_keep_keys(/* dynamic */) {
+  $result = array();
+  foreach (func_get_args() as $arg) {
+    if (!is_array($arg)) continue;
+    foreach ($arg as $k => $v) {
+      $result[$k] = $v;
+    }
+  }
+  return $result;
+}
+
+function write_json_file($file, $data) {
+  $json_indented_by_4 = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+  $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
+  if (!file_put_contents($file, $json_indented_by_2)) {
+    echo 'Failed writing '.$file."\n";
     die(1);
   }
 }
 
+$shortopts = 'hvw:';
+
+# get options 1
+$opts = getopt($shortopts);
+foreach ($opts as $k => $v) {
+  switch ($k) {
+    case 'h':
+      echo basename(__FILE__) ?>
+ - get and set a random desktop wallpaper in Debian MATE
+
+Usage: <?php echo basename(__FILE__) ?> [options]
+
+Options:
+-h  Print this help.
+
+-v  Be verbose.
+
+-wm  Write default configuration to <?php echo CONFIGMAIN ?>
+
+
+-wu  Write default configuration to <?php echo CONFIGUSER ?>
+
+
+<?php
+      die();
+    case 'v':
+      $config['verbose'] = true;
+      break;
+    case 'w':
+      switch ($v) {
+        case 'm':
+          if (!file_exists(dirname(CONFIGMAIN)) && !mkdir(dirname(CONFIGMAIN), 0755, true)) {
+            echo 'Failed creating directory '.dirname(CONFIGMAIN)."\n";
+          }
+          echo 'Writing default configuration to '.CONFIGMAIN."\n";
+          write_json_file(CONFIGMAIN, $config_default);
+          die();
+        case 'u':
+          if (!file_exists(dirname(CONFIGUSER)) && !mkdir(dirname(CONFIGUSER), 0755, true)) {
+            echo 'Failed creating directory '.dirname(CONFIGUSER)."\n";
+          }
+          echo 'Writing default configuration to '.CONFIGUSER."\n";
+          write_json_file(CONFIGUSER, $config_default);
+          die();
+        default:
+          echo 'Unknown option '.$v."\n";
+          die(1);
+      }
+  }
+}
+
+$configfilesread = 0;
+foreach (array(CONFIGMAIN, CONFIGUSER) as $configfile) {
+
+  # read config
+  if ($config['verbose']) echo 'Reading '.$configfile."\n";
+  if (!file_exists($configfile) || !is_readable($configfile)) {
+    if ($config['verbose']) echo 'Configuration file '.$configfile.' not found or readable, skipping '."\n";
+    continue;
+  }
+  $configdata = file_get_contents($configfile);
+  if (!$configdata) {
+    echo 'Failed reading configuration file '.$configfile."\n";
+    die(1);
+  }
+  $configdata = explode("\n", $configdata);
+  foreach ($configdata as $k => $v) {
+    $configdata[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+  $configdata = implode("\n", $configdata);
+  $configdata = json_decode($configdata, true);
+  if (json_last_error() !== JSON_ERROR_NONE) {
+    cl('Error decoding JSON data in file '.$configfile.': '.json_last_error_msg(), VERBOSE_ERROR);
+    die(1);
+  }
+
+  # merge arrays
+  $config = array_merge_keep_keys($config, $configdata);
+
+  $configfilesread++;
+}
+
+if (!$configfilesread) {
+  echo 'No configuration files found, please run with the -w option to write default.'."\n";
+  die(1);
+}
+
+# get options 2
+$opts = getopt($shortopts);
+foreach ($opts as $k => $v) {
+  switch ($k) {
+    case 'v':
+      $config['verbose'] = true;
+      break;
+  }
+}
+
+if (!$config['desktopuser']) {
+  $config['desktopuser'] = $currentuser;
+}
+
+if ($config['verbose']) echo 'Checking for network connection'."\n";
+# check if there is an inet address available, except localhost and ipv6 addresses
+while (strpos(shell_exec('ifconfig|grep inet|grep -v 127|grep -v inet6'), 'inet') === false) {
+  if ($config['verbose']) echo 'No network connection, retrying in '.$config['network-retry-interval']. ' seconds'."\n";
+  sleep($config['network-retry-interval']);
+  $config['network-retry-time'] = $config['network-retry-time'] - $config['network-retry-interval'];
+  if ($config['network-retry-time'] <= 0) {
+    if ($config['verbose']) echo 'No network connection, aborting'."\n";
+    die(1);
+  }
+}
+
+
 # requires a GUI session program that will always run:
-$process = trim(shell_exec("pgrep -u $desktopuser mate-panel"));
-
-$daddress = trim(shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'"));
-#$daddress = shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ | tr -d '\0' | sed 's/^[^=]*=//'");
-
-$unsplash = 'https://source.unsplash.com/1920x1080/?nature,water,beach,palmtree';
-
-$redirect = shell_exec('curl -k '.$unsplash);
-
+$c = 'pgrep -u '.escapeshellarg($config['desktopuser']).' mate-panel';
+if ($config['verbose']) echo 'Running '.$c."\n";
+$process = trim(shell_exec($c));
+$c = "grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'";
+if ($config['verbose']) echo 'Running '.$c."\n";
+$daddress = trim(shell_exec($c));
+$c = 'curl -k '.$config['unsplash-url'];
+if ($config['verbose']) echo 'Running '.$c."\n";
+$redirect = shell_exec($c);
 $redirect = substr($redirect, strpos($redirect, 'href="') + 6);
 $redirect = substr($redirect, 0, strpos($redirect,'"'));
 if (strpos($redirect, '?') !== false) {
   $redirect = substr($redirect, 0, strpos($redirect, '?'));
 }
-
-$logfile = '/tmp/wallpaper-log.txt';
-$log = file_exists($logfile) ? file_get_contents($logfile) : array();
+$log = file_exists($config['logfile']) ? file_get_contents($config['logfile']) : array();
 if (is_string($log)) {
   $log = json_decode($log, true);
   if ($log === null) {
     $log = array();
   }
 }
-
 $log['current'] = isset($log['current']) ? $log['current'] : array();
 $log['log'] = isset($log['log']) ? $log['log'] : array();
 
-$dir = '/tmp/';
-
 $file = 'wallpaper_'.date('Y-m-d_His').'.jpg';
 
-$image = $dir.$file;
+$image = $config['wallpaper-dir'].$file;
 $delete = array();
+$retries=0;
+
+$wgetquiet = '-q ';
+if ($config['verbose']) {
+  $wgetquiet = '';
+}
+
 do {
   unset($c, $o, $r);
-  $c = 'wget --no-check-certificate -O '.escapeshellarg($image).' '.$unsplash;
+  $c = 'wget --no-check-certificate '.$wgetquiet.'-O '.escapeshellarg($image).' '.$config['unsplash-url'];
+  if ($config['verbose']) echo 'Running '.$c."\n";
   # get random image
   exec($c, $o, $r);
+  if ($r === 0) {
+    if ($config['verbose']) echo 'Good response from server'."\n";
+    break;
+  } else {
+    if ($config['verbose']) echo 'Bad response from server'."\n";
+  }
+
+  if (!$config['download-retry']) {
+    if ($config['verbose']) echo 'Failed fetching image after '.$retries.', aborting'."\n";
+    break;
+    die(1);
+  }
+
+  $config['download-retry']--;
+  $retries++;
+  if ($config['download-retry-limit']) {
+    if ($config['verbose']) echo 'Retrying in '.$config['download-retry-limit'].' seconds'."\n";
+    sleep($config['download-retry-limit']);
+  }
 } while ($r !== 0);
 
-# chmod($image, 0555);
-# chown($image, 'user');
-
 # set wallpaper for desktop user
-$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'';
+$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.escapeshellarg($config['desktopuser']).' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'';
 exec($c, $o, $r);
 if ($r !== 0) {
   echo 'Failed setting desktop wallpaper'."\n";
@@ -84,41 +242,38 @@ if ($r !== 0) {
 }
 
 if (isset($log['current'][$desktopuser.':wallpaper'])) {
-  $log['log'][] = array($desktopuser.':wallpaper', $log['current'][$desktopuser.':wallpaper'][0]);
-  $delete[] = $log['current'][$desktopuser.':wallpaper'][1];
+  $log['log'][] = array($config['desktopuser'].':wallpaper', $log['current'][$config['desktopuser'].':wallpaper'][0]);
+  $delete[] = $log['current'][$config['desktopuser'].':wallpaper'][1];
 }
-$log['current'][$desktopuser.':wallpaper'] = array($redirect, $file);
+$log['current'][$config['desktopuser'].':wallpaper'] = array($redirect, $file);
 
 # if running as root, then also set lock screen
-/*
-if ($currentuser == 'root') {
-  exec('ln -s -f '.$image.' /etc/alternatives/desktop-login-background', $o, $r);
-  if ($r !== 0) {
-    echo 'Failed setting lock screen background'."\n";
-    # continue because of log output
-  } else {
-    if (isset($log['current']['root:lockscreen'])) {
-      $log['log'][] = array('root:lockscreen', $log['current']['root:lockscreen'][0]);
-      $delete[] = $log['current']['root:lockscreen'][1];
-    }
-    $log['current']['root:lockscreen'] = array($redirect, $file);
-  }
-  chown($logfile, 'root');
-}*/
+#if ($currentuser == 'root') {
+#  exec('ln -s -f '.$image.' /etc/alternatives/desktop-login-background', $o, $r);
+#  if ($r !== 0) {
+#    echo 'Failed setting lock screen background'."\n";
+#    # continue because of log output
+#  } else {
+#    if (isset($log['current']['root:lockscreen'])) {
+#      $log['log'][] = array('root:lockscreen', $log['current']['root:lockscreen'][0]);
+#      $delete[] = $log['current']['root:lockscreen'][1];
+#    }
+#    $log['current']['root:lockscreen'] = array($redirect, $file);
+#  }
+#  chown($config['logfile'], 'root');
+#}
 
 # set lockscreen for desktop user
-$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/screensaver/picture-filename \'"'.$image.'"\'';
+$c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.escapeshellarg($config['desktopuser']).' dconf write /org/mate/screensaver/picture-filename \'"'.$image.'"\'';
 exec($c, $o, $r);
 if ($r !== 0) {
   echo 'Failed setting screensaver image / lock screen'."\n";
   exit($r);
 }
 
-$json_indented_by_4 = json_encode($log, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
-$json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
-file_put_contents($logfile, $json_indented_by_2);
-chmod($logfile, 0666);
-chgrp($logfile, 'users');
+write_json_file($config['logfile'], $log);
+chmod($config['logfile'], 0666);
+chgrp($config['logfile'], 'users');
 
 foreach ($delete as $file) {
   $skip = false;
@@ -129,12 +284,10 @@ foreach ($delete as $file) {
     }
   }
   if ($skip) continue;
-  $remove = $dir.$file;
+  $remove = $config['wallpaper-dir'].$file;
   if (file_exists($remove)) {
     unlink($remove);
   }
 }
-
-sleep(2);
 
 ?>
