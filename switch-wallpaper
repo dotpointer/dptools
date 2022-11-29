@@ -1,0 +1,86 @@
+#!/usr/bin/php
+<?php
+
+# switch wallpaper
+
+# references:
+# https://github.com/alexsong93/momentum-desktop
+# https://askubuntu.com/questions/655238/as-root-i-can-use-su-to-make-dconf-changes-for-another-user-how-do-i-actually
+# https://unix.stackexchange.com/questions/337819/how-to-export-variable-for-use-with-sudo
+
+# 2018-07-10 18:37:00 first version in bash
+# 2018-07-12 first version in php
+# 2018-07-26 10:25:00 - adding support for extension version number changes
+# 2020-02-26 11:40:01
+
+# user in question
+$desktopuser="";
+$currentuser=trim(shell_exec("whoami"));
+
+# requires a GUI session program that will always run:
+$process = trim(shell_exec("pgrep -u $desktopuser mate-panel"));
+
+$daddress = trim(shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'"));
+#$daddress = shell_exec("grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ | tr -d '\0' | sed 's/^[^=]*=//'");
+
+# image source directory
+# $imagedir = "/home/$desktopuser/.config/chromium/Default/Extensions/laookkfknpbbblfpciffpaejjkokdgca/1.0.2_0/backgrounds/";
+
+$imagedir = "/home/$desktopuser/.config/chromium/Default/Extensions/laookkfknpbbblfpciffpaejjkokdgca/";
+
+$items = scandir($imagedir);
+$versionfolders = array();
+foreach ($items as $file) {
+  if (in_array($file, array('.', '..'))) {
+    continue;
+  }
+
+  if (
+    strpos($file, '.') !== false &&
+    strpos($file, '_') !== false &&
+    is_dir($imagedir . $file . '/backgrounds/')
+  ) {
+      $versionfolders[] = $file;
+  }
+}
+
+if (!count($versionfolders)) {
+  die('No version folder in '.$imagedir);
+}
+
+rsort($versionfolders);
+
+$imagedir = $imagedir . $versionfolders[0] . '/backgrounds/';
+
+$items = scandir($imagedir);
+
+$itemsfiltered = array();
+foreach ($items as $item) {
+
+  $fullpath = $imagedir.($item);
+
+  if ($item == '.' || $item == '..' || mime_content_type($fullpath) !== 'image/jpeg') {
+    continue;
+  }
+  $imagesize = getimagesize($fullpath);
+  $width = $imagesize[0];
+  $height = $imagesize[1];
+  if ($width >= 1920 && $height > 1200) {
+    $itemsfiltered[] = $fullpath;
+  }
+}
+
+# get random image
+$image = $itemsfiltered[array_rand($itemsfiltered)];
+
+# set wallpaper for desktop user
+shell_exec('sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.$desktopuser.' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'');
+
+# if running as root, then also set lock screen
+if ($currentuser == "root") {
+  # get random image
+  $image = $itemsfiltered[array_rand($itemsfiltered)];
+  shell_exec('ln -s -f '.$image.' /etc/alternatives/desktop-background');
+}
+
+?>
