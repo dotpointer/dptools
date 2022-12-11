@@ -28,7 +28,7 @@ DOMAIN=$3;
 
 if [[ -z $ITEM ]]; then
   echo "File or directory must be specified";
-  exit 1;
+  exit 2;
 fi
 
 # default timeout to 1 day
@@ -40,23 +40,22 @@ fi
 if [[ -d $ITEM ]]; then
   DIR=$ITEM;
 
-  # no files in dir
-  if [[ $(find $DIR -type f  | wc -l) -eq 0 ]]; then
-    echo "No files";
-    exit 1;
+  # files in dir
+  if [[ $(find $DIR -type f  | wc -l) -gt 0 ]]; then
+    FILE=`ls --color=never -Art "$DIR" |tail -n1`
+    FULLPATH=$(realpath ${DIR}${FILE});
+    if [[ $? -ne 0 ]]; then
+      echo "Failed finding realpath for ${DIR}${FILE}";
+      exit 2;
+    fi
+    EXISTS=1;
   fi
-
-  FILE=`ls --color=never -Art "$DIR" |tail -n1`
-  FULLPATH=$(realpath ${DIR}${FILE});
-  if [[ $? -ne 0 ]]; then
-    echo "Failed finding realpath for ${DIR}${FILE}";
-  fi
-  EXISTS=1;
 # item is file
 elif [[ -f $ITEM ]]; then
   FULLPATH=$(realpath $ITEM);
   if [[ $? -ne 0 ]]; then
     echo "Failed finding realpath for $ITEM";
+    exit 2;
   fi
   EXISTS=1;
 else
@@ -82,7 +81,6 @@ if [[ ! -z $DOMAIN ]]; then
   while true; do
     # w = timeout, c = counts
     ping -q -w5 -c1 $DOMAIN &>/dev/null;
-    echo $?;
     if [[ $? -eq 0 ]]; then
       # echo "$DOMAIN ping response";
       break;
