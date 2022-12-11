@@ -2,11 +2,13 @@
 
 # changelog
 # 2022-12-11 18:00:00 initial version
+# 2022-12-11 23:43:00
 
 if [[ $1 == '-h' ]] || [[ $1 == '--help' ]]; then
   echo "Compare the latest file or directory modification date against the";
-  echo "current time and if it is greater than the specified timestamp return 0.";
-  echo "If a domain has been then wait for the domain to respond on ping before.";
+  echo "current time and if it is greater than the specified timestamp or does not";
+  echo "exist return 0. If a domain has been provided then wait for the domain";
+  echo "to respond on ping before.";
   echo "exiting";
   echo "";
   echo "Usage: $(basename $0) <directory or file> [timeout] [domain]";
@@ -49,23 +51,27 @@ if [[ -d $ITEM ]]; then
   if [[ $? -ne 0 ]]; then
     echo "Failed finding realpath for ${DIR}${FILE}";
   fi
+  EXISTS=1;
 # item is file
 elif [[ -f $ITEM ]]; then
   FULLPATH=$(realpath $ITEM);
   if [[ $? -ne 0 ]]; then
     echo "Failed finding realpath for $ITEM";
   fi
+  EXISTS=1;
+else
+  EXISTS=0;
 fi
 
-TIMESTAMP=$(date -r ${FULLPATH} +%s);
+if [[ $EXISTS -eq 1 ]]; then
+  TIMESTAMP=$(date -r ${FULLPATH} +%s);
+  NOW=$(date +%s);
+  DIFF=$((NOW -$TIMESTAMP));
 
-NOW=$(date +%s);
-
-DIFF=$((NOW -$TIMESTAMP));
-
-if [[ $DIFF -lt $TIMEOUT ]]; then
-  # echo "Difference is $DIFF, less than timeout $TIMEOUT";
-  exit 1;
+  if [[ $DIFF -lt $TIMEOUT ]]; then
+    # echo "Difference is $DIFF, less than timeout $TIMEOUT";
+    exit 1;
+  fi
 fi
 
 # echo "Timeout: $TIMEOUT, difference: $DIFF";
