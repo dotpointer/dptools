@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# changelog
+# 2022-12-11 18:00:00 initial version
+
+if [[ $1 == '-h' ]] || [[ $1 == '--help' ]]; then
+  echo "Compare the latest file or directory modification date against the";
+  echo "current time and if it is greater than the specified timestamp return 0.";
+  echo "If a domain has been then wait for the domain to respond on ping before.";
+  echo "exiting";
+  echo "";
+  echo "Usage: $(basename $0) <directory or file> [timeout] [domain]";
+  echo "";
+  echo "timeout   The maximum difference in seconds between file or directory";
+  echo "          modification timestamp and the current time in seconds.";
+  echo "          Defaults to 1 day.";
+  echo "";
+  echo "domain    Domain to ping if the timeout has elapsed, then it will wait";
+  echo "          for a successful ping."
+  exit;
+fi
+
+ITEM=$1;
+TIMEOUT=$2;
+DOMAIN=$3;
+
+if [[ -z $ITEM ]]; then
+  echo "File or directory must be specified";
+  exit 1;
+fi
+
+# default timeout to 1 day
+if [[ -z $TIMEOUT ]]; then
+  TIMEOUT=$((60 * 60 * 24));
+fi
+
+# item is dir
+if [[ -d $ITEM ]]; then
+  DIR=$ITEM;
+
+  # no files in dir
+  if [[ $(find $DIR -type f  | wc -l) -eq 0 ]]; then
+    echo "No files";
+    exit 1;
+  fi
+
+  FILE=`ls --color=never -Art "$DIR" |tail -n1`
+  FULLPATH=$(realpath ${DIR}${FILE});
+  if [[ $? -ne 0 ]]; then
+    echo "Failed finding realpath for ${DIR}${FILE}";
+  fi
+# item is file
+elif [[ -f $ITEM ]]; then
+  FULLPATH=$(realpath $ITEM);
+  if [[ $? -ne 0 ]]; then
+    echo "Failed finding realpath for $ITEM";
+  fi
+fi
+
+TIMESTAMP=$(date -r ${FULLPATH} +%s);
+
+NOW=$(date +%s);
+
+DIFF=$((NOW -$TIMESTAMP));
+
+if [[ $DIFF -lt $TIMEOUT ]]; then
+  # echo "Difference is $DIFF, less than timeout $TIMEOUT";
+  exit 1;
+fi
+
+# echo "Timeout: $TIMEOUT, difference: $DIFF";
+
+# is domain set
+if [[ ! -z $DOMAIN ]]; then
+  # wait for it to go online
+  while true; do
+    # w = timeout, c = counts
+    ping -q -w5 -c1 $DOMAIN &>/dev/null;
+    echo $?;
+    if [[ $? -eq 0 ]]; then
+      # echo "$DOMAIN ping response";
+      break;
+    fi
+    # echo "Waiting for $DOMAIN"
+    sleep 10;
+  done
+fi
