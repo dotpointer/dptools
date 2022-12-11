@@ -8,8 +8,7 @@ if [[ $1 == '-h' ]] || [[ $1 == '--help' ]]; then
   echo "Compare the latest file or directory modification date against the";
   echo "current time and if it is greater than the specified timestamp or does not";
   echo "exist return 0. If a domain has been provided then wait for the domain";
-  echo "to respond on ping before.";
-  echo "exiting";
+  echo "to respond on a ping request.";
   echo "";
   echo "Usage: $(basename $0) <directory or file> [timeout] [domain]";
   echo "";
