@@ -1,0 +1,22 @@
+#!/usr/bin/php
+<?php
+	# to resolve an address to an ip address, as this command seems to be missing(!)
+	# by robert klebe, dotpointer
+
+	# changelog
+	# 2017-08-04 11:59:00 - first version
+
+	if (!isset($argv[1])) {
+		echo ' Address must be supplied'."\n";
+		return 1;
+	}
+
+	$response = gethostbyname($argv[1]);
+
+	if ($response === $argv[1]) {
+		echo 'Failed resolving '.$response."\n";
+		return 1;
+	}
+
+	echo $response."\n";
+?>
