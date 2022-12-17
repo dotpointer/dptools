@@ -155,6 +155,7 @@ alias putty='ssh -C';
 alias q='exit';
 alias qclea='clear';
 alias reboot='reboot';
+alias recommit='gitrecommit';
 alias reprofile='source ~/.profile';
 alias restart='reboot';
 alias smesg='cat /var/log/syslog';

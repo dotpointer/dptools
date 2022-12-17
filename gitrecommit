@@ -1,0 +1,23 @@
+#!/bin/bash
+# changelog
+# 2022-12-17 03:48:00 - initial version, based on PHP version from 2017-2020
+PORCELAIN=$(git status --porcelain|grep "^[A-Z][[:space:]]");
+if [[ $? -ne 0 ]] || [[ -z $PORCELAIN ]]; then
+  echo "Nothing to commit, please add files first.";
+  exit 1;
+fi
+COMMITS=$(git rev-list --count HEAD);
+if [[ COMMITS -lt 1 ]]; then
+  echo "Number of commits in this branch is too low, cannot re-commit with the same message: $COMMITS";
+  exit 1;
+fi
+LASTMSG=$(git log -1 --pretty=%B);
+if [[ $? -ne 0 ]]; then
+  echo 'Failed extracting last commit message.';
+  exit 1;
+elif [[ -z $LASTMSG ]]; then
+  echo 'Failed extracting last commit message.';
+  exit 1;
+fi
+echo "Committing again with this message: \"$LASTMSG\"";
+git commit -m "$LASTMSG"
