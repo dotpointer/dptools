@@ -2,30 +2,99 @@
 <?php
 # changelog
 # 2017-09-07 12:33:20 - bash version
+# 2022-12-20 11:06:00 - adding options
 
-if (!isset($argv[1], $argv[2])) {
-	echo 'Search text and replacement text must be given.'."\n";
-	die(1);
+$opts = getopt('hn:r:s:p', array('help', 'name', 'perform', 'replacement', 'search'));
+$name = false;
+$perform = false;
+$replacement = false;
+$search = false;
+
+foreach ($opts as $k => $v) {
+  switch ($k) {
+    case 'h':
+    case 'help':
+?>Usage: <?php echo basename(__FILE__); ?> <options>
+Options:
+  -h,           Print this help.
+  --help
+
+  -n,           Set file name, also to set extension.
+  --name
+
+  -p,           Perform changes, will only search otherwise.
+  --perform
+
+  -r,           Replacement string to use, required.
+  --replacement
+
+  -s,           Search string to use, required.
+  --search
+<?php
+      exit;
+    case 'n':
+    case 'name':
+      $name = $v;
+      break;
+    case 'p':
+      $perform = true;
+      break;
+    case 'r':
+    case 'replacement':
+      $replacement = $v;
+      break;
+    case 's':
+    case 'search':
+      $search = $v;
+      break;
+  }
+}
+
+if ($name === false && $perform === false &&
+  $replacement === false && $search === false &&
+  isset($argv[1]) && isset($argv[2])
+) {
+  $perform = true;
+  $replacement = $argv[2];
+  $search = $argv[1];
+}
+
+if ($search === false || $replacement === false) {
+  echo 'Search text and replacement text must be given.'."\n";
+  die(1);
 }
 
 # find . -type f -exec sed "s/$1/$2/g" {} \;
 # find . -type f | xargs sed --quiet "s/$1/$2/gp"
 
 function escape ($t) {
-	return str_replace(array(
-		'/',
-		'.',
-		'-'
-	), array(
-		'\/',
-		'\.',
-		'\-'
-	), $t);
+  return str_replace(array(
+    '/',
+    '.',
+    '-'
+  ), array(
+    '\/',
+    '\.',
+    '\-'
+  ), $t);
 }
 
-# search and replace
-$c = 'find . -type f -exec sed -i "s/'.escape($argv[1]).'/'.escape($argv[2]).'/g" {} \;';
-shell_exec($c);
+$c = 'find . -type f';
+$changepart = ' -exec sed -i "s/'.escape($search).'/'.escape($replacement).'/g" {} \;';
 
+if ($name !== false) {
+  $c .= ' -name '.escapeshellarg($name);
+}
+$c .= ' -exec echo {} \;';
+if ($perform !== false) {
+  $c .= $changepart;
+} else {
+  echo 'Would run: '.$c.$changepart."\n";
+}
+echo 'Run: '.$c."\n";
+passthru($c);
 echo 'Ran: '.$c."\n";
+if (!$perform) {
+  echo 'Run with -p to perform the changes'."\n";
+}
 ?>
