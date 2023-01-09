@@ -9,6 +9,7 @@
 # 2020-04-23 16:23:50
 # 2020-11-11 17:12:00 - adding better name finder
 # 2022-02-15 13:10:00 - no gh and rm prefixes
+# 2023-01-09 12:13:00 - adding base branch argument
 
 ME=$(whoami);
 
@@ -28,6 +29,8 @@ NAME=$1;
 #    [[ "$0" = "$BASH_SOURCE" ]] && exit 1 || return 1 # handle exits from shell or function but don't exit interactive shell
 #  fi
 #fi
+
+BASEBRANCH=$2;
 
 # if the better name finder is available then run it
 if [[ -x "$(command -v gitbranchfindbettername)" ]]; then
@@ -56,13 +59,75 @@ if [ $? -ne 1 ]; then
     fi
 fi
 
-# switch to master, it's based on that
+# switch to master
 git checkout master
-# checkout a new branch locally
-git checkout -b $NAME
+if [[ $? -ne 0 ]]; then
+  echo "Failed to checkout master";
+  exit $?;
+fi
+
+if [[ ! -z $BASEBRANCH ]]; then
+  LOCALBRANCHES=$(git branch|grep -E "^[*| ] ${BASEBRANCH}.*$");
+  if [[ -z $LOCALBRANCHES ]]; then
+    read -p "The base branch does not exist locally, do you want to try to pull it? [y/n] " -n 1 -r;
+    echo;
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      exit 1;
+    fi
+    git branch $BASEBRANCH remotes/origin/$BASEBRANCH;
+    if [[ $? -ne 0 ]]; then
+      echo "Failed to switch to basebranch";
+      exit 1;
+    fi
+    git checkout $BASEBRANCH;
+    if [[ $? -ne 0 ]]; then
+      echo "Failed checking out base branch";
+      exit 1;
+    fi
+    git pull;
+    if [[ $? -ne 0 ]]; then
+      echo "Failed pulling base branch";
+      exit 1;
+    fi
+  fi
+fi
+
+# switch to master
+git checkout master
+if [[ $? -ne 0 ]]; then
+  echo "Failed to checkout master";
+  exit $?;
+fi
+
+if [[ ! -z $BASEBRANCH ]]; then
+  git checkout -b $NAME $BASEBRANCH
+else
+  # checkout a new branch locally
+  git checkout -b $NAME
+fi
+
+if [[ $? -ne 0 ]]; then
+  echo "Failed to checkout new branch";
+  exit $?;
+fi
+
 # push the new branch remote, if the branch already exists then it will refuse without force
-git push origin $NAME:$NAME --force
+git push origin $NAME:$NAME
+if [[ $? -ne 0 ]]; then
+  echo "Failed to push origin";
+  exit $?;
+fi
+
 # set it to track the branch upstream
 git push --set-upstream origin $NAME
+if [[ $? -ne 0 ]]; then
+  echo "Failed to push set upstream origin";
+  exit $?;
+fi
+
 # print out what branch that is currently active
 git branch
+if [[ $? -ne 0 ]]; then
+  echo "Faild to list local branches";
+  exit $?;
+fi
