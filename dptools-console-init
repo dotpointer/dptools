@@ -90,7 +90,36 @@ alias filldisk='yes abcdefghijklmnopqrstuvwxyz0123456789 > diskfiller';
 alias fz='filezilla &';
 # alias funk="function gd() { echo $1; } gd;";
 alias g='git';
-alias gitbranchfiles='git diff --name-only master';
+function git_branch_files() {
+  COMPARE="";
+  if [[ ! -z "$1" ]]; then
+    git rev-parse --verify $1 >/dev/null 2>&1;
+    if [[ $? -ne 0 ]]; then
+      echo "Branch not found: $1";
+      return 1;
+    fi
+    COMPARE="$1";
+  fi
+  if [[ -z "$COMPARE" ]]; then
+    git rev-parse --verify main >/dev/null 2>&1;
+    if [[ $? -eq 0 ]]; then
+      COMPARE="main";
+    fi
+  fi
+  if [[ -z "$COMPARE" ]]; then
+    git rev-parse --verify master >/dev/null 2>&1;
+    if [[ $? -eq 0 ]]; then
+      COMPARE="master";
+    fi
+  fi
+  if [[ -z "$COMPARE" ]]; then
+    echo "No branch to compare with found, please specify branch.";
+    return 1;
+  fi
+  git diff --name-only "$COMPARE";
+}
+# alias gitbranchfiles='git diff --name-only master';
+alias gitbranchfiles=git_branch_files;
 alias gitdelbranch='gitdeletebranch';
 alias gitdiffnow='git diff origin/master';
 function git_reset_file() {
