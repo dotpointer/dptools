@@ -2,7 +2,25 @@
 
 # changelog
 # 2020-02-26 11:40:01
+# 2023-03-03 19:00:00
 
-git branch $1 remotes/origin/$1
-git checkout $1
+git checkout master
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
 git pull
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
+git branch $1 remotes/origin/$1
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
+git checkout $1
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
+git pull
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
