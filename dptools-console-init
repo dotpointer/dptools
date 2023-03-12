@@ -173,6 +173,28 @@ alias ncoffer=ncoffer;
 alias ŋrep='grep';
 alias ŋrepa='grepa';
 alias out='logout';
+function pdfmerge() {
+  command -v "pdftk" &> /dev/null
+  if [[ $? -ne 0 ]]; then
+    echo "pdftk was not found, please install it.";
+    exit 1;
+  fi
+  if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    echo "Usage: pdfmerge <options or filename>";
+    echo "Merges one or more PDF files into one PDF using pdftk.";
+    echo "Options:";
+    echo "  -h, --help  Print this help.";
+    echo "Filename: defaults to merged.pdf, required if the file exists.";
+    return;
+  fi
+  if [[ -z "$1" ]]; then
+    OUTPUT="merged.pdf";
+  else
+    OUTPUT="$1";
+  fi
+  pdftk *.pdf cat output "$OUTPUT";
+}
+alias pdfmerge=pdfmerge;
 alias phpcheck='php -l';
 alias phpc='php -l';
 alias phpopentagscan='grep -rn "<?[^p]" --include=*.php';
