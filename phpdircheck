@@ -2,10 +2,10 @@
 <?php
 
 # phpdircheck
-# php lint check a directory recursively and stop if any errors occour
-# by robert klebe
+# php lint check a directory recursively and stop if any errors occur
+# by robert klebe, dotpointer
 
-# example bash file which checks php files before publishing data to a webroot:
+# example bash file which checks php files before publishing data to a web root:
 #
 # phpdircheck $SOURCE
 # if [ $? -eq 0 ]; then
@@ -26,10 +26,13 @@
 # 2018-06-29 15:13:56
 # 2018-07-19 19:29:32 - indentation change, tab to 2 spaces
 # 2022-02-23 12:07:00 - adding -a, -g, -gp, -h
+# 2023-03-30 15:07:00 - bugfix, change to repository root directory on -g/-gp
 
-function progressbar($part, $total) {
-
+$animnow = -1;
+function progressbar($part, $errors, $total) {
+  global $animnow;
   # character length for progress bar
+  $anim = array('|', '/', '-', '\\');
   $pb_length = 10;
 
   # calculate the part
@@ -37,11 +40,13 @@ function progressbar($part, $total) {
   # calculate the total
   $pb_total = $pb_length;
 
+  $animnow = $animnow < count($anim) - 1 ? $animnow + 1 : 0;
+
   return
     '['.
     str_repeat('#', ($part < $total && $pb_part > 0) ? $pb_part - 1 : $pb_part ).
 
-    ($part < $total && $pb_part > 0 ? '>' : '').
+    ($part < $total && $pb_part > 0 ? $anim[$animnow] : '').
 
     str_repeat('.', $pb_total - $pb_part).
     '] '.
@@ -51,18 +56,44 @@ function progressbar($part, $total) {
     '% '.
     str_pad($part, strlen($total), '0', STR_PAD_LEFT).
     '/'.
+    str_pad($errors, strlen($total), '0', STR_PAD_LEFT).
+    '/'.
     $total.
     ' '
     ;
 }
 
-if (!isset($argv[1])) {
-    echo 'Option or path must be specified'."\n";
-    exit(1);
+$argv1 = isset($argv[1]) ? $argv[1] : '.';
+$continue = false;
+
+for ($i=0; $i < $argc; $i++) {
+  if ($argv[$i] === '-c') {
+    $continue = true;
+    break;
+  }
+}
+
+if (in_array($argv1, array('-g', '-gp'))) {
+  $c = 'git rev-parse --show-toplevel';
+  exec($c, $o, $r);
+  if ($r !== 0) {
+    echo 'Failed: '.$c."\n";
+    exit(2);
+  }
+  $path = $o[0];
+  echo 'Git root directory: '.$path."\n";
+  if (!is_dir($path)) {
+    echo 'Git directory '.$path.' does not exist.'."\n";
+    exit(2);
+  }
+  if (!chdir($path)) {
+    echo 'Could not change directory to '.$path.'.'."\n";
+    exit(2);
+  }
 }
 
 # git repo - all files
-if ($argv[1] === '-g') {
+if ($argv1 === '-g') {
   $c = 'git ls-tree --full-tree -r --name-only HEAD';
   exec($c, $files, $r);
   if ($r !== 0) {
@@ -74,7 +105,7 @@ if ($argv[1] === '-g') {
     exit(2);
   }
 # git diff - modified files
-} else if ($argv[1] === '-gp') {
+} else if ($argv1 === '-gp') {
   $c = 'git status --porcelain';
   exec($c, $files, $r);
   if ($r !== 0) {
@@ -90,7 +121,7 @@ if ($argv[1] === '-g') {
   }
 
 # help
-} else if (in_array($argv[1], array('-h', '--help'))) {
+} else if (in_array($argv1, array('-h', '--help'))) {
 ?>Usage: <?php echo basename(__FILE__) ?> <directory|options>
 
 Options:
@@ -113,10 +144,10 @@ Options:
 # -a or path
 } else {
 
-  if ($argv[1] === '-a') {
+  if ($argv1 === '-a') {
     $path = '.';
   } else {
-    $path = $argv[1];
+    $path = $argv1;
   }
   if (!file_exists($path) || !is_dir($path)) {
     echo 'Directory does not exist: '.$path."\n";
@@ -126,7 +157,7 @@ Options:
   chdir($path);
 
   # do a find on the dir
-  $cmd = 'find '.escapeshellarg($path).($argv[1] === '-a' ? '' : ' -iname "*.php"');
+  $cmd = 'find '.escapeshellarg($path).($argv1 === '-a' ? '' : ' -iname "*.php"');
   $files = shell_exec($cmd);
   if (!$files) {
     echo 'No files found.'."\n";
@@ -141,37 +172,39 @@ $l = strlen((string)$total);
 echo 'PHP Lint-checking '.$total.' files'."\n";
 
 # walk files
+$errors = 0;
 $prevfile = '';
+$lastline = '';
 foreach ($files as $nr => $file) {
-  if (!file_exists($file)) {
-    # echo 'File does not exist: '.$file."\n";
-    continue;
+  if (file_exists($file)) {
+    unset($o, $r);
+    $cmd = 'php -l '.escapeshellarg($file);
+    exec($cmd, $o, $r);
+    if ($r) {
+      $errors++;
+      # blank previous line
+      echo str_repeat(' ', strlen($lastline))."\r";
+      echo 'Fail '.str_pad($errors, strlen($total), '0', STR_PAD_LEFT).': '.$file."\n";
+      echo (is_array($o) ? trim(implode("\n", $o)) : $o)."\n\n";
+      if (!$continue) {
+        exit(3);
+      }
+    }
   }
-
-  unset($o, $r);
-  $cmd = 'php -l '.escapeshellarg($file);
-  exec($cmd, $o, $r);
-
-  if ($r) {
-    echo "\n".'Fail: '.$file."\n";
-    echo (is_array($o) ? trim(implode("\n", $o)) : $o)."\n";
-    exit(3);
-  }
-  # echo sprintf('%0'.$l.'d',  ($nr + 1)).'/'.$total.' ('.( sprintf('%03d', round(( ($nr + 1)/$total)*100) )).'%) ok, checked: '.$file."\r";
-
   # blank previous line
-  echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+  echo str_repeat(' ', strlen($lastline))."\r";
 
   # write status
-  echo progressbar($nr + 1, $total).' checked: '.$file."\r";
+  $lastline = progressbar($nr + 1, $errors, $total).' checked: '.$file."\r";
+  echo $lastline;
   $prevfile = $file;
 }
 
 # blank previous line
-echo progressbar($nr + 1, $total).' checked: '.str_repeat(' ', strlen($prevfile))."\r";
+echo str_repeat(' ', strlen($lastline))."\r";
 
 # write status
-echo progressbar($nr + 1, $total).' check completed'."\r\n";
+echo progressbar($nr + 1, $errors, $total).' check completed'."\r\n";
 
-exit(0);
+exit($errors);
 ?>
