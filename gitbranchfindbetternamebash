@@ -1,0 +1,142 @@
+#!/bin/bash
+#!/usr/bin/php
+# <?php
+
+# changelog
+# 2020-11-11 17:34:39
+# 2023-03-03 19:00:00
+# 2023-10-14 22:49:39 bash version based on php version
+# 2023-10-28 22:51:00
+
+# $wholename = isset($argv[1]) ? $argv[1] : '';
+WHOLENAME=$1
+
+# if (!strlen($wholename)) {
+#   die(1);
+# }
+if [[ -z "$WHOLENAME" ]]; then
+  exit 1;
+fi
+
+# $basename = $wholename;
+BASENAME=$WHOLENAME;
+
+# name is something-n...
+# if (preg_match('/^.*\-\d+$/', $basename)) {
+if [[ "$BASENAME" =~ ^.*\-[0-9]+$ ]]; then
+  # remove all after the dash
+  # $basename = substr($basename, 0, strrpos($basename, '-') + 1);
+  NEEDLE='-';
+  HAYSTACK=$BASENAME;
+  NEWSTR="${HAYSTACK%$NEEDLE*}";
+  DASHPOS="$((${#NEWSTR} + 1))"
+  BASENAME="${BASENAME:0:$DASHPOS}";
+# name does not end with a dash
+# } else if (substr($basename, -1) !== '-') {
+elif [[ "${BASENAME: -1}" != '-' ]]; then
+  # append a dash
+  # $basename = $basename.'-';
+  BASENAME="${BASENAME}-";
+# }
+fi
+
+# $nameslashes = substr_count($basename, '/');
+STRING=$BASENAME
+SUB_STRING="/"
+s=${STRING//"$SUB_STRING"}
+NAMESLASHES="$(((${#STRING} - ${#s}) / ${#SUB_STRING}))"
+
+# exec('git branch -va', $o, $r);
+# if ($r !== 0) {
+#   die(1);
+# }
+O="$(git branch -a)";
+if [[ $? -ne 0 ]]; then
+  exit 1;
+fi
+
+# $on = array();
+ON=();
+
+# foreach ($o as $k => $line) {
+# I=0
+while IFS= read -r LINE; do
+  # ((I=I+1))
+  # $line = trim($line);
+  LINE="$(echo \"$LINE\"|xargs)";
+
+  # if (!strlen($line)) {
+  #   continue;
+  # }
+  if [[ -z "$LINE" ]]; then
+    continue;
+  fi
+
+  #$line = substr($line, 0, strpos($line, ' '));
+  NEEDLE=' ';
+  HAYSTACK=$LINE;
+  NEWSTR="${HAYSTACK%%$NEEDLE*}";
+  SPACEPOS="$((${#NEWSTR} + 1))"
+  LINE="${LINE:$SPACEPOS}";
+
+  #while (substr_count($line, '/') > $nameslashes) {
+  #  $line = substr($line, strpos($line, '/') + 1);
+  #}
+  STRING=$LINE
+  SUB_STRING="/"
+  s=${STRING//"$SUB_STRING"}
+  SLASHESNOW="$(((${#STRING} - ${#s}) / ${#SUB_STRING}))"
+
+  while [ $SLASHESNOW -gt $NAMESLASHES ]
+    do
+      # $line = substr($line, strpos($line, '/') + 1);
+      NEEDLE='/';
+      HAYSTACK=$LINE;
+      NEWSTR="${HAYSTACK%%$NEEDLE*}";
+      SLASHPOS="$((${#NEWSTR} + 1))"
+      LINE="${LINE:$SLASHPOS}";
+
+      # to update slashesnow
+      STRING=$LINE
+      SUB_STRING="/"
+      s=${STRING//"$SUB_STRING"}
+      SLASHESNOW="$(((${#STRING} - ${#s}) / ${#SUB_STRING}))"
+    done
+
+  #$on[] = $line;
+  ON+=("$LINE")
+  # ON+=("test$I")
+# }
+done <<< "$O"
+
+# $o = $on;
+O=("${ON[@]}");
+
+# $i = 0;
+I=0;
+
+#$tryname = '';
+TRYNAME='';
+
+#do {
+#  $i++;
+#  $tryname = $basename.$i;
+#} while (in_array($tryname, $o));
+while true; do
+    IN_ARRAY=0;
+    ((I=I+1))
+    TRYNAME="${BASENAME}${I}";
+    for J in "${O[@]}"
+    do
+      if [ "$J" == "$TRYNAME" ]; then
+        IN_ARRAY=1;
+        break;
+      fi
+    done
+    [[ $IN_ARRAY -eq 1 ]] || break
+done
+
+# echo $tryname;
+echo -n $TRYNAME;
+
+# ?>

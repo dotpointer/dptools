@@ -10,6 +10,7 @@
 # 2020-11-11 17:12:00 - adding better name finder
 # 2022-02-15 13:10:00 - no gh and rm prefixes
 # 2023-01-09 12:13:00 - adding base branch argument
+# 2023-10-28 22:50:00 - using gitbranchfindbetternamebashbash instead of gitbranchfindbetternamephp
 
 ME=$(whoami);
 
@@ -33,8 +34,8 @@ NAME=$1;
 BASEBRANCH=$2;
 
 # if the better name finder is available then run it
-if [[ -x "$(command -v gitbranchfindbettername)" ]]; then
-  BETTERNAME=$(gitbranchfindbettername "$NAME");
+if [[ -x "$(command -v gitbranchfindbetternamebash)" ]]; then
+  BETTERNAME=$(gitbranchfindbetternamebash "$NAME");
   if [[ -n "$BETTERNAME" ]] && [[ "$NAME" != "$BETTERNAME" ]]; then
     read -p "Will use $BETTERNAME instead, press [n] to use $NAME anyway: " -n 1 -r;
       echo;
