@@ -7,6 +7,7 @@
 # 2023-03-03 19:00:00
 # 2023-10-14 22:49:39 bash version based on php version
 # 2023-10-28 22:51:00
+# 2023-11-13 18:23:00
 
 # $wholename = isset($argv[1]) ? $argv[1] : '';
 WHOLENAME=$1
@@ -58,13 +59,22 @@ fi
 # $on = array();
 ON=();
 
+trim() {
+  local VAR="$*"
+  # remove leading whitespace characters
+  VAR="${VAR#"${VAR%%[![:space:]]*}"}"
+  # remove trailing whitespace characters
+  VAR="${VAR%"${var##*[![:space:]]}"}"
+  printf '%s' "$VAR"
+}
+
 # foreach ($o as $k => $line) {
 # I=0
 while IFS= read -r LINE; do
   # ((I=I+1))
   # $line = trim($line);
-  LINE="$(echo \"$LINE\"|xargs)";
-
+  # LINE="$(echo \"$LINE\"|xargs)";
+  LINE=$(trim "$LINE")
   # if (!strlen($line)) {
   #   continue;
   # }
@@ -73,11 +83,12 @@ while IFS= read -r LINE; do
   fi
 
   #$line = substr($line, 0, strpos($line, ' '));
-  NEEDLE=' ';
-  HAYSTACK=$LINE;
-  NEWSTR="${HAYSTACK%%$NEEDLE*}";
-  SPACEPOS="$((${#NEWSTR} + 1))"
-  LINE="${LINE:$SPACEPOS}";
+  # no divider because no -v, so skip this
+  # NEEDLE=' ';
+  # HAYSTACK=$LINE;
+  # NEWSTR="${HAYSTACK%%$NEEDLE*}";
+  # SPACEPOS="$((${#NEWSTR} + 1))"
+  # LINE="${LINE:$SPACEPOS}";
 
   #while (substr_count($line, '/') > $nameslashes) {
   #  $line = substr($line, strpos($line, '/') + 1);
@@ -104,7 +115,9 @@ while IFS= read -r LINE; do
     done
 
   #$on[] = $line;
-  ON+=("$LINE")
+  if [[ "$LINE" != "" ]]; then
+    ON+=("$LINE")
+  fi
   # ON+=("test$I")
 # }
 done <<< "$O"
