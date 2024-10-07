@@ -1,10 +1,31 @@
 #!/bin/bash
 # changelog
 # 2021-01-29 21:41:03
+# 2024-10-07 20:43:00 - adding cache file
 WNDTITLE=$(xwininfo -root -children|grep '"caprine" "Caprine"'|head -n1);
 WNDTITLE=$(echo $WNDTITLE|sed 's/.*[0-9]x[0-9a-z]* "\(.*\)": .*/\1/');
+NOTHING=" ";
+DISPLAYMINUTES=5;
+LASTFILEDIR="/mnt/ramdisk/system/";
 if [ "$WNDTITLE" != "Messenger" ] && [ "$WNDTITLE" != "caprine" ] && [ "$WNDTITLE" != "Caprine" ]; then
+  # is there a cache file
+  FILE="$LASTFILEDIR/caprine-check-messages";
+  SAVE=1;
+  if [[ -f "$FILE" ]]; then
+    LASTTITLE=$(cat "$FILE");
+    # is the title same as last time and it is more than x min old
+    if [[ "$WNDTITLE" == "$LASTTITLE" ]]; then
+      SAVE=0;
+      if [[ -n `find $FILE -mmin +$DISPLAYMINUTES` ]]; then
+        echo "$NOTHING";
+        exit;
+      fi
+    fi
+  fi
   echo "$WNDTITLE";
+  if [[ "$SAVE" -eq 1 ]] && [[ -d "$LASTFILEDIR" ]]; then
+    echo "$WNDTITLE" > "$LASTFILEDIR/caprine-check-messages";
+  fi
 else
-  echo " ";
+  echo "$NOTHING";
 fi
