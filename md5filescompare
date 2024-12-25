@@ -9,6 +9,7 @@
 # changelog
 # 2019-08-17 01:07:00 - initial version, starting off from md5filecheck
 # 2024-03-25 22:20:00 - adding moved status and log output
+# 2024-12-25 18:57:00 - bugfix, define variable
 
 # echo or print to file
 function echop($f, $text) {
@@ -86,6 +87,7 @@ if (!$fb) {
   die(1);
 }
 
+$flog = false;
 if ($filelog) {
   $flog = fopen($filelog, 'w');
   if (!$flog) {
