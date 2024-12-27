@@ -22,6 +22,9 @@ define('ERROR_REWRITE_META_MISMATCH', -4);
 define('ERROR_REWRITE_SET_CHGRP_FAILED', -7);
 define('ERROR_REWRITE_SET_CHMOD_FAILED', -8);
 define('ERROR_REWRITE_SET_CHOWN_FAILED', -9);
+define('ERROR_REWRITE_SIZE_CHECK_FAILED', -10);
+define('ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED', -11);
+define('ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE', -12);
 define('STATUS_REWRITTEN', 1);
 
 $config_dbpath = false;
@@ -487,17 +490,43 @@ Parameters:
             }
 
             $tmpfile = $relativepath.'.rewrite-tmp';
-            $relativepath = $relativepath.$dbfilename;
+            $srcfile = $relativepath.$dbfilename;
 
-            if (!file_exists($relativepath)) {
+            if (!file_exists($srcfile)) {
               echo " - source file not found\n";
               $notfound++;
               continue;
             }
 
-            echo "Copying $relativepath to $tmpfile\n";
+            # get file size
+            $size = filesize($srcfile);
+            if ($size === false) {
+              echo '- size check failed'."\n";
+              if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_SIZE_CHECK_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
+              $failed++;
+              continue;
+            }
 
-            $c = 'cp '.escapeshellarg($relativepath).' '.escapeshellarg($tmpfile);
+            # get free space
+            $freespace = disk_free_space($relativepath);
+            if ($freespace === false) {
+              echo '- disk free space check failed'."\n";
+              if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
+              $failed++;
+              exit(1); # fatal
+            }
+
+            # check file size vs free space
+            if ($size > $freespace) {
+              echo '- not enough disk free space to cp, '.$freespace.' b free, need '.$size.' b'."\n";
+              if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE).'" WHERE id="'.mres($row['id']).'"')) exit(1);
+              $failed++;
+              continue;
+            }
+
+            echo "Copying $srcfile to $tmpfile\n";
+
+            $c = 'cp '.escapeshellarg($srcfile).' '.escapeshellarg($tmpfile);
             echo 'Run: '.$c."\n";
             unset($o, $r1);
             exec($c, $o, $r1);
@@ -547,8 +576,8 @@ Parameters:
             }
 
             # group check
-            if (filegroup($relativepath) != filegroup($tmpfile)) {
-              if (!chgrp($tmpfile, filegroup($relativepath))) {
+            if (filegroup($srcfile) != filegroup($tmpfile)) {
+              if (!chgrp($tmpfile, filegroup($srcfile))) {
                 if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_SET_CHGRP_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
                 echo '- Failed changing group'."\n";
                 $failed++;
@@ -562,8 +591,8 @@ Parameters:
             }
 
             # permissions check
-            if (fileperms($relativepath) != fileperms($tmpfile)) {
-              if (!chmod($tmpfile, fileperms($relativepath))) {
+            if (fileperms($srcfile) != fileperms($tmpfile)) {
+              if (!chmod($tmpfile, fileperms($srcfile))) {
                 if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_SET_CHMOD_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
                 echo '- Failed changing permissions'."\n";
                 $failed++;
@@ -577,8 +606,8 @@ Parameters:
             }
 
             # owner check
-            if (fileowner($relativepath) != fileowner($tmpfile)) {
-              if (!chown($tmpfile, fileowner($relativepath))) {
+            if (fileowner($srcfile) != fileowner($tmpfile)) {
+              if (!chown($tmpfile, fileowner($srcfile))) {
                 if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_SET_CHOWN_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
                 echo '- Failed changing ownership'."\n";
                 $failed++;
@@ -592,8 +621,8 @@ Parameters:
             }
 
             # modify time check
-            if (filemtime($relativepath) != filemtime($tmpfile)) {
-              if (!touch($tmpfile, filemtime($relativepath))) {
+            if (filemtime($srcfile) != filemtime($tmpfile)) {
+              if (!touch($tmpfile, filemtime($srcfile))) {
                 if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_SET_CHOWN_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
                 echo '- Failed changing modify time'."\n";
                 $failed++;
@@ -608,18 +637,18 @@ Parameters:
 
             # check again in case one or more changed above
             if (
-                filegroup($relativepath) != filegroup($tmpfile) ||
-                filemtime($relativepath) != filemtime($tmpfile) ||
-                fileowner($relativepath) != fileowner($tmpfile) ||
-                fileperms($relativepath) != fileperms($tmpfile) ||
-                filesize($relativepath) != filesize($tmpfile)
+                filegroup($srcfile) != filegroup($tmpfile) ||
+                filemtime($srcfile) != filemtime($tmpfile) ||
+                fileowner($srcfile) != fileowner($tmpfile) ||
+                fileperms($srcfile) != fileperms($tmpfile) ||
+                filesize($srcfile) != filesize($tmpfile)
             ) {
               echo '- Metadata mismatches'."\n";
-              echo '  Group    : '.filegroup($relativepath).' vs '.filegroup($tmpfile)."\n";
-              echo '  Owner    : '.fileowner($relativepath).' vs '.fileowner($tmpfile)."\n";
-              echo '  Perms    : '.fileperms($relativepath).' vs '.fileperms($tmpfile)."\n";
-              echo '  Size     : '.filesize($relativepath).' vs '.filesize($tmpfile)."\n";
-              echo '  Modified : '.filemtime($relativepath).' vs '.filemtime($tmpfile)."\n";
+              echo '  Group    : '.filegroup($srcfile).' vs '.filegroup($tmpfile)."\n";
+              echo '  Owner    : '.fileowner($srcfile).' vs '.fileowner($tmpfile)."\n";
+              echo '  Perms    : '.fileperms($srcfile).' vs '.fileperms($tmpfile)."\n";
+              echo '  Size     : '.filesize($srcfile).' vs '.filesize($tmpfile)."\n";
+              echo '  Modified : '.filemtime($srcfile).' vs '.filemtime($tmpfile)."\n";
 
               if (!$db->query('UPDATE files SET status="'.mres(ERROR_REWRITE_META_MISMATCH).'" WHERE id="'.mres($row['id']).'"')) exit(1);
               $failed++;
@@ -632,7 +661,7 @@ Parameters:
             }
 
             # move file back
-            $c = 'mv '.escapeshellarg($tmpfile).' '.escapeshellarg($relativepath);
+            $c = 'mv '.escapeshellarg($tmpfile).' '.escapeshellarg($srcfile);
             echo 'Run: '.$c."\n";
             unset($o, $r1);
             exec($c, $o, $r1);
