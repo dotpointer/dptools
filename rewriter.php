@@ -14,6 +14,7 @@ define('FILENAME_DB', '.rewriter.sqlite3');
 define('REWRITE_TIME_LIMIT', 86400 * 365 * 4);
 
 # status codes
+define('STATUS_ERROR_HASHING_FAILED', -15);
 define('STATUS_ERROR_REWRITE_EXEC_CP_FAILED', -5);
 define('STATUS_ERROR_REWRITE_EXEC_MV_FAILED', -6);
 define('STATUS_ERROR_REWRITE_COPY_MISSING', -1);
@@ -28,21 +29,51 @@ define('STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED', -11);
 define('STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE', -12);
 define('STATUS_ERROR_MISSING', -13);
 define('STATUS_ERROR_MD5_MISMATCH', -14);
+define('STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE', -16);
+define('STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE', -17);
 define('STATUS_NONE', 0);
 define('STATUS_UNVERIFIED', 1);
 define('STATUS_VERIFIED', 2);
 define('STATUS_REWRITTEN', 3);
 
+$statuses = array(
+  STATUS_ERROR_HASHING_FAILED => 'Error, hashing, failed calculating MD5',
+  STATUS_ERROR_REWRITE_EXEC_CP_FAILED => 'Error, rewrite, failed executing cp',
+  STATUS_ERROR_REWRITE_EXEC_MV_FAILED => 'Error, rewrite, failed executing mv',
+  STATUS_ERROR_REWRITE_COPY_MISSING => 'Error, rewrite, file copy missing',
+  STATUS_ERROR_REWRITE_MD5_FAILED => 'Error, rewrite, failed calculating MD5',
+  STATUS_ERROR_REWRITE_MD5_MISMATCH => 'Error, rewrite, MD5 on file and in database mismatches',
+  STATUS_ERROR_REWRITE_META_MISMATCH => 'Metadata mismatches',
+  STATUS_ERROR_REWRITE_SET_CHGRP_FAILED => 'Error, rewrite, failed setting group',
+  STATUS_ERROR_REWRITE_SET_CHMOD_FAILED => 'Error, rewrite, failed setting permissions',
+  STATUS_ERROR_REWRITE_SET_CHOWN_FAILED => 'Error, rewrite, failed setting owner',
+  STATUS_ERROR_REWRITE_SIZE_CHECK_FAILED => 'Error, rewrite, failed size check',
+  STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE => 'Error, rewrite, source file not writable',
+  STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE => 'Error, rewrite, temporary file not writable',
+  STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED => 'Error, rewrite, failed disk free space check',
+  STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE => 'Error, rewrite, file larger than free disk space',
+  STATUS_ERROR_MISSING => 'Missing',
+  STATUS_ERROR_MD5_MISMATCH => 'Error, MD5 mismatches',
+  STATUS_NONE => 'None',
+  STATUS_UNVERIFIED => 'Unverified',
+  STATUS_VERIFIED => 'Verified',
+  STATUS_REWRITTEN => 'Rewritten',
+);
+
 $config_dbpath = false;
 
-$opts = getopt('cd:hi:o:r:w:');
+$opts = getopt('cd:hi:o:r:sw:');
 
-function get_db_conn() {
+function get_db_path() {
   global $config_dbpath;
   if (!$config_dbpath) {
     $config_dbpath = locate_db(getcwd());
   }
-  return new SQLite3($config_dbpath);
+  return $config_dbpath;
+}
+
+function get_db_conn() {
+  return new SQLite3(get_db_path());
 }
 
 function get_line_clear($s) {
@@ -59,21 +90,6 @@ function getheader($i, $linecount, $stats, $text) {
   }
   $s .= '] '.$text;
   return $s;
-}
-
-# get difference between root and cwd paths
-function get_root_cwd_path_difference($rootpath, $cwdpath) {
-  $rootparts = explode("/", trim($rootpath, "/")); # [aaa, bbb]
-  $cwdparts = explode("/", trim($cwdpath, "/"));   # [aaa, bbb, ccc, ddd]
-  $diffparts = $cwdparts;
-  array_splice($diffparts, 0, count($rootparts)); # [ccc, ddd]
-
-  $pathdiff = implode("/", $diffparts);           # ccc/ddd
-  if (strlen($pathdiff)) $pathdiff .= '/';        # ccc/ddd/
-  return array(
-    'path' => $pathdiff,
-    'cutoff' => count($diffparts)
-  );
 }
 
 # get file path relative to cwd
@@ -94,6 +110,21 @@ function get_file_path_relative_to_cwd($root_relative_filepath, $path_difference
     }
   }
   return $relativepath;
+}
+
+# get difference between root and cwd paths
+function get_root_cwd_path_difference($rootpath, $cwdpath) {
+  $rootparts = explode("/", trim($rootpath, "/")); # [aaa, bbb]
+  $cwdparts = explode("/", trim($cwdpath, "/"));   # [aaa, bbb, ccc, ddd]
+  $diffparts = $cwdparts;
+  array_splice($diffparts, 0, count($rootparts)); # [ccc, ddd]
+
+  $pathdiff = implode("/", $diffparts);           # ccc/ddd
+  if (strlen($pathdiff)) $pathdiff .= '/';        # ccc/ddd/
+  return array(
+    'path' => $pathdiff,
+    'cutoff' => count($diffparts)
+  );
 }
 
 # find database file, only 1 allowed
@@ -132,6 +163,14 @@ function locate_db($dbpath) {
 # escape string
 function mres($s) {
   return SQLite3::escapeString($s);
+}
+
+function remove_tmpfile($f, $header) {
+  if (file_exists($f) && !unlink($f)) {
+    echo get_line_clear($header);
+    echo "* Failed removing temporary file - $f\n";
+    exit(1);
+  }
 }
 
 # get number of rows in sqlite result
@@ -205,6 +244,7 @@ Parameters:
       h   Hash files in current directory found in database
       v   Validate MD5 hashes on files in current directory
       w   Rewrite files in current directory found in database
+  -s      Print details about the database and its contents
   -w<path>  Change working directory to <path>
 <?php
       break;
@@ -412,11 +452,12 @@ Parameters:
             exit(1);
           }
 
-          $total = count($o);
+
           $header = '';
           $stats = array(
             'added' => 0
           );
+          $total = count($o);
 
           $i=0;
           foreach ($o as $k1 => $v1) {
@@ -441,7 +482,6 @@ Parameters:
             # print result
             $header = getheader($i, $total, $stats, $currentstatus.' '.$v1."\r");
             echo $header;
-
           }
 
           echo get_line_clear($header);
@@ -498,8 +538,6 @@ Parameters:
             } else {
               $md5 = md5_file($relativepath);
               if ($md5 !== false) {
-                $currentstatus = 'HASHED';
-                $stats['hashed']++;
                 if (!$db->query('
                   UPDATE files
                   SET
@@ -507,10 +545,9 @@ Parameters:
                     md5_created = "'.mres(date("Y-m-d H:i:s")).'",
                     status="'.mres(STATUS_VERIFIED).'"
                   WHERE id="'.mres($row['id']).'"')) exit(1);
+                $currentstatus = 'HASHED';
                 $stats['hashed']++;
               } else {
-                $currentstatus = 'HASHING FAILED';
-                $stats['failed']++;
                 if (!$db->query('
                   UPDATE files
                   SET
@@ -518,6 +555,7 @@ Parameters:
                     md5_created = "'.mres(date("Y-m-d H:i:s")).'",
                     status="'.mres(STATUS_ERROR_HASHING_FAILED).'"
                   WHERE id="'.mres($row['id']).'"')) exit(1);
+                $currentstatus = 'HASHING FAILED';
                 $stats['failed']++;
               }
             }
@@ -533,9 +571,6 @@ Parameters:
           echo getheader($i, $total, $stats, "\r")."\n";
           break;
         case 'v':
-
-          # --- begin
-
           $fileerror = false;
 
           # open a log file if not already open, then append text to it
@@ -661,10 +696,6 @@ Parameters:
           echo getheader($i, $linecount, $stats, "\r")."\n";
 
           if ($fileerror) fclose($fileerror);
-
-
-          # --- end
-
           break;
         case 'w': # rewrite
           echo "Rewriting files in ".$cwd."\n";
@@ -727,6 +758,24 @@ Parameters:
               continue;
             }
 
+            if (!is_writable($srcfile)) {
+              echo get_line_clear($header);
+              echo "* Source not writable - $srcfile\n";
+              if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE).'" WHERE id="'.mres($row['id']).'"')) exit(1);
+              $currentstatus = 'FAILED';
+              $stats['failed']++;
+              continue;
+            }
+
+            if (!is_writable($relativepath)) {
+              echo get_line_clear($header);
+              echo "* Temporary file not writable - $tmpfile\n";
+              if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE).'" WHERE id="'.mres($row['id']).'"')) exit(1);
+              $currentstatus = 'FAILED';
+              $stats['failed']++;
+              continue;
+            }
+
             # get file size
             $size = filesize($srcfile);
             if ($size === false) {
@@ -771,13 +820,7 @@ Parameters:
               if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_EXEC_CP_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
-              if (file_exists($tmpfile)) {
-                if (!unlink($tmpfile)) {
-                  echo get_line_clear($header);
-                  echo "* Failed removing temporary file - $tmpfile\n";
-                  exit(1);
-                }
-              }
+              remove_tmpfile($tmpfile, $header);
               continue;
             }
 
@@ -798,11 +841,7 @@ Parameters:
               if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_MD5_FAILED).'" WHERE id="'.mres($row['id']).'"')) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
-              if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                echo get_line_clear($header);
-                echo "* Failed removing temporary file - $tmpfile\n";
-                exit(1);
-              }
+              remove_tmpfile($tmpfile, $header);
               continue;
             }
 
@@ -812,11 +851,7 @@ Parameters:
               if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_MD5_MISMATCH).'" WHERE id="'.mres($row['id']).'"')) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
-              if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                echo get_line_clear($header);
-                echo "* Failed removing temporary file - $tmpfile\n";
-                exit(1);
-              }
+              remove_tmpfile($tmpfile, $header);
               continue;
             }
 
@@ -828,11 +863,7 @@ Parameters:
                 echo "* Failed changing group - $tmpfile ($srcfile)\n";
                 $currentstatus = 'FAILED';
                 $stats['failed']++;
-                if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                  echo get_line_clear($header);
-                  echo "* Failed removing temporary file - $tmpfile\n";
-                  exit(1);
-                }
+                remove_tmpfile($tmpfile, $header);
                 continue;
               }
             }
@@ -844,11 +875,7 @@ Parameters:
                 echo get_line_clear($header);
                 echo "* Failed changing permissions - $tmpfile ($srcfile)\n";
                 $stats['failed']++;
-                if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                  echo get_line_clear($header);
-                  echo "* Failed removing temporary file - $tmpfile\n";
-                  exit(1);
-                }
+                remove_tmpfile($tmpfile, $header);
                 continue;
               }
             }
@@ -860,11 +887,7 @@ Parameters:
                 echo get_line_clear($header);
                 echo "* Failed changing ownership - $tmpfile ($srcfile)\n";
                 $stats['failed']++;
-                if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                  echo get_line_clear($header);
-                  echo "* Failed removing temporary file - $tmpfile\n";
-                  exit(1);
-                }
+                remove_tmpfile($tmpfile, $header);
                 continue;
               }
             }
@@ -876,11 +899,7 @@ Parameters:
                 echo get_line_clear($header);
                 echo "* Failed changing modify time - $tmpfile ($srcfile)\n";
                 $stats['failed']++;
-                if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                  echo get_line_clear($header);
-                  echo "* Failed removing temporary file - $tmpfile\n";
-                  exit(1);
-                }
+                remove_tmpfile($tmpfile, $header);
                 continue;
               }
             }
@@ -903,17 +922,13 @@ Parameters:
 
               if (!$db->query('UPDATE files SET status="'.mres(STATUS_ERROR_REWRITE_META_MISMATCH).'" WHERE id="'.mres($row['id']).'"')) exit(1);
               $stats['failed']++;
-              if (file_exists($tmpfile) &&!unlink($tmpfile)) {
-                echo get_line_clear($header);
-                echo "* Failed removing temporary file - $tmpfile\n";
-                exit(1);
-              }
+              remove_tmpfile($tmpfile, $header);
               continue;
             }
 
             # move file back
             $c = 'mv '.escapeshellarg($tmpfile).' '.escapeshellarg($srcfile);
-            echo 'Run: '.$c."\n";
+            # echo 'Run: '.$c."\n";
             unset($o, $r1);
             exec($c, $o, $r1);
             if ($r1 !== 0) {
@@ -926,12 +941,13 @@ Parameters:
             }
 
             $db->query('UPDATE files SET rewritten="'.date('Y-m-d H:i:s').'", status="'.mres(STATUS_REWRITTEN).'" WHERE id="'.mres($row['id']).'"');
+            $currentstatus = 'Rewrote';
             $stats['rewritten']++;
 
             # clear previous line
             echo get_line_clear($header);
             # print result
-            $header = getheader($i, $total, $stats, $currentstatus.' '.$fullpath."\r");
+            $header = getheader($i, $total, $stats, $currentstatus.' '.$srcfile."\r");
             echo $header;
           }
           echo get_line_clear($header);
@@ -939,6 +955,24 @@ Parameters:
           echo getheader($i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed'."\r")."\n";
           break;
       } # re-switch
+      break;
+    case 's': # stats
+      $db = get_db_conn();
+      $dbpath = get_db_path();
+      echo 'Database: '.$dbpath.' '.filesize($dbpath)." b\n";
+      echo 'Free space: '.disk_free_space(dirname($dbpath))." b\n";
+      echo "Files:\n";
+      $r = $db->query('SELECT status, COUNT(id) AS quantity FROM files GROUP BY status ORDER BY status');
+      $w = 0;
+      $result = array();
+      while ($row = $r->fetchArray()) {
+        $result[] = $row;
+        $w = strlen($row['quantity']) > $w ? strlen($row['quantity']) : $w;
+      }
+
+      foreach ($result as $row) {
+        echo ' * '.str_pad($row['quantity'], $w, ' ', STR_PAD_LEFT).' '.(array_key_exists($row['status'], $statuses) ? $statuses[$row['status']] : 'Unknown status '.$row['status'])."\n";
+      }
       break;
     case 'w': # set working directory
       $d = realpath($v);
