@@ -279,6 +279,7 @@ foreach ($opts as $k => $v) {
           id INTEGER PRIMARY KEY,
           name TEXT NOT NULL,
           md5 TEXT,
+          rewrites INTEGER DEFAULT 0,
           status INTEGER DEFAULT 0,
           created TEXT,
           hashed TEXT,
@@ -351,11 +352,11 @@ Example of work flow to create database, index, hash and rewrite:
   -c (create database), -ri (index files), -i files.md5 (import MD5 from MD5 sums file),
   -rv (validate MD5 sums), -rh (hash files without MD5, -rw (rewrite files), -rv (validate)
 
-Parameters are applied in the order they are supplied.
+Options are applied in the order they are supplied.
 
-Usage: <?php echo basename($argv[0]); ?> <parameters>
+Usage: <?php echo basename($argv[0]); ?> <options>
 
-Parameters:
+Options:
   -c           Create <?php echo FILENAME_DB ?> SQLite3 file in current directory
   -h           Print this help
   -i<path>     Import MD5 file to database from <path>
@@ -880,7 +881,7 @@ Parameters:
               continue;
             }
 
-            $c = 'cp '.escapeshellarg($srcfile).' '.escapeshellarg($tmpfile);
+            $c = 'cp --sparse=always '.escapeshellarg($srcfile).' '.escapeshellarg($tmpfile);
             unset($o, $r1);
             exec($c, $o, $r1);
             if ($r1 !== 0) {
@@ -1062,7 +1063,7 @@ Parameters:
               continue;
             }
 
-            $db->query('UPDATE files SET rewritten="'.date('Y-m-d H:i:s').'", status = "'.mres(STATUS_REWRITTEN).'", updated = "'.mresnow().'" WHERE id="'.mres($row['id']).'"');
+            $db->query('UPDATE files SET rewrites=rewrites+1, rewritten="'.date('Y-m-d H:i:s').'", status = "'.mres(STATUS_REWRITTEN).'", updated = "'.mresnow().'" WHERE id="'.mres($row['id']).'"');
             $currentstatus = 'Rewrote';
             $stats['rewritten']++;
 
