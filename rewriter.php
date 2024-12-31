@@ -297,6 +297,17 @@ foreach ($opts as $k => $v) {
           updated TEXT
         )')) exit(1);
 
+      if (!$db->query(
+        'CREATE TABLE properties (
+          id INTEGER PRIMARY KEY,
+          property TEXT,
+          value TEXT
+        )')) exit(1);
+
+      if (!$db->query('INSERT INTO properties (property, value) VALUES("bytes_hashed", 0)')) exit(1);
+      if (!$db->query('INSERT INTO properties (property, value) VALUES("bytes_rewritten", 0)')) exit(1);
+      if (!$db->query('INSERT INTO properties (property, value) VALUES("created", "'.mresnow().'")')) exit(1);
+
       echo "Created ".realpath($config_dbpath).' ('.get_si_size(filesize($config_dbpath)).")\n";
       break;
     case 'p': # set property
@@ -671,6 +682,7 @@ Options:
                 $currentstatus = 'HASHING FAILED';
                 $stats['failed']++;
               }
+              if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres($filesize).' WHERE property="bytes_hashed"')) exit(1);
             }
             echo get_line_clear($header);
             $header = getheader($i, $total, $stats, $currentstatus.' '.$relativepath."\r");
@@ -745,6 +757,7 @@ Options:
                   $currentstatus = 'MISMATCH';
                   if (!$db->query('UPDATE files SET status = "'.mres(STATUS_ERROR_MD5_MISMATCH).'", updated = "'.mresnow().'" WHERE id="'.mres($row['id']).'"')) exit(1);
                 }
+                if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres($filesize).' WHERE property="bytes_hashed"')) exit(1);
               }
             }
             echo get_line_clear($header);
@@ -905,6 +918,8 @@ Options:
 
             # md5 check
             $md5 = md5_file($tmpfile);
+            if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres($size).' WHERE property="bytes_hashed"')) exit(1);
+
             if ($md5 === false) {
               echo get_line_clear($header);
               echo "* MD5 hash failed, file: $tmpfile ($srcfile)\n";
@@ -1030,6 +1045,7 @@ Options:
 
             # md5 check II
             $md5 = md5_file($srcfile);
+            if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres(filesize($srcfile)).' WHERE property="bytes_hashed"')) exit(1);
             if ($md5 === false) {
               echo get_line_clear($header);
               echo "* MD5 hash failed after second move, file: $srcfile ($srcfile)\n";
@@ -1063,7 +1079,8 @@ Options:
               continue;
             }
 
-            $db->query('UPDATE files SET rewrites=rewrites+1, rewritten="'.date('Y-m-d H:i:s').'", status = "'.mres(STATUS_REWRITTEN).'", updated = "'.mresnow().'" WHERE id="'.mres($row['id']).'"');
+            if (!$db->query('UPDATE files SET rewrites=rewrites+1, rewritten="'.date('Y-m-d H:i:s').'", status = "'.mres(STATUS_REWRITTEN).'", updated = "'.mresnow().'" WHERE id="'.mres($row['id']).'"')) exit(1);
+            if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres(filesize($srcfile)).' WHERE property="bytes_rewritten"')) exit(1);
             $currentstatus = 'Rewrote';
             $stats['rewritten']++;
 
@@ -1091,6 +1108,32 @@ Options:
       if ($config_tmpdir != false) {
         echo 'Free space, temporary directory: '.get_si_size(disk_free_space(dirname($config_tmpdir)))."\n";
       }
+      echo "Properties:\n";
+      $r = $db->query('SELECT property, value FROM properties ORDER BY property');
+      $w = 0;
+      $result = array();
+      $known_properties = array(
+        'bytes_rewritten' => 'Rewritten',
+        'bytes_hashed' => 'Hashed',
+        'created' => 'Created'
+       );
+      while ($row = $r->fetchArray()) {
+        $property = (isset($known_properties[$row['property']]) ? $known_properties[$row['property']] : $row['property']).':';
+        if (strpos($row['property'], 'bytes_') === 0) {
+          $value = get_si_size($row['value']);
+        } else {
+          $value = $row['value'];
+        }
+        $result[] = array($property, $value);
+        $w = strlen($property) > $w ? strlen($property) : $w;
+      }
+
+      sort($result);
+
+      foreach ($result as $row) {
+        echo '  '.str_pad($row[0], $w, ' ', STR_PAD_RIGHT).' '.$row[1]."\n";
+      }
+
       echo "Files and statuses:\n";
       $r = $db->query('SELECT status, COUNT(id) AS quantity FROM files GROUP BY status ORDER BY status');
       $w = 0;
