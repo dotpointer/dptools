@@ -96,18 +96,6 @@ function get_db_path() {
   return $config_dbpath;
 }
 
-# get header
-function getheader($i, $linecount, $stats, $text) {
-  $s = '['.
-    str_pad($i, strlen($linecount), ' ', STR_PAD_LEFT).'/'.$linecount.' '.
-    str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'%';
-  foreach ($stats as $k => $v) {
-    $s .= ' '.str_pad($v, strlen($linecount), ' ', STR_PAD_LEFT).' '.$k;
-  }
-  $s .= '] '.$text;
-  return $s;
-}
-
 # get file path relative to cwd
 function get_file_path_relative_to_cwd($root_relative_filepath, $path_difference_root_cwd_cutoff) {
   $relativepath = './';
@@ -232,6 +220,26 @@ function mres($s) {
 
 function mresnow() {
   return mres(date('Y-m-d H:i:s'));
+}
+
+function printheader($last_header, $i, $linecount, $stats = array(), $text = '', $force = false) {
+  if ($force || $i === 1 ||
+    $i >=1000 && $i % 1000 === 0 ||
+    $i >=100 && $i < 1000 && $i % 100 === 0 ||
+    $i >=10 && $i < 100 && $i % 10 === 0
+  ) {
+    if ($last_header) echo get_line_clear($last_header);
+    $s = '['.
+      str_pad($i, strlen($linecount), ' ', STR_PAD_LEFT).'/'.$linecount.' '.
+      str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'%';
+    foreach ($stats as $k => $v) {
+      $s .= ' '.str_pad($v, strlen($linecount), ' ', STR_PAD_LEFT).' '.$k;
+    }
+    $s .= ']'.(strlen($text) ? ' '.$text : '')."\r";
+    echo $s;
+    return $s;
+  }
+  return $last_header;
 }
 
 function remove_tmpfile($f, $header) {
@@ -465,9 +473,7 @@ Options:
         } else {
 
           $filesize = file_exists($relativepath) ? filesize($relativepath) : 0;
-          echo get_line_clear($header);
-          $header = getheader($i, $linecount, $stats, 'Importing '.$relativepath.' ('.get_si_size($filesize).')');
-          echo $header."\r";
+          $header = printheader($header, $i, $linecount, $stats, 'Importing '.$relativepath.' ('.get_si_size($filesize).')');
 
           $currentstatus = 'OK';
           $basename = basename($relativepath); # file
@@ -505,14 +511,11 @@ Options:
             }
           }
         }
-        echo get_line_clear($header);
-        $header = getheader($i, $linecount, $stats, $currentstatus.' '.$relativepath."\r");
-        echo $header;
+        $header = printheader($header, $i, $linecount, $stats, $currentstatus.' '.$relativepath);
       } # while
-      echo get_line_clear($header);
-      echo getheader($i, $linecount, $stats, "\r")."\n";
+      printheader($header, $i, $linecount, $stats, '', true);
+      echo "\n";
       fclose($f);
-
       break;
     case 'o': # output md5
       $db = get_db_conn();
@@ -592,9 +595,7 @@ Options:
             $i++;
             $v1 = $pathdiff.ltrim($v1, './');
 
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, 'Adding '.$v1);
-            echo $header."\r";
+            $header = printheader($header, $i, $total, $stats, 'Adding '.$v1);
 
             $r = $db->query('SELECT * FROM files WHERE name="'.mres($v1).'"');
             if (!sqlite3_num_rows($r)) {
@@ -605,12 +606,10 @@ Options:
               $currentstatus = 'CHECKED';
             }
 
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, $currentstatus.' '.$v1."\r");
-            echo $header;
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$v1);
           }
-          echo get_line_clear($header);
-          echo getheader($i, $total, $stats, "$total files found, added ".$stats['added']."\r")."\n";
+          printheader($header, $i, $total, $stats, "$total files found, added ".$stats['added'], true);
+          echo "\n";
           break;
         case 'h': # hash
           echo "Hashing files in ".$cwd."\n";
@@ -655,9 +654,7 @@ Options:
               $stats['missing']++;
             } else {
               $filesize = filesize($relativepath);
-              echo get_line_clear($header);
-              $header = getheader($i, $total, $stats, 'Hashing '.$relativepath.' ('.get_si_size($filesize).')');
-              echo $header."\r";
+              $header = printheader($header, $i, $total, $stats, 'Hashing '.$relativepath.' ('.get_si_size($filesize).')');
 
               $md5 = md5_file($relativepath);
               if ($md5 !== false) {
@@ -684,12 +681,10 @@ Options:
               }
               if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres($filesize).' WHERE property="bytes_hashed"')) exit(1);
             }
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, $currentstatus.' '.$relativepath."\r");
-            echo $header;
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$relativepath);
           }
-          echo get_line_clear($header);
-          echo getheader($i, $total, $stats, "\r")."\n";
+          printheader($header, $i, $total, $stats, '', true);
+          echo "\n";
           break;
         case 'v':
 
@@ -741,9 +736,7 @@ Options:
               if (!$db->query('UPDATE files SET status = "'.mres(STATUS_ERROR_MISSING).'" WHERE id="'.mres($row['id']).'"')) exit(1);
             } else {
               $filesize = filesize($path);
-              echo get_line_clear($header);
-              $header = getheader($i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')');
-              echo $header."\r";
+              $header = printheader($header, $i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')');
               if ($md5 == null || !strlen($md5)) {
                 $currentstatus = 'UNHASHED';
                 $stats['unhashed']++;
@@ -760,12 +753,10 @@ Options:
                 if (!$db->query('UPDATE properties SET value=CAST(value AS INTEGER)+'.mres($filesize).' WHERE property="bytes_hashed"')) exit(1);
               }
             }
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, $currentstatus.' '.$path."\r");
-            echo $header;
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path);
           }
-          echo get_line_clear($header);
-          echo getheader($i, $total, $stats, "\r")."\n";
+          printheader($header, $i, $total, $stats, '', true);
+          echo "\n";
           break;
         case 'w': # rewrite
           echo "Rewriting files in ".$cwd."\n";
@@ -840,9 +831,7 @@ Options:
             }
 
             $filesize = filesize($srcfile);
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')');
-            echo $header."\r";
+            $header = printheader($header, $i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')');
 
             if (!is_writable($srcfile)) {
               echo get_line_clear($header);
@@ -1091,12 +1080,10 @@ Options:
                 ids_files="'.mres(get_formatted_logmessage_range($logmessage_range)).'"
               WHERE id="'.mres($id_logs).'"')) exit(1);
 
-            echo get_line_clear($header);
-            $header = getheader($i, $total, $stats, $currentstatus.' '.$srcfile."\r");
-            echo $header;
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile);
           }
-          echo get_line_clear($header);
-          echo getheader($i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed'."\r")."\n";
+          printheader($header, $i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed', true);
+          echo "\n";
           break;
       } # re-switch
       break;
