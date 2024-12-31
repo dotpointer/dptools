@@ -65,6 +65,7 @@ $statuses = array(
 
 $config_backup_original_before_rewrite = true;
 $config_dbpath = false;
+$config_rootdir = false;
 $config_tmpdir = false;
 
 $opts = getopt('chi:o:p:r:sw:');
@@ -124,7 +125,8 @@ function get_formatted_logmessage_range($logmessage) {
   return implode(",", $a);
 }
 
-function get_line_clear($s) {
+function get_line_clear($header) {
+  $s = $header && isset($header[0]) ? $header[0] : '';
   return str_repeat(' ', strlen($s))."\r";
 }
 
@@ -189,6 +191,16 @@ function get_root_cwd_path_difference($rootpath, $cwdpath) {
   );
 }
 
+function get_root_dir() {
+  global $config_dbpath, $config_rootdir;
+  if ($config_rootdir) {
+    $path = realpath($config_rootdir);
+  } else {
+    $path = dirname(realpath($config_dbpath));
+  }
+  return $path;
+}
+
 function get_si_size($bytes) {
   $si_prefix = array('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
   $base = 1024;
@@ -222,22 +234,27 @@ function mresnow() {
   return mres(date('Y-m-d H:i:s'));
 }
 
-function printheader($last_header, $i, $linecount, $stats = array(), $text = '', $force = false) {
+function printheader($last_header, $i, $linecount, $stats = array(), $text = '', $force = false, $benchmark = false) {
   if ($force || $i === 1 ||
     $i >=1000 && $i % 1000 === 0 ||
     $i >=100 && $i < 1000 && $i % 100 === 0 ||
     $i >=10 && $i < 100 && $i % 10 === 0
   ) {
-    if ($last_header) echo get_line_clear($last_header);
+    if ($last_header && isset($last_header[0])) echo get_line_clear($last_header);
     $s = '['.
       str_pad($i, strlen($linecount), ' ', STR_PAD_LEFT).'/'.$linecount.' '.
       str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'%';
     foreach ($stats as $k => $v) {
       $s .= ' '.str_pad($v, strlen($linecount), ' ', STR_PAD_LEFT).' '.$k;
     }
+
+    if ($benchmark && isset($last_header[1])) {
+      $s .= ' '.gmdate("H:i:s", (time() - $last_header[1]));
+    }
+
     $s .= ']'.(strlen($text) ? ' '.$text : '')."\r";
     echo $s;
-    return $s;
+    return array($s, time());
   }
   return $last_header;
 }
@@ -348,6 +365,16 @@ foreach ($opts as $k => $v) {
             $config_backup_original_before_rewrite = (int)$subv === 1;
             echo 'Backup original before rewrite: '.($config_backup_original_before_rewrite ? 'on' : 'off')."\n";
             break;
+          case 'r': # set root directory
+            $dir = realpath($subv);
+            if (!file_exists($dir) || !is_dir($dir)) {
+              echo "Root directory not found or not a directory: $subv\n";
+              exit(1);
+            }
+            $dir .= substr($dir, -1) != '/' ? '/' : '';
+            $config_rootdir = $dir;
+            echo "Root directory: ".$config_rootdir."\n";
+            break;
           case 't': # set temporary directory
             $dir = realpath($subv);
             if (!file_exists($dir) || !is_dir($dir)) {
@@ -400,7 +427,7 @@ Options:
     case 'i': # import md5, parts are taken from md5filecheck
 
       $db = get_db_conn();
-      $root = trim(dirname(realpath($config_dbpath)), "/");
+      $root = trim(get_root_dir(), "/");
       $cwd = trim(realpath(getcwd()), "/");
 
       # root: aaa/bbb, cwd : aaa/bbb/ccc/ddd
@@ -453,7 +480,7 @@ Options:
         'updated' => 0,
         'missing' => 0
       );
-      $header = '';
+      $header = false;
       while ($line = fgets($f)) {
 
         $i++;
@@ -560,7 +587,7 @@ Options:
 
       $db = get_db_conn();
       $cwd = realpath(getcwd());
-      $root = trim(dirname(realpath($config_dbpath)), "/");
+      $root = trim(get_root_dir(), "/");
 
       switch ($v) {
         case 'i': # index
@@ -569,7 +596,7 @@ Options:
 
           # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
           if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find database path in current directory path";
+            echo "Cannot find root path in current directory path";
             exit(1);
           }
 
@@ -584,7 +611,7 @@ Options:
             exit(1);
           }
 
-          $header = '';
+          $header = false;
           $stats = array(
             'added' => 0
           );
@@ -595,9 +622,9 @@ Options:
             $i++;
             $v1 = $pathdiff.ltrim($v1, './');
 
-            $header = printheader($header, $i, $total, $stats, 'Adding '.$v1);
+            // $header = printheader($header, $i, $total, $stats, 'Adding '.$v1);
 
-            $r = $db->query('SELECT * FROM files WHERE name="'.mres($v1).'"');
+            $r = $db->query('SELECT 1 FROM files WHERE name="'.mres($v1).'" LIMIT 1');
             if (!sqlite3_num_rows($r)) {
               $currentstatus = 'ADDED';
               if (!$db->query('INSERT INTO files (name, status, created) VALUES("'.mres($v1).'", "'.mres(STATUS_UNVERIFIED).'", "'.mresnow().'")')) exit(1);
@@ -606,7 +633,7 @@ Options:
               $currentstatus = 'CHECKED';
             }
 
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$v1);
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$v1, false, true);
           }
           printheader($header, $i, $total, $stats, "$total files found, added ".$stats['added'], true);
           echo "\n";
@@ -617,7 +644,7 @@ Options:
 
           # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
           if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find database path in current directory path\n";
+            echo "Cannot find root path in current directory path\n";
             exit(1);
           }
 
@@ -634,7 +661,7 @@ Options:
           }
 
           $total = sqlite3_num_rows($r);
-          $header = '';
+          $header = false;
           $rehashed = 0;
           $stats = array(
             'hashed' => 0,
@@ -693,7 +720,7 @@ Options:
 
           # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
           if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find database path in current directory path\n";
+            echo "Cannot find root path in current directory path\n";
             exit(1);
           }
 
@@ -722,7 +749,7 @@ Options:
             'missing' => 0
           );
 
-          $header = '';
+          $header = false;
           while ($row = $r->fetchArray()) {
             $i++;
             $md5 = $row['md5'];
@@ -764,7 +791,7 @@ Options:
 
           # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
           if (strpos($cwd, $root) !== 0) { # aaa/bbb/ccc/ddd must begin with aaa/bbb
-            echo "Cannot find database path in current directory path\n";
+            echo "Cannot find root path in current directory path\n";
             exit(1);
           }
 
@@ -797,7 +824,7 @@ Options:
             'missing' => 0
           );
 
-          $header = '';
+          $header = false;
           $currentstatus = '';
           $i = 0;
           $logmessage_range = array();
