@@ -65,11 +65,18 @@ $statuses = array(
 );
 
 $config_backup_original_before_rewrite = true;
+$config_controlfile = "/mnt/ramdisk/".basename(__FILE__, '.php');
 $config_dbpath = false;
 $config_rootdir = false;
 $config_tmpdir = false;
 
 $opts = getopt('chi:o:p:r:sw:');
+
+function get_controlfile_data() {
+  global $config_controlfile;
+  if (!file_exists($config_controlfile) || !filesize($config_controlfile)) return false;
+  return trim(file_get_contents($config_controlfile));
+}
 
 function get_db_conn() {
   return new SQLite3(get_db_path());
@@ -350,6 +357,15 @@ foreach ($opts as $k => $v) {
         $subcase = substr($sub, 0, 1);
         $subv = substr($sub, 1);
         switch ($subcase) {
+          case 'c': # set control file
+            $cf= realpath($subv);
+            if (!file_exists($cf)) {
+              echo "Control file not found or not a file: $cf\n";
+              exit(1);
+            }
+            $config_controlfile = $cf;
+            echo "Control file: ".$config_controlfile."\n";
+            break;
           case 'd': # set database file
             if (substr($subv, -1) === '/') {
               $b = FILENAME_DB;
@@ -429,7 +445,7 @@ foreach ($opts as $k => $v) {
       }
       break;
     case 'h':
-      echo basename($argv[0]); ?> is a program to re-magnetize files on magnetic disks.
+      echo basename(__FILE__, '.php'); ?> is a program to re-magnetize files on magnetic disks.
 It does so by recursively copying files to a temporary location and then copying them
 back, preserving MD5 sums, timestamps, rights in the process using a SQLite3 database
 for meta data storage.
@@ -440,7 +456,7 @@ Example of work flow to create database, index, hash and rewrite:
 
 Options are applied in the order they are supplied.
 
-Usage: <?php echo basename($argv[0]); ?> <options>
+Usage: <?php echo basename(__FILE__, '.php'); ?> <options>
 
 Options:
   -c           Create <?php echo FILENAME_DB ?> SQLite3 file in current directory
@@ -450,6 +466,8 @@ Options:
   -p<n><value> Set property with name <n> to value <value>
                Put option and path together, like this: -de/path/
     property <n>:
+      c<path>  Set a control file. Fill this file with the word "abort" to abort -r<o> tasks as soon as possible.
+               Defaults to /mnt/ramdisk/<?php echo basename(__FILE__, '.php'); ?>.
       d        Path, set database file, default is <?php echo FILENAME_DB ?> in current directory
       i<m>  Manage hash ignore list
         subproperty <m>:
@@ -679,6 +697,13 @@ Options:
 
           if (!$db->query('BEGIN TRANSACTION')) exit(1);
           foreach ($o as $k1 => $v1) {
+            $cfdata = get_controlfile_data();
+            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+              $db->exec("END TRANSACTION");
+              echo "\nAborted by control file: $config_controlfile\n";
+              exit(1);
+            }
+
             $v1 = $pathdiff.ltrim($v1, './');
             if (!in_array($v1, $inserted)) {
               $stmt = $db->prepare('INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :updated)');
@@ -748,6 +773,15 @@ Options:
           $total = sqlite3_num_rows($r);
 
           while($row = $r->fetchArray()) {
+            $cfdata = get_controlfile_data();
+            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+              #if ($itrans > 0) {
+              #  $db->exec("END TRANSACTION");
+              #}
+              echo "\nAborted by control file: $config_controlfile\n";
+              exit(1);
+            }
+
             $i++;
             $dbfilename = basename($row['name']);
             $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff).$dbfilename;
@@ -911,6 +945,14 @@ Options:
           $header = false;
           $itrans = 0;
           while ($row = $r->fetchArray()) {
+            $cfdata = get_controlfile_data();
+            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+              if ($itrans > 0) {
+                $db->exec("END TRANSACTION");
+              }
+              echo "\nAborted by control file: $config_controlfile\n";
+              exit(1);
+            }
 
             if ($itrans === 0) {
               $db->exec("BEGIN TRANSACTION");
@@ -1016,6 +1058,16 @@ Options:
           echo "$total files in db and directory\n";
 
           while($row = $r->fetchArray()) {
+
+            $cfdata = get_controlfile_data();
+            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+              #if ($itrans > 0) {
+              #  $db->exec("END TRANSACTION");
+              #}
+              echo "\nAborted by control file: $config_controlfile\n";
+              exit(1);
+            }
+
             $i++;
             # check if already rewritten and no need to redo
             if ($row['rewritten'] != null && strlen($row['rewritten']) > 0 &&
