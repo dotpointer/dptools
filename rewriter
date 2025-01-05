@@ -36,6 +36,7 @@ define('STATUS_ERROR_MD5_MISMATCH', -14);
 define('STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE', -16);
 define('STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE', -17);
 define('STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED', -18);
+define('STATUS_ERROR_REWRITE_SET_MODIFY_FAILED', -19);
 define('STATUS_UNVERIFIED', 1);
 define('STATUS_VERIFIED', 2);
 define('STATUS_REWRITTEN', 3);
@@ -237,7 +238,11 @@ function mres($s) {
 }
 
 function mresnow() {
-  return mres(date('Y-m-d H:i:s'));
+  return mres(now());
+}
+
+function now() {
+  return date('Y-m-d H:i:s');
 }
 
 function printheader($last_header, $i, $linecount, $stats = array(), $text = '', $force = false, $benchmark = false) {
@@ -280,6 +285,18 @@ function sqlite3_num_rows($r) {
     ++$n;
   }
   return $n;
+}
+
+function stmt_run($stmt, $fields) {
+  $ints = array('id', 'id_logs', 'rewrites', 'status', 'size');
+  foreach ($fields as $k => $v) {
+    $t = in_array($k, $ints) ? SQLITE3_INTEGER : SQLITE3_TEXT;
+    $stmt->bindValue(':'.$k, $v, $t);
+  }
+  $b = $stmt->execute();
+  $stmt->clear();
+  $stmt->reset();
+  return $b;
 }
 
 foreach ($opts as $k => $v) {
@@ -551,7 +568,10 @@ Options:
         'missing' => 0
       );
       $header = false;
+
+      $stmt = $db->prepare('UPDATE files SET md5 = :md5, updated = :updated WHERE id = :id');
       if (!$db->exec("BEGIN TRANSACTION")) exit(1);
+
       while ($line = fgets($f)) {
 
         $i++;
@@ -600,9 +620,7 @@ Options:
             } else {
               $row = $files[$findex];
               if ($row['md5'] == null || !strlen($row['md5'])) {
-                if (!$db->query("
-                  UPDATE files SET md5 = '".mres($md5)."', updated = '".mresnow()."' WHERE id = '".mres($row['id'])."'
-                ")) exit(1);
+                if (!stmt_run($stmt, array('id' => $row['id'], 'md5' => $md5, 'updated' => now()))) exit(1);
                 $stats['updated']++;
                 $currentstatus = 'UPDATE';
               }
@@ -691,6 +709,7 @@ Options:
 
           $r = $db->query('SELECT name FROM files');
           $inserted = array();
+          $stmt = $db->prepare('INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
           while ($row = $r->fetchArray()) {
             $inserted[] = $row['name'];
           }
@@ -706,14 +725,7 @@ Options:
 
             $v1 = $pathdiff.ltrim($v1, './');
             if (!in_array($v1, $inserted)) {
-              $stmt = $db->prepare('INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :updated)');
-              $stmt->bindValue(':name', $v1, SQLITE3_TEXT);
-              $stmt->bindValue(':status', STATUS_UNVERIFIED, SQLITE3_INTEGER);
-              $stmt->bindValue(':size', filesize($v1));
-              $stmt->bindValue(':updated', date('Y-m-d H:i:s'), SQLITE3_TEXT);
-              $stmt->execute();
-              $stmt->clear();
-              $stmt->reset();
+              if (!stmt_run($stmt, array('name' => $v1, 'status' => STATUS_UNVERIFIED, 'size' => filesize($v1), 'created' => now()))) exit(1);
               $currentstatus = 'ADDED';
               $inserted[] = $v1;
               $stats['added']++;
@@ -771,6 +783,16 @@ Options:
             'missing' => 0
           );
           $total = sqlite3_num_rows($r);
+          $stmt_md5_ok = $db->prepare(
+            'UPDATE files
+            SET md5 = :md5, status = :status, updated = :updated, hashed = :hashed
+            WHERE id = :id');
+          $stmt_md5_fail = $db->prepare(
+            'UPDATE files
+            SET status = :status, updated = :updated
+            WHERE id = :id');
+          $stmt_bytes_hashed = $db->prepare(
+            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
 
           while($row = $r->fetchArray()) {
             $cfdata = get_controlfile_data();
@@ -795,28 +817,15 @@ Options:
 
               $md5 = md5_file($relativepath);
               if ($md5 !== false) {
-                if (!$db->query("
-                  UPDATE files
-                  SET
-                    md5 = '".mres($md5)."',
-                    status = '".mres(STATUS_VERIFIED)."',
-                    updated = '".mresnow()."',
-                    hashed =  '".mresnow()."'
-                  WHERE id = '".mres($row['id'])."'")) exit(1);
+                if (!stmt_run($stmt_md5_ok, array('md5' => $md5, 'status' => STATUS_VERIFIED, 'hashed' => now(), 'updated' => now(), 'id' => $row['id']))) exit(1);
                 $currentstatus = 'HASHED';
                 $stats['hashed']++;
               } else {
-                if (!$db->query("
-                  UPDATE files
-                  SET
-                    md5 = '".mres($md5)."',
-                    status = '".mres(STATUS_ERROR_HASHING_FAILED)."',
-                    updated = '".mresnow()."'
-                  WHERE id = '".mres($row['id'])."'")) exit(1);
+                if (!stmt_run($stmt_md5_fail, array('md5' => $md5, 'status' => STATUS_ERROR_HASHING_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
                 $currentstatus = 'HASHING FAILED';
                 $stats['failed']++;
               }
-              if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($filesize)." WHERE property='bytes_hashed'")) exit(1);
+              if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
             }
             $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$relativepath);
           }
@@ -859,6 +868,10 @@ Options:
           );
 
           $header = false;
+
+          $stmt_missing = $db->prepare("UPDATE files SET status = :status, updated WHERE id = :id");
+          $stmt_size = $db->prepare("UPDATE files SET size = :size, updated = :updated WHERE id = :id");
+
           $db->exec("BEGIN TRANSACTION");
           while ($row = $r->fetchArray()) {
             $i++;
@@ -867,9 +880,9 @@ Options:
             $path = $relativepath.$dbfilename;
 
             if (!file_exists($path)) {
+              if (!stmt_run($stmt_missing, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'MISSING';
               $stats['missing']++;
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_MISSING)."' WHERE id='".mres($row['id'])."'")) exit(1);
             } else {
               $filesize = filesize($path);
               $header = printheader($header, $i, $total, $stats, 'Sizing '.$path.' ('.get_si_size($filesize).')');
@@ -877,17 +890,9 @@ Options:
                 $currentstatus = 'FAILED';
                 $stats['failed']++;
               } else {
-                $validate_hash = true;
-                  $stats['ok'] ++;
-                  $currentstatus = 'OK';
-                  if (!$db->query("UPDATE files SET size = '".mres($filesize)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
-                  $stmt = $db->prepare("UPDATE files SET size = :size, updated = :updated WHERE id = :id");
-                  $stmt->bindValue(':id', $row['id']);
-                  $stmt->bindValue(':size', $filesize);
-                  $stmt->bindValue(':updated', date('Y-m-d H:i:s'), SQLITE3_TEXT);
-                  $stmt->execute();
-                  $stmt->clear();
-                  $stmt->reset();
+                $stats['ok'] ++;
+                $currentstatus = 'OK';
+                if (!stmt_run($stmt_size, array('size' => $filesize, 'updated' => now(), 'id' => $row['id']))) exit(1);
               }
             }
             $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path);
@@ -944,6 +949,11 @@ Options:
 
           $header = false;
           $itrans = 0;
+
+          $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
+          $stmt_bytes_hashed = $db->prepare(
+            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
+
           while ($row = $r->fetchArray()) {
             $cfdata = get_controlfile_data();
             if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
@@ -966,7 +976,7 @@ Options:
             if (!file_exists($path)) {
               $currentstatus = 'MISSING';
               $stats['missing']++;
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_MISSING)."' WHERE id='".mres($row['id'])."'")) exit(1);
+             if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
             } else {
               $filesize = filesize($path);
               $header = printheader($header, $i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')');
@@ -987,13 +997,14 @@ Options:
                 if (!$validate_hash || md5_file($path) === $md5) {
                   $stats['ok'] ++;
                   $currentstatus = 'OK';
-                  if (!$db->query("UPDATE files SET status = '".mres(STATUS_VERIFIED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_VERIFIED, 'updated' => now(), 'id' => $row['id']))) exit(1);
                 } else {
                   $stats['mismatch'] ++;
                   $currentstatus = 'MISMATCH';
-                  if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_MD5_MISMATCH)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
                 }
-                if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($filesize)." WHERE property='bytes_hashed'")) exit(1);
+
+                if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
               }
             }
 
@@ -1057,6 +1068,12 @@ Options:
           $total = sqlite3_num_rows($r);
           echo "$total files in db and directory\n";
 
+          $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
+          $stmt_set_rewritten = $db->prepare("UPDATE files SET rewrites = rewrites + 1, rewritten = :rewritten, status = :status, updated = :updated WHERE id = :id");
+          $stmt_bytes_rewritten = $db->prepare(
+            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_rewritten'");
+          $stmt_set_log = $db->prepare("UPDATE log SET updated = :updated, ids_files = :ids_files WHERE id = :id");
+
           while($row = $r->fetchArray()) {
 
             $cfdata = get_controlfile_data();
@@ -1102,7 +1119,7 @@ Options:
             if (!is_writable($srcfile)) {
               echo get_line_clear($header);
               echo "* Source not writable - $srcfile\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
@@ -1111,7 +1128,7 @@ Options:
             if (!is_writable($relativepath)) {
               echo get_line_clear($header);
               echo "* Temporary file not writable - $tmpfile\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
@@ -1122,7 +1139,7 @@ Options:
             if ($size === false) {
               echo get_line_clear($header);
               echo "* Size check failed - $srcfile\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SIZE_CHECK_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SIZE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
@@ -1133,7 +1150,7 @@ Options:
             if ($freespace === false) {
               echo get_line_clear($header);
               echo "*  Disk free space check failed - $relativepath\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               exit(1); # fatal
@@ -1143,7 +1160,7 @@ Options:
             if ($size > $freespace) {
               echo get_line_clear($header);
               echo "* No free space to cp, $freespace.' b free, need $size b - $srcfile\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
@@ -1156,7 +1173,7 @@ Options:
             if ($r1 !== 0) {
               echo get_line_clear($header);
               echo '* cp command '.$c.' failed: '.implode(" ", $o)."\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_EXEC_CP_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_CP_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
@@ -1167,7 +1184,7 @@ Options:
             if (!file_exists($tmpfile)) {
               echo get_line_clear($header);
               echo "* Copy missing - $tmpfile"."\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_COPY_MISSING)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_COPY_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
@@ -1175,22 +1192,22 @@ Options:
 
             # md5 tmp file
             $md5 = md5_file($tmpfile);
-            if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($size)." WHERE property='bytes_hashed'")) exit(1);
             if ($md5 === false) {
               echo get_line_clear($header);
               echo "* MD5 hash failed, file: $tmpfile ($srcfile)\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_MD5_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
               continue;
             }
+            if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($size)." WHERE property='bytes_hashed'")) exit(1);
 
             # md5 check temporary file
             if (strlen($row['md5']) && $md5 != $row['md5']) {
               echo get_line_clear($header);
               echo "* MD5 mismatches, $md5 vs ".$row['md5'].", file: $tmpfile ($srcfile)\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_MD5_MISMATCH)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
@@ -1200,9 +1217,9 @@ Options:
             # group check and set tmp
             if (filegroup($srcfile) != filegroup($tmpfile) &&
               !chgrp($tmpfile, filegroup($srcfile))) {
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SET_CHGRP_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
               echo get_line_clear($header);
               echo "* Failed changing group - $tmpfile ($srcfile)\n";
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHGRP_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
@@ -1212,9 +1229,9 @@ Options:
             # permissions check and set tmp
             if (fileperms($srcfile) != fileperms($tmpfile) &&
               !chmod($tmpfile, fileperms($srcfile))) {
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SET_CHMOD_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
               echo get_line_clear($header);
               echo "* Failed changing permissions - $tmpfile ($srcfile)\n";
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHMOD_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
               continue;
@@ -1223,9 +1240,9 @@ Options:
             # owner check and set tmp
             if (fileowner($srcfile) != fileowner($tmpfile) &&
               !chown($tmpfile, fileowner($srcfile))) {
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SET_CHOWN_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
               echo get_line_clear($header);
               echo "* Failed changing ownership - $tmpfile ($srcfile)\n";
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHOWN_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
               continue;
@@ -1234,9 +1251,9 @@ Options:
             # modify time check tmp
             if (filemtime($srcfile) != filemtime($tmpfile) &&
               !touch($tmpfile, filemtime($srcfile))) {
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_SET_CHOWN_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
               echo get_line_clear($header);
               echo "* Failed changing modify time - $tmpfile ($srcfile)\n";
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_MODIFY_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
               continue;
@@ -1257,8 +1274,7 @@ Options:
               echo '  Perms    : '.fileperms($srcfile).' vs '.fileperms($tmpfile)."\n";
               echo '  Size     : '.filesize($srcfile).' vs '.filesize($tmpfile)."\n";
               echo '  Modified : '.filemtime($srcfile).' vs '.filemtime($tmpfile)."\n";
-
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_META_MISMATCH)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_META_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $stats['failed']++;
               remove_tmpfile($tmpfile, $header);
               continue;
@@ -1280,7 +1296,7 @@ Options:
               if ($r1 !== 0) {
                 echo get_line_clear($header);
                 echo "* mv command $c failed: ".implode(" ", $o)."\n";
-                if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_EXEC_MV_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_MV_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
                 $stats['failed']++;
                 echo "Temporary file is left at $tmpfile\n";
                 exit(1); # this is fatal
@@ -1295,8 +1311,8 @@ Options:
               echo get_line_clear($header);
               echo "* mv command $c failed: ".implode(" ", $o)."\n";
               echo "Temporary file is left at $tmpfile\n";
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_MV_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $stats['failed']++;
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_EXEC_MV_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
               exit(1); # this is fatal
             }
 
@@ -1309,7 +1325,7 @@ Options:
               if ($config_backup_original_before_rewrite) {
                 echo "  Original file is left at $origfile\n";
               }
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_MD5_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               exit(1);
@@ -1322,7 +1338,7 @@ Options:
               if ($config_backup_original_before_rewrite) {
                 echo "  Original file is left at $origfile\n";
               }
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_REWRITE_MD5_MISMATCH)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               exit(1);
@@ -1331,23 +1347,19 @@ Options:
             if ($config_backup_original_before_rewrite && file_exists($origfile) && !unlink($origfile)) {
               echo get_line_clear($header);
               echo "* Failed removing temporary original file: $origfile\n";
-              if (!$db->query("UPDATE files SET status = '".mres(STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
             }
 
-            if (!$db->query("UPDATE files SET rewrites = rewrites + 1, rewritten = '".date('Y-m-d H:i:s')."', status = '".mres(STATUS_REWRITTEN)."', updated = '".mresnow()."' WHERE id='".mres($row['id'])."'")) exit(1);
-            if (!$db->query("UPDATE properties SET value = CAST(value AS INTEGER) + ".mres(filesize($srcfile))." WHERE property='bytes_rewritten'")) exit(1);
+            if (!stmt_run($stmt_set_rewritten, array('status' => STATUS_REWRITTEN, 'rewritten' => now(), 'updated' => now(), 'id' => $row['id']))) exit(1);
+            if (!stmt_run($stmt_bytes_rewritten, array('size' => filesize($srcfile)))) exit(1);
+
             $currentstatus = 'Rewrote';
             $stats['rewritten']++;
-
             $logmessage_range = get_logmessage_range($logmessage_range, $row['id']);
-
-            if (!$db->query("UPDATE log SET
-                updated = '".mresnow()."',
-                ids_files='".mres(get_formatted_logmessage_range($logmessage_range))."'
-              WHERE id='".mres($id_logs)."'")) exit(1);
+            if (!stmt_run($stmt_set_log, array('ids_files' => get_formatted_logmessage_range($logmessage_range), 'updated' => now(), 'id' => $id_logs))) exit(1);
 
             $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile);
           }
