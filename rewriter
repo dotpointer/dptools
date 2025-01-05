@@ -251,7 +251,8 @@ function now() {
 }
 
 function printheader($last_header, $i, $linecount, $stats = array(), $text = '', $force = false, $benchmark = false) {
-  if ($force || $i === 1 ||
+  if ($force === true || $force > 0 && $i % $force === 0 ||
+    $i === 1 ||
     $i >=1000 && $i % 1000 === 0 ||
     $i >=100 && $i < 1000 && $i % 100 === 0 ||
     $i >=10 && $i < 100 && $i % 10 === 0
@@ -488,7 +489,8 @@ Options:
   -p<n><value> Set property with name <n> to value <value>
                Put option and path together, like this: -de/path/
     property <n>:
-      c<path>  Set a control file. Fill this file with the word "abort" to abort -r<o> tasks as soon as possible.
+      c<path>  Set a control file. Fill it with "abort" to abort -r<o> tasks when possible.
+               Set to h<number> to set rewrite status update interval.
                Defaults to /mnt/ramdisk/<?php echo basename(__FILE__, '.php'); ?>.
       d        Path, set database file, default is <?php echo FILENAME_DB ?> in current directory
       i<m>  Manage hash ignore list
@@ -1044,12 +1046,23 @@ Options:
           $pathdiff = $diff['path'];
           $cutoff = $diff['cutoff']; # difference between root and current dir
 
-          $sql = "INSERT INTO log (type, created) VALUES('".mres(LOG_TYPE_REWRITE)."', '".mresnow()."')";
-          if (!$db->query($sql)) exit(1);
-          $id_logs = $db->lastInsertRowID();
-          if (!$id_logs) {
-            echo "Failed creating log row\n";
-            exit(1);
+          $sql = "SELECT * FROM log ORDER BY updated DESC LIMIT 1";
+          $r = $db->query($sql);
+          while ($row = $r->fetchArray()) {
+            if (strtotime($row['updated']) > time() - 86400) {
+              $id_logs = $row['id'];
+            }
+            break;
+          }
+
+          if ($id_logs === false) {
+            $sql = "INSERT INTO log (type, created) VALUES('".mres(LOG_TYPE_REWRITE)."', '".mresnow()."')";
+            if (!$db->query($sql)) exit(1);
+            $id_logs = $db->lastInsertRowID();
+            if (!$id_logs) {
+              echo "Failed creating log row\n";
+              exit(1);
+            }
           }
 
           # get paths relative to root path - ccc/ddd/file etc
@@ -1131,8 +1144,10 @@ Options:
               continue;
             }
 
+            $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
+
             $filesize = filesize($srcfile);
-            $header = printheader($header, $i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')');
+            $header = printheader($header, $i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')', $printheader_force);
 
             if (!is_writable($srcfile)) {
               echo get_line_clear($header);
@@ -1378,7 +1393,7 @@ Options:
             $logmessage_range = get_logmessage_range($logmessage_range, $row['id']);
             if (!stmt_run($stmt_set_log, array('ids_files' => get_formatted_logmessage_range($logmessage_range), 'updated' => now(), 'id' => $id_logs))) end_trans_exit($db);
 
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile);
+            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile, $printheader_force);
           }
           if (!$db->exec("END TRANSACTION")) exit(1);
           printheader($header, $i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed', true);
