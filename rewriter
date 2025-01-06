@@ -1437,40 +1437,62 @@ Options:
       }
 
       echo "Files and statuses:\n";
-      $r = $db->query('SELECT status, COUNT(id) AS quantity FROM files GROUP BY status ORDER BY status');
-      $w = 0;
       $result = array();
+      $total = 0;
+      $r = $db->query("SELECT COUNT(id) AS quantity, SUM(size) AS size FROM files");
+      while ($row = $r->fetchArray()) {
+        $total = $row['size'];
+        $result[] = array('quantity' => $row['quantity'], 'text' => 'total files',
+          'size' => get_si_size($row['size']),
+          'percentage' => sprintf("% 7.3f", (100 > 0 && $total > 0) ? 100 : 0, 1).'%');
+        break;
+      }
+
+
+      $r = $db->query("SELECT COUNT(id) AS quantity, SUM(size) AS size FROM files WHERE md5 IS NULL OR md5=''");
+      while ($row = $r->fetchArray()) {
+        if ($row['quantity'] > 0) {
+          $result[] = array('quantity' => $row['quantity'], 'text' => 'unhashed files',
+            'size' => get_si_size($row['size']),
+            'percentage' => sprintf("% 7.3f", ($row['size'] > 0 && $total > 0) ? ($row['size'] / $total) * 100 : 0, 1).'%');
+        }
+        break;
+      }
+
+      $r = $db->query('SELECT status, COUNT(id) AS quantity, SUM(size) AS size FROM files GROUP BY status ORDER BY status');
       while ($row = $r->fetchArray()) {
         $result[] = array(
           'quantity' => $row['quantity'],
-          'text' => lcfirst(array_key_exists($row['status'], $statuses) ? $statuses[$row['status']] : 'Unknown status '.$row['status'])
+          'text' => lcfirst(array_key_exists($row['status'], $statuses) ? $statuses[$row['status']] : 'Unknown status '.$row['status']),
+          'size' => get_si_size($row['size']),
+          'percentage' => sprintf("% 7.3f", ($row['size'] > 0 && $total > 0) ? ($row['size'] / $total) * 100 : 0, 1).'%'
         );
       }
 
-      $r = $db->query("SELECT COUNT(id) AS quantity FROM files WHERE md5 IS NULL OR md5=''");
-      $unhashed = 0;
+      $r = $db->query("SELECT COUNT(id) AS quantity, SUM(size) AS size FROM files WHERE md5 IS NOT NULL AND NOT md5=''");
       while ($row = $r->fetchArray()) {
         if ($row['quantity'] > 0) {
-          $result[] = array('quantity' => $row['quantity'], 'text' => 'unhashed files');
+          $result[] = array('quantity' => $row['quantity'], 'text' => 'hashed files',
+            'size' => get_si_size($row['size']),
+            'percentage' => sprintf("% 7.3f", ($row['size'] > 0 && $total > 0) ? ($row['size'] / $total) * 100 : 0, 1).'%');
         }
         break;
       }
 
-      $r = $db->query("SELECT COUNT(id) AS quantity FROM files WHERE md5 IS NOT NULL AND NOT md5=''");
-      $hashed = 0;
-      while ($row = $r->fetchArray()) {
-        if ($row['quantity'] > 0) {
-          $result[] = array('quantity' => $row['quantity'], 'text' => 'hashed files');
+      $widths = array();
+      foreach ($result as $row) {
+        foreach ($row as $columnk => $columnv) {
+          $widths[$columnk] = !array_key_exists($columnk, $widths) || strlen($columnv) > $widths[$columnk] ? strlen($columnv) : $widths[$columnk];
         }
-        break;
       }
 
       foreach ($result as $row) {
-        $w = strlen($row['quantity']) > $w ? strlen($row['quantity']) : $w;
-      }
-
-      foreach ($result as $row) {
-        echo ' * '.str_pad($row['quantity'], $w, ' ', STR_PAD_LEFT).' '.$row['text']."\n";
+        $s = ' *';
+        foreach ($row as $columnk => $columnv) {
+          $s .= ' '.str_pad($columnv, $widths[$columnk], ' ', STR_PAD_LEFT);
+        }
+        $s .= "\n";
+        echo $s;
       }
       break;
     case 'w': # set working directory
