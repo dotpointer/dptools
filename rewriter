@@ -340,6 +340,7 @@ foreach ($opts as $k => $v) {
           created TEXT,
           hashed TEXT,
           rewritten TEXT,
+          verified TEXT,
           updated TEXT
         )')) exit(1);
 
@@ -1004,7 +1005,7 @@ Options:
                 if (!$validate_hash || md5_file($path) === $md5) {
                   $stats['ok'] ++;
                   $currentstatus = 'OK';
-                  if (!stmt_run($stmt_set_status, array('status' => STATUS_VERIFIED, 'updated' => now(), 'id' => $row['id']))) exit(1);
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_VERIFIED, 'updated' => now(), 'verified' => now(), 'id' => $row['id']))) exit(1);
                 } else {
                   $stats['mismatch'] ++;
                   $currentstatus = 'MISMATCH';
@@ -1178,25 +1179,48 @@ Options:
               continue;
             }
 
-            # get free space
-            $freespace = disk_free_space($relativepath);
+            # get tmp free space on copy target
+            $freespace = disk_free_space($copydir);
             if ($freespace === false) {
               echo get_line_clear($header);
-              echo "*  Disk free space check failed - $relativepath\n";
+              echo "*  Disk free space check failed - $copydir\n";
               if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               end_trans_exit($db); # fatal
             }
 
-            # check file size vs free space
+            # check tmp file size vs free space
             if ($size > $freespace) {
               echo get_line_clear($header);
-              echo "* No free space to cp, $freespace.' b free, need $size b - $srcfile\n";
+              echo "* No free space to cp to temporary file, $freespace b free, need $size b - $srcfile\n";
               if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
               $currentstatus = 'FAILED';
               $stats['failed']++;
               continue;
+            }
+
+            if ($config_backup_original_before_rewrite) {
+              # get free space
+              $freespace = disk_free_space($relativepath);
+              if ($freespace === false) {
+                echo get_line_clear($header);
+                echo "*  Disk free space check failed - $relativepath\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                end_trans_exit($db); # fatal
+              }
+
+              # check file size vs free space
+              if ($size > $freespace) {
+                echo get_line_clear($header);
+                echo "* No free space to cp, $freespace b free, need $size b - $srcfile\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
             }
 
             # copy source to tmp
