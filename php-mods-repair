@@ -1,0 +1,328 @@
+#!/usr/bin/php
+<?php
+
+# php-mods-repair - check PHP configuration directory and ensure mods are
+# available and are linked for the highest version
+# by Robert Klebe, dotpointer
+
+define('VERBOSE_NONE', 0);
+define('VERBOSE_ERROR', 1);
+define('VERBOSE_INFO', 2);
+define('VERBOSE_DEBUG', 3);
+
+$configfile = '/etc/dptools/php-mods-repair';
+$configfileexample = $configfile.'-example';
+$config = array(
+  'dryrun' => true,
+  'rootdir' => '/etc/php/',
+  'verbosity' => VERBOSE_INFO,
+  'modsavailable' => array(
+    array(
+      'enabled' => false, # True = enable, false = skip checking this mod
+      'file' => 'filename-in-mods-available.ini', # Source in mods-available
+      'ordernumber' => false, # Order no in conf.d, false = detect highest + 10
+      'source' => false # Path to source, false = use previous PHP version
+    )
+  )
+);
+
+function array_merge_keep_keys(/* dynamic */) {
+  $result = array();
+  foreach (func_get_args() as $arg) {
+    if (!is_array($arg)) continue;
+    foreach ($arg as $k => $v) {
+      $result[$k] = $v;
+    }
+  }
+  return $result;
+}
+
+function cl($s, $level=VERBOSE_ERROR) {
+  global $config;
+  $shortnames = array(
+    VERBOSE_ERROR => 'E',
+    VERBOSE_INFO => 'I',
+    VERBOSE_DEBUG => 'D'
+  );
+  if ($level > $config['verbosity']) return;
+  echo date('Y-m-d H:i:s').' '.$shortnames[$level].' '.$s."\n";
+}
+
+# to remove comments in a string beginning with a # sign
+function remove_comments($s) {
+  $s = explode("\n", $s);
+  foreach ($s as $k => $v) {
+    $s[$k] = preg_replace('/^\s*\#+.*$/', '',$v);
+  }
+  return implode("\n", $s);
+}
+
+$opts = getopt(
+  'c:ehpv::',
+  array(
+    'configfile:',
+    'example-write',
+    'help',
+    'perform',
+    'verbose'
+  )
+);
+
+# check options
+foreach ($opts as $key => $value) {
+  switch ($key) {
+    default:
+      cl("Unknown option: ".$key, VERBOSE_ERROR);
+      break;
+    case 'c':
+    case 'configfile':
+      $configfile = $v;
+      $configfileexample = $v.'example';
+      cl("Using config file $configfile", VERBOSE_INFO);
+      break;
+    case 'e':
+    case 'example-write':
+      if (file_exists($configfileexample)) {
+        cl("Configuration file '.$configfileexample.' exists, will not overwrite it", VERBOSE_ERROR);
+        exit(2);
+      }
+      cl("Writing example configuration file to $configfileexample", VERBOSE_INFO);
+      file_put_contents($configfileexample, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+      exit(1);
+    case 'h':
+    case 'help':
+?>
+Usage: <?php echo basename(__FILE__); ?> <options>
+
+Description:
+
+Custom configuration files for PHP called mods can be
+placed into /etc/php/<PHP-version>/mods-available/<name>.ini, and
+symbolic links to these can then be placed in
+/etc/php/<PHP-version>/[cli, fpm,...]/conf.d/<order-number>-<name>.ini
+(at least on Debian).
+
+But the files are not automatically copied to newer versions of PHP when
+a new version is released, resulting in that the custom configurations have
+to be manually copied.
+
+This script is written to fix this. It scans the /etc/php/ directory, finds
+the latest copies of the custom mods in the previous version folders and then
+copies them to the latest version if needed. It also creates symbolic links
+if needed. It uses a configuration file to know what the mods are named.
+
+PHP-FPM has to be reloaded in case changes have been made, the script returns
+0 if no changes, 1 if it did changes and returns other values on errors.
+The return code can be used to detect if PHP-FPM has to be reloaded.
+
+Options:
+  -e, --example-write
+    Write example config to <?php echo $configfileexample ?>.
+    Will not write if config file exists.
+  -h, --help
+    Print this help.
+  -p, --perform
+    Actually make changes - will dry run by default.
+  -v[=v/<N>], --verbosity[=v/<N>]
+    Increase verbosity, defaults to error level
+    Available levels are:
+      0 = none, quiet
+      1 = errors (default)
+      2 = info (only actions)
+      3 = debug
+
+Return codes:
+    0  - nothing done
+    1 - changes made, reload PHP-FPM is encouraged
+  > 1 - other errors
+<?php
+      exit(0);
+    case 'p':
+    case 'perform':
+      $config['dryrun'] = false;
+      break;
+    case 'v':
+    case 'verbose':
+      $config['verbosity'] = is_numeric($value) ? $value : (substr_count($value, 'v') + 1);
+      break;
+  }
+}
+
+# no config file specified?
+if (!$configfile) {
+  cl("Fatal error, no config file found", VERBOSE_ERROR);
+  exit(3);
+}
+
+cl("Reading config from $configfile", VERBOSE_DEBUG);
+
+# try to read config data from file
+if (!file_exists($configfile) || !$configdata = file_get_contents($configfile)) {
+  cl("Failed reading config file $configfile, maybe empty or unreadable.", VERBOSE_ERROR);
+  exit(4);
+}
+
+# strip comment lines from config
+$configdata = remove_comments($configdata);
+
+# try to decode json
+$configdata = json_decode($configdata, true);
+if ($configdata === NULL) {
+  cl("Failed decoding JSON from config file $configfile, check config file syntax.", VERBOSE_ERROR);
+  exit(5);
+}
+
+$config['modsavailable'] = array(); # drop example
+$config = array_merge_keep_keys($config, $configdata);
+
+# check options again
+foreach ($opts as $key => $value) {
+  switch ($key) {
+    case 'p':
+    case 'perform':
+      $config['dryrun'] = false;
+      break;
+    case 'v':
+    case 'verbose':
+      $config['verbosity'] = is_numeric($value) ? $value : (substr_count($value, 'v') + 1);
+      break;
+  }
+}
+
+if ($config['dryrun']) {
+  cl("Dry run is on", VERBOSE_DEBUG);
+}
+
+# find valid version dirs in /etc/php/
+$items = scandir($config['rootdir']);
+$versions = array();
+foreach ($items as $item) {
+  if (in_array($item, ['.', '..']) ||
+    !is_dir($config['rootdir'].$item) ||
+    version_compare($item, $item) === -1
+  ) {
+    continue;
+  }
+  $versions[] = $item;
+}
+
+# sort versions falling
+usort($versions, function($a, $b) {
+    return version_compare($a, $b) * -1;
+});
+
+cl("Versions, latest is first: ".implode(", ", $versions), VERBOSE_DEBUG);
+
+cl("Targeted mods and latest sources:", VERBOSE_DEBUG);
+
+# find most recent source for each mod
+foreach ($config['modsavailable'] as $mak => $ma) {
+  if (isset($ma['enabled']) && $ma['enabled'] == false) continue;
+  $msg = $ma['file'].": ";
+  if (isset($ma['source']) && $ma['source'] != false) continue;
+  foreach ($versions as $k1 => $version) {
+    $modpath = $config['rootdir'].$version.'/mods-available/'.$ma['file'];
+    if (!file_exists($modpath)) continue;
+    $msg .= $modpath;
+    $config['modsavailable'][$mak]['source'] = $modpath;
+    break;
+  }
+  cl($msg, VERBOSE_DEBUG);
+}
+
+$changes = false;
+
+# latest version
+$version = $versions[0];
+cl("Checking version ".$version." mods availability", VERBOSE_DEBUG);
+
+# find most recent source for each mod
+foreach ($config['modsavailable'] as $mak => $ma) {
+  if (isset($ma['enabled']) && $ma['enabled'] == false) continue;
+  $modname = $ma['file'];
+  # no source for this mod, go next
+  if (!$ma['source'] || !is_file($ma['source'])) continue;
+  # path to latest version mod
+  $latestmodpath = $config['rootdir'].$version.'/mods-available/'.$ma['file'];
+  # already exists
+  if (!file_exists($latestmodpath)) {
+    cl($ma['file'].": missing in ".$latestmodpath, VERBOSE_DEBUG);
+    cl($modname.": copying ".$ma['source']." => ".$latestmodpath, VERBOSE_INFO);
+    $changes = true;
+    if (!$config['dryrun'] && !copy($ma['source'], $latestmodpath)) {
+      cl($modname.": failed copying ".$ma['source'].' to '.$latestmodpath, VERBOSE_ERROR);
+      continue;
+    }
+    if (!$config['dryrun'] && !file_exists($latestmodpath)) {
+      cl($modname.": not found despite copying: ".$latestmodpath, VERBOSE_ERROR);
+      continue;
+    }
+  } else {
+    cl($ma['file'].": ".$latestmodpath, VERBOSE_DEBUG);
+  }
+}
+
+# walk common subdirs to check links in this version
+foreach (array("cli", "fpm") as $dk => $dv) {
+  $dirpath = $config['rootdir'].$version.'/'.$dv."/conf.d/";
+  if (!is_dir($dirpath)) continue;
+  $items = scandir($dirpath);
+  $tmp = array();
+  $highest = 0;
+  cl("Checking ".$dirpath, VERBOSE_DEBUG);
+
+  # walk all symbolic link .ini files in the subdir/conf.d dir
+  # and collect them
+  foreach ($items as $k => $item) {
+    # no ini, go next
+    if (in_array($item, [".", ".."])) continue;
+    if (substr($item, -4) != '.ini') continue;
+
+    $tmp[] = $item;
+    # if there is a number in the beginning of the name
+    # check if it is higher than the previous
+    if (strpos($item, '-') !== false) {
+      $number = substr($item, 0, strpos($item, '-'));
+      if (is_numeric($number)) {
+        $number = (int)$number;
+        $highest = $number > $highest ? $number : $highest;
+      }
+    }
+  }
+  $items = $tmp;
+
+  # walk the mods
+  foreach ($config['modsavailable'] as $mak => $ma) {
+    if (isset($ma['enabled']) && $ma['enabled'] == false) continue;
+    $modavpath = $config['rootdir'].$version.'/mods-available/'.$ma['file'];
+    $modname = $ma['file'];
+    if (!file_exists($modavpath)) continue;
+    # walk the links for this version
+    $found = false;
+    foreach ($items as $k => $item) {
+      if ($item === $modname ||
+        # modname.ini === NN-modname.ini
+        strpos($item, '-') !== false &&
+        is_numeric(substr($item, 0, strpos($item, '-'))) &&
+        substr($item, strpos($item, '-') + 1) === $modname
+      ) {
+        cl($modname.": ".$dirpath.$item, VERBOSE_DEBUG);
+        $found = true;
+      }
+    }
+    # the link for this mod was not found
+    if (!$found) {
+      $number = isset($ma['ordernumber']) && $ma['ordernumber'] !== false && is_numeric($ma['ordernumber']) ? $ma['ordernumber'] : $highest + 10;
+      $symbolicpath = $dirpath.$number.'-'.$modname;
+      cl($modname.": creating symbolic link ".$modavpath." => ".$symbolicpath, VERBOSE_INFO);
+      $changes = true;
+      if (!$config['dryrun'] && !symlink($modavpath, $symbolicpath)) {
+        cl($modname.": failed creating symbolic link ".$modavpath." => ".$symbolicpath, VERBOSE_INFO);
+      }
+    }
+  }
+}
+
+exit($changes ? 1 : 0);
+
+?>
