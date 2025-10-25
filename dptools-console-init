@@ -219,7 +219,8 @@ function set_title() {
 alias title=set_title;
 alias tlist='ps';
 alias tracert='traceroute';
-alias type='cat';
+# type alias below causes cat errors on tab in Debian 13
+# alias type='cat';
 alias unamsg='cat /var/log/unattended-upgrades/unattended-upgrades-dpkg.log';
 alias unmount='umount';
 alias watch='watch -n1';
