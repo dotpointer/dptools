@@ -137,6 +137,7 @@ alias iptraf='iptraf-ng';
 alias iptraffic='iptraf-ng';
 alias jed='vi';
 alias jpegtran='jpegtran -copy all';
+alias journalctl='journalctl -o short-iso';
 alias jsonlint='python -m json.tool <';
 alias ka='killall audacity; audacity &';
 alias kca='killall caja';

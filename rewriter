@@ -1047,6 +1047,7 @@ Options:
           $pathdiff = $diff['path'];
           $cutoff = $diff['cutoff']; # difference between root and current dir
 
+          $id_logs = false;
           $sql = "SELECT * FROM log ORDER BY updated DESC LIMIT 1";
           $r = $db->query($sql);
           while ($row = $r->fetchArray()) {
