@@ -16,6 +16,7 @@
 # 2018-06-30 02:25:00 - adding support for arguments and user profile files editing
 # 2018-07-01 14:11:00 - adding git installer
 # 2018-07-19 19:29:30 - indentation change, tab to 2 spaces
+# 2025-11-02 21:03:00 - adding caller name to add action
 
 ACTION_ADD="";
 ACTION_UPDATE="";
@@ -206,7 +207,7 @@ if [[ ! -z $ACTION_ADD ]]; then
         if [[ -w $CURRENTFILE ]]; then
           # try to add the line
           echo "$CURRENTFILE is missing dptools-console-init, trying to add it";
-          echo $NEEDEDLINE >> $CURRENTFILE;
+          echo "$NEEDEDLINE $i" >> $CURRENTFILE;
           if [ $? -ne 0 ]; then
             echo "Error: failed adding dptools-console-init to $CURRENTFILE";
             # no exit here, take next file
