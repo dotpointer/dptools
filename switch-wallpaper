@@ -3,8 +3,8 @@
 
 # switch-wallpaper - get and set a random desktop wallpaper in Debian MATE
 
-# 2018-07-10 18:37:00 first version in bash
-# 2018-07-12 first version in php
+# 2018-07-10 18:37:00 - first version in bash
+# 2018-07-12 00:00:00 - first version in php
 # 2018-07-26 10:25:00 - adding support for extension version number changes
 # 2020-02-21 20:45:00 - reducing to use unsplash
 # 2020-03-12 14:00:00 - bugfix, files were not writeable for other users
@@ -14,6 +14,7 @@
 # 2021-02-16 23:33:00 - updating output filenames, using json log format
 # 2021-10-15 20:09:00 - using mate-screensaver dconf setting to change lock screen image
 # 2022-09-12 14:44:00 - adding wget retry
+# 2025-11-13 21:15:00 - replace unsplash with picsum, remove html redirect
 
 # user in question
 $currentuser = trim(shell_exec('whoami'));
@@ -29,7 +30,7 @@ $config_default = array(
   'logfile' => '/tmp/'.basename(__FILE__).'.log',
   'network-retry-interval' => 5,
   'network-retry-time' => 600,
-  'unsplash-url' => 'https://source.unsplash.com/1920x1080/?nature,water,beach,palmtree',
+  'image-url' => 'https://picsum.photos/1920/1080',
   'verbose' => false,
   'wallpaper-dir' => '/tmp/'
 );
@@ -50,6 +51,7 @@ function array_merge_keep_keys(/* dynamic */) {
 function write_json_file($file, $data) {
   $json_indented_by_4 = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
   $json_indented_by_2 = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $json_indented_by_4);
+
   if (!file_put_contents($file, $json_indented_by_2)) {
     echo 'Failed writing '.$file."\n";
     die(1);
@@ -157,8 +159,8 @@ if (!$config['desktopuser']) {
   $config['desktopuser'] = $currentuser;
 }
 
-if ($config['verbose']) echo 'Checking for network connection'."\n";
 # check if there is an inet address available, except localhost and ipv6 addresses
+if ($config['verbose']) echo 'Checking for network connection'."\n";
 while (strpos(shell_exec('ifconfig|grep inet|grep -v 127|grep -v inet6'), 'inet') === false) {
   if ($config['verbose']) echo 'No network connection, retrying in '.$config['network-retry-interval']. ' seconds'."\n";
   sleep($config['network-retry-interval']);
@@ -170,21 +172,39 @@ while (strpos(shell_exec('ifconfig|grep inet|grep -v 127|grep -v inet6'), 'inet'
 }
 
 
-# requires a GUI session program that will always run:
+# find mate-panel process - requires a GUI session program that will always run
+# expected output: a process id
 $c = 'pgrep -u '.escapeshellarg($config['desktopuser']).' mate-panel';
-if ($config['verbose']) echo 'Running '.$c."\n";
+if ($config['verbose']) echo 'Running '.$c."...";
 $process = trim(shell_exec($c));
-$c = "grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'";
-if ($config['verbose']) echo 'Running '.$c."\n";
-$daddress = trim(shell_exec($c));
-$c = 'curl -k '.$config['unsplash-url'];
-if ($config['verbose']) echo 'Running '.$c."\n";
-$redirect = shell_exec($c);
-$redirect = substr($redirect, strpos($redirect, 'href="') + 6);
-$redirect = substr($redirect, 0, strpos($redirect,'"'));
-if (strpos($redirect, '?') !== false) {
-  $redirect = substr($redirect, 0, strpos($redirect, '?'));
+if ($config['verbose']) echo ($process ?? "Fail, no process id")."\n";
+if (!$process) {
+    exit(1);
 }
+if (!strlen($process)) {
+  echo "No mate-panel process, aborting\n";
+  exit(1);
+}
+
+# get DBUS session address, expected output: unix:path=/run/user/1000/bus
+$c = "grep -z DBUS_SESSION_BUS_ADDRESS /proc/$process/environ  | sed 's/^[^=]*=//'";
+if ($config['verbose']) echo 'Running '.$c."...";
+$daddress = trim(shell_exec($c));
+if ($config['verbose']) echo ($daddress ?? "Fail, no DBUS address")."\n";
+if (!$daddress) {
+    exit(1);
+}
+
+# get redirect address
+$c = 'curl -Ls -o /dev/null -w %{url_effective} '.$config['image-url'];
+if ($config['verbose']) echo 'Running '.$c."...";
+$redirect = trim(shell_exec($c));
+if ($config['verbose']) echo ( strlen($redirect) ? $redirect : "Fail, no redirect URL")."\n";
+if (!strlen($redirect)) {
+    exit(1);
+}
+
+# get the log contents if there is a log
 $log = file_exists($config['logfile']) ? file_get_contents($config['logfile']) : array();
 if (is_string($log)) {
   $log = json_decode($log, true);
@@ -192,48 +212,49 @@ if (is_string($log)) {
     $log = array();
   }
 }
+
 $log['current'] = isset($log['current']) ? $log['current'] : array();
+
 $log['log'] = isset($log['log']) ? $log['log'] : array();
 
 $file = 'wallpaper_'.date('Y-m-d_His').'.jpg';
 
 $image = $config['wallpaper-dir'].$file;
 $delete = array();
-$retries=0;
+$retries = 0;
 
-$wgetquiet = '-q ';
-if ($config['verbose']) {
-  $wgetquiet = '';
-}
+$wgetquiet = $config['verbose'] ? '': '-q ';
 
 do {
+
+  # request a random image using wget, do not check certificate
   unset($c, $o, $r);
-  $c = 'wget --no-check-certificate '.$wgetquiet.'-O '.escapeshellarg($image).' '.$config['unsplash-url'];
+  $c = 'wget --no-check-certificate '.$wgetquiet.'-O '.escapeshellarg($image).' '.$config['image-url'];
   if ($config['verbose']) echo 'Running '.$c."\n";
-  # get random image
   exec($c, $o, $r);
   if ($r === 0) {
-    if ($config['verbose']) echo 'Good response from server'."\n";
     break;
-  } else {
-    if ($config['verbose']) echo 'Bad response from server'."\n";
   }
 
+  # image request failed and retry count has expired
   if (!$config['download-retry']) {
     if ($config['verbose']) echo 'Failed fetching image after '.$retries.', aborting'."\n";
     break;
     die(1);
   }
 
+  # count down available retries and count up retries made
   $config['download-retry']--;
   $retries++;
+
+  # if there is a time limit, then wait that
   if ($config['download-retry-limit']) {
     if ($config['verbose']) echo 'Retrying in '.$config['download-retry-limit'].' seconds'."\n";
     sleep($config['download-retry-limit']);
   }
 } while ($r !== 0);
 
-# set wallpaper for desktop user
+# use dconf to set wallpaper for the desktop user
 $c = 'sudo DBUS_SESSION_BUS_ADDRESS='.$daddress.' --user='.escapeshellarg($config['desktopuser']).' dconf write /org/mate/desktop/background/picture-filename \'"'.$image.'"\'';
 exec($c, $o, $r);
 if ($r !== 0) {
@@ -242,9 +263,16 @@ if ($r !== 0) {
 }
 
 if (isset($log['current'][$config['desktopuser'].':wallpaper'])) {
-  $log['log'][] = array($config['desktopuser'].':wallpaper', $log['current'][$config['desktopuser'].':wallpaper'][0]);
+  # put the current wallpaper name [0] in the log
+  $log['log'][] = array(
+    $config['desktopuser'].':wallpaper',
+    $log['current'][$config['desktopuser'].':wallpaper'][0]
+  );
+  # put the filename [1] of the current wallpaper in the delete list
   $delete[] = $log['current'][$config['desktopuser'].':wallpaper'][1];
 }
+
+# put the redirect URL and the wallpaper filename made above in the log
 $log['current'][$config['desktopuser'].':wallpaper'] = array($redirect, $file);
 
 # if running as root, then also set lock screen
@@ -271,11 +299,14 @@ if ($r !== 0) {
   exit($r);
 }
 
+# write the log file
 write_json_file($config['logfile'], $log);
 chmod($config['logfile'], 0666);
 chgrp($config['logfile'], 'users');
 
+# walk previous wallpaper files to delete
 foreach ($delete as $file) {
+  # if this is the current wallpaper then skip it
   $skip = false;
   foreach ($log['current'] as $current) {
     if ($current[1] === $file) {
@@ -284,6 +315,7 @@ foreach ($delete as $file) {
     }
   }
   if ($skip) continue;
+  # remove the wallpaper file
   $remove = $config['wallpaper-dir'].$file;
   if (file_exists($remove)) {
     unlink($remove);
