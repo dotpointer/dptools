@@ -4,7 +4,8 @@
 # index, hash and rewrite files
 
 # change log
-# 2024-12-26 21:07
+# 2024-12-26 21:07:00
+# 2025-12-16 03:27:00 - index finds and updates size and name changes
 
 if (!extension_loaded('sqlite3')) {
   echo "PHP SQLite3 extension not loaded\n";
@@ -37,6 +38,7 @@ define('STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE', -16);
 define('STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE', -17);
 define('STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED', -18);
 define('STATUS_ERROR_REWRITE_SET_MODIFY_FAILED', -19);
+define('STATUS_ERROR_MULTIPLE_MATCHES_FOUND', -20);
 define('STATUS_UNVERIFIED', 1);
 define('STATUS_VERIFIED', 2);
 define('STATUS_REWRITTEN', 3);
@@ -58,6 +60,8 @@ $statuses = array(
   STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED => 'Error, rewrite, failed disk free space check',
   STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE => 'Error, rewrite, file larger than free disk space',
   STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED => 'Error, failed removing original file',
+  STATUS_ERROR_REWRITE_SET_MODIFY_FAILED => 'Error, rewrite, failed setting modify date',
+  STATUS_ERROR_MULTIPLE_MATCHES_FOUND => 'Error, new file matches multiple missing files on MD5',
   STATUS_ERROR_MISSING => 'Missing',
   STATUS_ERROR_MD5_MISMATCH => 'Error, MD5 mismatches',
   STATUS_UNVERIFIED => 'Unverified',
@@ -505,9 +509,9 @@ Options:
       t        Path, set temporary files directory, default is same as original file
   -r<o>        Run the task with option name <o>
     option <o>:
-      i   Index files in current directory to database
-      h   Hash files in current directory found in database
-      v   Validate MD5 hashes on files in current directory
+      i   Index files in current directory to database, add new, refind renamed
+      h   Hash files in current directory found in database and update database
+      v   Validate MD5 hashes on files in current directory to identify changes
       w   Rewrite files in current directory found in database
   -s           Print details about the database and its contents
   -w<path>     Change working directory to <path>
@@ -690,12 +694,12 @@ Options:
 
       switch ($v) {
         case 'i': # index
-          echo "Indexing files in ".$cwd."\n";
+
           $cwd = trim($cwd, "/");
 
           # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
           if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find root path in current directory path";
+            echo "Cannot find root path in current directory path\n";
             exit(1);
           }
 
@@ -703,6 +707,97 @@ Options:
           $pathdiff = $diff['path'];
           $cutoff = $diff['cutoff']; # difference between root and current dir
 
+          # check db for files existence and missing status if needed
+          $r = $db->query('SELECT * FROM files');
+          $inserted = array();
+          while ($row = $r->fetchArray()) {
+            $inserted[] = $row;
+          }
+
+          if (count($inserted)) {
+            $total = count($inserted);
+            echo "Checking $total files in database\n";
+
+            $header = false;
+            $rehashed = 0;
+            $stats = array(
+              'exists' => 0,
+              'missing' => 0,
+              'changed' => 0
+            );
+
+            # prepare statement to update status
+            $stmt_update_size = $db->prepare(
+              'UPDATE files
+              SET md5 = :md5, size = :size, status = :status, updated = :updated
+              WHERE id = :id');
+            $stmt_update_status = $db->prepare(
+              'UPDATE files
+              SET status = :status, updated = :updated
+              WHERE id = :id');
+
+            # walk files in db
+            $itrans = 0;
+            foreach ($inserted as $k1 => $v1) {
+              # control file management
+              $cfdata = get_controlfile_data();
+              if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+                if ($itrans > 0) {
+                  $db->exec("END TRANSACTION");
+                }
+                echo "\nAborted by control file: $config_controlfile\n";
+                exit(1);
+              }
+
+              $dbfilename = basename($v1['name']);
+              $relativepath = get_file_path_relative_to_cwd($v1['name'], $cutoff).$dbfilename;
+
+              if (!file_exists($relativepath)) {
+                $currentstatus = 'MISSING';
+                $stats['missing']++;
+                if ($itrans == 0) {
+                  if (!$db->query('BEGIN TRANSACTION')) exit(1);
+                }
+                $updated = now();
+                if (!stmt_run($stmt_update_status, array('status' => STATUS_ERROR_MISSING, 'updated' => $updated, 'id' => $v1['id']))) exit(1);
+                $inserted[$k1]['status'] = STATUS_ERROR_MISSING;
+                $inserted[$k1]['updated'] = $updated;
+                $itrans++;
+              } else {
+                # detect size change and update to unverified
+                $filesize = filesize($relativepath);
+                if ($filesize != $v1['size']) {
+                  if ($itrans == 0) {
+                    if (!$db->query('BEGIN TRANSACTION')) exit(1);
+                  }
+                  $updated = now();
+                  if (!stmt_run($stmt_update_size, array('size' => $filesize,  'status' => STATUS_UNVERIFIED, 'md5' => '', 'updated' => $updated, 'id' => $v1['id']))) exit(1);
+                  $inserted[$k1]['md5'] = "";
+                  $inserted[$k1]['size'] = $filesize;
+                  $inserted[$k1]['status'] = STATUS_UNVERIFIED;
+                  $inserted[$k1]['updated'] = $updated;
+                  $itrans++;
+                  $currentstatus = 'CHANGED';
+                  $stats['changed']++;
+                } else {
+                  $currentstatus = 'EXISTS';
+                  $stats['exists']++;
+                }
+              }
+
+              $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1['name'], false, true);
+            }
+            if ($itrans > 0) {
+              if (!$db->query('END TRANSACTION')) exit(1);
+            }
+            printheader($header, $total, $total, $stats, "$total files found in database, ".$stats['exists']." exists, ".$stats['changed']." changed, ".$stats['missing']." missing", true);
+            echo "\n";
+          } # eof if inserted files exist
+
+          # begin indexing
+          echo "Indexing files in ".$cwd."\n";
+
+          # find files
           $c = 'find . -type f -regextype posix-extended ! -name \''.FILENAME_DB.'\' ! -regex ".*\.(copy|original)\.[0-9]+\.rewrite$" |sort';
           exec($c, $o, $r);
           if ($r !== 0) {
@@ -712,19 +807,27 @@ Options:
 
           $header = false;
           $stats = array(
-            'added' => 0
+            'added' => 0,
+            'failed' => 0,
+            'refound' => 0
           );
           $total = count($o);
 
-          $r = $db->query('SELECT name FROM files');
-          $inserted = array();
-          $stmt = $db->prepare('INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
-          while ($row = $r->fetchArray()) {
-            $inserted[] = $row['name'];
-          }
+          # prepare statements to run eventually
+          $stmt_update_name = $db->prepare(
+            'UPDATE files
+            SET name = :name, status = :status, updated = :updated
+            WHERE id = :id');
+          $stmt_bytes_hashed = $db->prepare(
+            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
+          $stmt_insert = $db->prepare(
+            'INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
 
           if (!$db->query('BEGIN TRANSACTION')) exit(1);
+
+          # walk files found on disk
           foreach ($o as $k1 => $v1) {
+            # control file data
             $cfdata = get_controlfile_data();
             if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
               $db->exec("END TRANSACTION");
@@ -732,21 +835,101 @@ Options:
               exit(1);
             }
 
-            $v1 = $pathdiff.ltrim($v1, './');
-            if (!in_array($v1, $inserted)) {
-              if (!stmt_run($stmt, array('name' => $v1, 'status' => STATUS_UNVERIFIED, 'size' => filesize($v1), 'created' => now()))) exit(1);
-              $currentstatus = 'ADDED';
-              $inserted[] = $v1;
-              $stats['added']++;
-            } else {
-              $currentstatus = 'CHECKED';
+            $relativepath = $pathdiff.ltrim($v1, './');
+
+            $currentstatus = false;
+            # find exact match by name
+            foreach ($inserted as $ifk => $insertedfile) {
+              if ($insertedfile['name'] === $relativepath) {
+                # missing file is back
+                if ($insertedfile['status'] === STATUS_ERROR_MISSING) {
+                  $updated = now();
+                  if (!stmt_run($stmt_update_status, array('status' => STATUS_UNVERIFIED, 'updated' => $updated, 'id' => $insertedfile['id']))) exit(1);
+                  $inserted[$ifk]['status'] = STATUS_UNVERIFIED;
+                  $inserted[$ifk]['updated'] = $updated;
+                  $currentstatus = 'REFOUND';
+                # any other status
+                } else {
+                  $currentstatus = 'CHECKED';
+                }
+                break;
+              }
+            }
+
+            if (!$currentstatus) {
+              # find missing files with same size in db
+              $filesize = filesize($relativepath);
+              $found = false;
+              foreach ($inserted as $ifk => $insertedfile) {
+                if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize) continue;
+                $found = true;
+                break;
+              }
+
+              # no matches - new file
+              if (!$found) {
+                $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
+                if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                $currentstatus = 'ADDED';
+                $inserted[] = $stmt_data;
+                $stats['added']++;
+              # matches on status missing + filesize
+              } else {
+                # hash it
+                $md5 = md5_file($relativepath);
+                if ($md5 === false) {
+                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_HASHING_FAILED, 'size' => $filesize, 'created' => now());
+                  if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                  $currentstatus = 'ADDED HASHING FAILED';
+                  $inserted[] = $stmt_data;
+                  $stats['added']++;
+                  $stats['failed']++;
+                }
+                if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
+
+                $matchedkeys = array();
+                foreach ($inserted as $ifk => $insertedfile) {
+                  if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize || $insertedfile['md5'] != $md5) continue;
+                  $matchedkeys[] = $ifk;
+                }
+
+                # no missing + size + md5 matches, add it
+                if (count($matchedkeys) === 0) {
+                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
+                  if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                  $currentstatus = 'ADDED';
+                  $inserted[] = $stmt_data;
+                  $stats['added']++;
+                # matched 1 on missing + size + md5
+                } else if (count($matchedkeys) === 1) {
+                  $updated = now();
+                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_VERIFIED, 'updated' => $updated, 'id' => $inserted[$matchedkeys[0]]['id']);
+                  if (!stmt_run($stmt_update_name, $stmt_data)) exit(1);
+                  $inserted[$matchedkeys[0]]['name'] = $relativepath;
+                  $inserted[$matchedkeys[0]]['status'] = STATUS_VERIFIED;
+                  $inserted[$matchedkeys[0]]['name'] = $updated;
+                  $stats['refound']++;
+                # matched multiple on missing + size + md5
+                } else {
+                  # mark all as error multiple matches found
+                  foreach ($matchedkeys as $mkindex) {
+                    $updated = now();
+                    $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_MULTIPLE_MATCHES_FOUND, 'updated' => $updated, 'id' => $inserted[$mkindex]['id']);
+                    if (!stmt_run($stmt_update_status, $stmt_data)) exit(1);
+                    $currentstatus = 'MULTIPLE FOUND';
+                    $inserted[$mkindex]['status'] = STATUS_VERIFIED;
+                    $inserted[$mkindex]['name'] = $updated;
+                    $stats['failed']++;
+                  }
+                }
+              }
             }
 
             $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1, false, true);
           }
           if (!$db->query('END TRANSACTION')) exit(1);
 
-          printheader($header, $total, $total, $stats, "$total files found, added ".$stats['added'], true);
+          printheader($header, $total, $total, $stats, "$total files found on disk, ".$stats['added']." added, ".$stats['refound']." refound, ".$stats['failed']." failed", true);
           echo "\n";
           break;
         case 'h': # hash
@@ -910,7 +1093,7 @@ Options:
           printheader($header, $i, $total, $stats, '', true);
           echo "\n";
           break;
-        case 'v':
+        case 'v': # verify indexed files
 
           echo "Verifying files in ".$cwd."\n";
           $cwd = trim($cwd, "/");
@@ -936,12 +1119,16 @@ Options:
           # $sql = "UPDATE files SET status = '".mres(STATUS_UNVERIFIED)."', updated = '".mresnow()."' WHERE name LIKE '".mres($pathdiff)."%'";
           # if (!$db->query($sql)) exit(1);
 
-          $sql = "SELECT * FROM files WHERE status = '".mres(STATUS_UNVERIFIED)."' AND name LIKE '".mres($pathdiff)."%' ORDER BY size";
+          $verifytype = "";
+          if ($v === 'v') {
+            $sql = "SELECT * FROM files WHERE status IN ('".mres(STATUS_VERIFIED)."', '".mres(STATUS_ERROR_MISSING)."') AND name LIKE '".mres($pathdiff)."%' ORDER BY size";
+            $verifytype = "verified, unverified or missing";
+          }
 
           $r = $db->query($sql);
           $total = sqlite3_num_rows($r);
           if (!$total) {
-            echo "No files found in $cwd\n";
+            echo "No $verifytype files found in $cwd\n";
             exit(1);
           }
 
@@ -981,13 +1168,13 @@ Options:
             $dbfilename = basename($row['name']);
             $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
             $path = $relativepath.$dbfilename;
+            $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
 
             if (!file_exists($path)) {
               $currentstatus = 'MISSING';
               $stats['missing']++;
              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
             } else {
-              $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
               $filesize = filesize($path);
               $header = printheader($header, $i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')', $printheader_force);
               if ($md5 == null || !strlen($md5)) {
