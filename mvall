@@ -1,0 +1,56 @@
+#!/usr/bin/php
+<?php
+  # move all files with the same name but different file extension
+  # by robert klebe, dotpointer
+
+  $from = isset($argv[1]) ? $argv[1] : false;
+  $to = isset($argv[2]) ? $argv[2] : false;
+  $perform = isset($argv[3]) ? $argv[3] : false;
+
+  if ($from === false || $to === false) {
+    echo "From and to must be given, also -p last to perform changes.";
+  }
+
+  $files = scandir('.');
+
+  $from_no_ext = substr($from, 0, strrpos($from, "."));
+  $to_no_ext = substr($to, 0, strrpos($to, "."));
+
+  $todo = array(array($from, $to));
+
+  foreach ($files as $f) { # from is movie.avi
+
+    # require a dot
+    if (strpos($f, ".") === false) continue;
+
+    # not the same file
+    if ($f === $from) continue;
+
+    # from file without extension - movie
+    $f_no_ext = substr($f, 0, strrpos($f, "."));
+
+    # exclude other files
+    if ($f_no_ext !== $from_no_ext) continue;
+
+    # extract ext of this file
+    $f_ext = substr($f, strrpos($f, ".") + 1);
+
+    # from .
+    if ($f_no_ext === $from_no_ext) {
+      $todo[] = array($f, $to_no_ext.".".$f_ext);
+    }
+  }
+
+  if (count($todo)) echo "\n";
+  foreach ($todo as $mv) {
+
+    echo "   ".$mv[0]." => ".$mv[1];
+    if ($perform !== "-p") {
+      echo "\n";
+      continue;
+    }
+    echo " = RENAMED\n";
+    rename($mv[0], $mv[1]);
+  }
+  if (count($todo)) echo "\n";
+?>
