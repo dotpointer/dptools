@@ -5,7 +5,8 @@
 
 # change log
 # 2024-12-26 21:07:00
-# 2025-12-16 03:27:00 - index finds and updates size and name changes
+# 2025-11-16 03:27:00 - index finds and updates size and name changes
+# 2025-12-06 12:29:00 - bug fix, import did not add files
 
 if (!extension_loaded('sqlite3')) {
   echo "PHP SQLite3 extension not loaded\n";
@@ -583,7 +584,9 @@ Options:
       );
       $header = false;
 
-      $stmt = $db->prepare('UPDATE files SET md5 = :md5, updated = :updated WHERE id = :id');
+      $stmt_update = $db->prepare('UPDATE files SET md5 = :md5, updated = :updated WHERE id = :id');
+      $stmt_insert = $db->prepare('INSERT INTO files (created, md5, name, size, status) VALUES(:created, :md5, :name, :size, :status)');
+
       if (!$db->exec("BEGIN TRANSACTION")) exit(1);
 
       while ($line = fgets($f)) {
@@ -629,12 +632,13 @@ Options:
             }
 
             if ($findex === false) {
+              if (!stmt_run($stmt_insert, array('created' => now(), 'md5' => $md5, 'name' => $relativepath, 'size' => $filesize, 'status' => STATUS_UNVERIFIED))) exit(1);
               $stats['inserted']++;
               $currentstatus = 'ADD';
             } else {
               $row = $files[$findex];
               if ($row['md5'] == null || !strlen($row['md5'])) {
-                if (!stmt_run($stmt, array('id' => $row['id'], 'md5' => $md5, 'updated' => now()))) exit(1);
+                if (!stmt_run($stmt_update, array('id' => $row['id'], 'md5' => $md5, 'updated' => now()))) exit(1);
                 $stats['updated']++;
                 $currentstatus = 'UPDATE';
               }
