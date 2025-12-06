@@ -6,7 +6,7 @@
 # change log
 # 2024-12-26 21:07:00
 # 2025-11-16 03:27:00 - index finds and updates size and name changes
-# 2025-12-06 12:29:00 - bug fix, import did not add files
+# 2025-12-06 12:29:00 - bug fix, import did not add files, add verify options
 
 if (!extension_loaded('sqlite3')) {
   echo "PHP SQLite3 extension not loaded\n";
@@ -513,7 +513,10 @@ Options:
     option <o>:
       i   Index files in current directory to database, add new, refind renamed
       h   Hash files in current directory found in database and update database
-      v   Validate MD5 hashes on files in current directory to identify changes
+      v<o>     Validate MD5 hashes on files in current directory to identify changes
+        option <o...>:
+                   v  Validate verified files
+                   u  Validate unverified files (default)
       w   Rewrite files in current directory found in database
   -s           Print details about the database and its contents
   -w<path>     Change working directory to <path>
@@ -697,54 +700,494 @@ Options:
       $cwd = realpath(getcwd());
       $root = trim(get_root_dir(), "/");
 
-      switch ($v) {
-        case 'i': # index
+      $subs = is_array($v) ? $v : array($v);
+      foreach ($subs as $sub) {
+        $subcase = substr($sub, 0, 1);
+        $subv = substr($sub, 1);
+        switch ($subcase) {
+          case 'i': # index
 
-          $cwd = trim($cwd, "/");
+            $cwd = trim($cwd, "/");
 
-          # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
-          if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find root path in current directory path\n";
-            exit(1);
-          }
+            # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
+            if (strpos($cwd, $root) !== 0) {
+              echo "Cannot find root path in current directory path\n";
+              exit(1);
+            }
 
-          $diff = get_root_cwd_path_difference($root, $cwd);
-          $pathdiff = $diff['path'];
-          $cutoff = $diff['cutoff']; # difference between root and current dir
+            $diff = get_root_cwd_path_difference($root, $cwd);
+            $pathdiff = $diff['path'];
+            $cutoff = $diff['cutoff']; # difference between root and current dir
 
-          # check db for files existence and missing status if needed
-          $r = $db->query('SELECT * FROM files');
-          $inserted = array();
-          while ($row = $r->fetchArray()) {
-            $inserted[] = $row;
-          }
+            # check db for files existence and missing status if needed
+            $r = $db->query('SELECT * FROM files');
+            $inserted = array();
+            while ($row = $r->fetchArray()) {
+              $inserted[] = $row;
+            }
 
-          if (count($inserted)) {
-            $total = count($inserted);
-            echo "Checking $total files in database\n";
+            if (count($inserted)) {
+              $total = count($inserted);
+              echo "Checking $total files in database\n";
 
+              $header = false;
+              $rehashed = 0;
+              $stats = array(
+                'exists' => 0,
+                'missing' => 0,
+                'changed' => 0
+              );
+
+              # prepare statement to update status
+              $stmt_update_size = $db->prepare(
+                'UPDATE files
+                SET md5 = :md5, size = :size, status = :status, updated = :updated
+                WHERE id = :id');
+              $stmt_update_status = $db->prepare(
+                'UPDATE files
+                SET status = :status, updated = :updated
+                WHERE id = :id');
+
+              # walk files in db
+              $itrans = 0;
+              foreach ($inserted as $k1 => $v1) {
+                # control file management
+                $cfdata = get_controlfile_data();
+                if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+                  if ($itrans > 0) {
+                    $db->exec("END TRANSACTION");
+                  }
+                  echo "\nAborted by control file: $config_controlfile\n";
+                  exit(1);
+                }
+
+                $dbfilename = basename($v1['name']);
+                $relativepath = get_file_path_relative_to_cwd($v1['name'], $cutoff).$dbfilename;
+
+                if (!file_exists($relativepath)) {
+                  $currentstatus = 'MISSING';
+                  $stats['missing']++;
+                  if ($itrans == 0) {
+                    if (!$db->query('BEGIN TRANSACTION')) exit(1);
+                  }
+                  $updated = now();
+                  if (!stmt_run($stmt_update_status, array('status' => STATUS_ERROR_MISSING, 'updated' => $updated, 'id' => $v1['id']))) exit(1);
+                  $inserted[$k1]['status'] = STATUS_ERROR_MISSING;
+                  $inserted[$k1]['updated'] = $updated;
+                  $itrans++;
+                } else {
+                  # detect size change and update to unverified
+                  $filesize = filesize($relativepath);
+                  if ($filesize != $v1['size']) {
+                    if ($itrans == 0) {
+                      if (!$db->query('BEGIN TRANSACTION')) exit(1);
+                    }
+                    $updated = now();
+                    if (!stmt_run($stmt_update_size, array('size' => $filesize,  'status' => STATUS_UNVERIFIED, 'md5' => '', 'updated' => $updated, 'id' => $v1['id']))) exit(1);
+                    $inserted[$k1]['md5'] = "";
+                    $inserted[$k1]['size'] = $filesize;
+                    $inserted[$k1]['status'] = STATUS_UNVERIFIED;
+                    $inserted[$k1]['updated'] = $updated;
+                    $itrans++;
+                    $currentstatus = 'CHANGED';
+                    $stats['changed']++;
+                  } else {
+                    $currentstatus = 'EXISTS';
+                    $stats['exists']++;
+                  }
+                }
+
+                $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1['name'], false, true);
+              }
+              if ($itrans > 0) {
+                if (!$db->query('END TRANSACTION')) exit(1);
+              }
+              printheader($header, $total, $total, $stats, "$total files found in database, ".$stats['exists']." exists, ".$stats['changed']." changed, ".$stats['missing']." missing", true);
+              echo "\n";
+            } # eof if inserted files exist
+
+            # begin indexing
+            echo "Indexing files in ".$cwd."\n";
+
+            # find files
+            $c = 'find . -type f -regextype posix-extended ! -name \''.FILENAME_DB.'\' ! -regex ".*\.(copy|original)\.[0-9]+\.rewrite$" |sort';
+            exec($c, $o, $r);
+            if ($r !== 0) {
+              echo 'Failed: '.$c.": \n".implode("\n", $o)."\n";
+              exit(1);
+            }
+
+            $header = false;
+            $stats = array(
+              'added' => 0,
+              'failed' => 0,
+              'refound' => 0
+            );
+            $total = count($o);
+
+            # prepare statements to run eventually
+            $stmt_update_name = $db->prepare(
+              'UPDATE files
+              SET name = :name, status = :status, updated = :updated
+              WHERE id = :id');
+            $stmt_bytes_hashed = $db->prepare(
+              "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
+            $stmt_insert = $db->prepare(
+              'INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
+            $stmt_log_insert = $db->prepare(
+              'INSERT INTO log (ids_files, type, message, created) VALUES(:ids_files, :type, :message, :created)');
+
+            if (!$db->query('BEGIN TRANSACTION')) exit(1);
+
+            # walk files found on disk
+            foreach ($o as $k1 => $v1) {
+              # control file data
+              $cfdata = get_controlfile_data();
+              if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+                $db->exec("END TRANSACTION");
+                echo "\nAborted by control file: $config_controlfile\n";
+                exit(1);
+              }
+
+              $relativepath = $pathdiff.ltrim($v1, './');
+
+              $currentstatus = false;
+              # find exact match by name
+              foreach ($inserted as $ifk => $insertedfile) {
+                if ($insertedfile['name'] === $relativepath) {
+                  # missing file is back
+                  if ($insertedfile['status'] === STATUS_ERROR_MISSING) {
+                    $updated = now();
+                    if (!stmt_run($stmt_update_status, array('status' => STATUS_UNVERIFIED, 'updated' => $updated, 'id' => $insertedfile['id']))) exit(1);
+                    $inserted[$ifk]['status'] = STATUS_UNVERIFIED;
+                    $inserted[$ifk]['updated'] = $updated;
+                    $currentstatus = 'REFOUND';
+                  # any other status
+                  } else {
+                    $currentstatus = 'CHECKED';
+                  }
+                  break;
+                }
+              }
+
+              if (!$currentstatus) {
+                # find missing files with same size in db
+                $filesize = filesize($relativepath);
+                $found = false;
+                foreach ($inserted as $ifk => $insertedfile) {
+                  if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize) continue;
+                  $found = true;
+                  break;
+                }
+
+                # no matches - new file
+                if (!$found) {
+                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
+                  if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                  $currentstatus = 'ADDED';
+                  $inserted[] = $stmt_data;
+                  $stats['added']++;
+                # matches on status missing + filesize
+                } else {
+                  # hash it
+                  $md5 = md5_file($relativepath);
+                  if ($md5 === false) {
+                    $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_HASHING_FAILED, 'size' => $filesize, 'created' => now());
+                    if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                    $currentstatus = 'ADDED HASHING FAILED';
+                    $inserted[] = $stmt_data;
+                    $stats['added']++;
+                    $stats['failed']++;
+                  }
+                  if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
+
+                  $matchedkeys = array();
+                  foreach ($inserted as $ifk => $insertedfile) {
+                    if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize || $insertedfile['md5'] != $md5) continue;
+                    $matchedkeys[] = $ifk;
+                  }
+
+                  # no missing + size + md5 matches, add it
+                  if (count($matchedkeys) === 0) {
+                    $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
+                    if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
+                    $currentstatus = 'ADDED';
+                    $inserted[] = $stmt_data;
+                    $stats['added']++;
+                  # matched 1 on missing + size + md5
+                  } else if (count($matchedkeys) === 1) {
+                    $updated = now();
+
+                    # write to log
+                    $stmt_data = array(
+                      'ids_files' => $inserted[$matchedkeys[0]]['id'],
+                      'type' => LOG_TYPE_REFOUND,
+                      'created' => $updated,
+                      'message' => json_encode(array(
+                        'name' => array(
+                          'from' => $inserted[$matchedkeys[0]]['name'],
+                          'to' => $relativepath
+                        )
+                      ))
+                    );
+                    if (!stmt_run($stmt_log_insert, $stmt_data)) exit(1);
+
+                    $stmt_data = array('name' => $relativepath, 'status' => STATUS_VERIFIED, 'updated' => $updated, 'id' => $inserted[$matchedkeys[0]]['id']);
+                    if (!stmt_run($stmt_update_name, $stmt_data)) exit(1);
+                    $inserted[$matchedkeys[0]]['name'] = $relativepath;
+                    $inserted[$matchedkeys[0]]['status'] = STATUS_VERIFIED;
+                    $inserted[$matchedkeys[0]]['name'] = $updated;
+                    $stats['refound']++;
+                  # matched multiple on missing + size + md5
+                  } else {
+                    # mark all as error multiple matches found
+                    foreach ($matchedkeys as $mkindex) {
+                      $updated = now();
+                      $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_MULTIPLE_MATCHES_FOUND, 'updated' => $updated, 'id' => $inserted[$mkindex]['id']);
+                      if (!stmt_run($stmt_update_status, $stmt_data)) exit(1);
+                      $currentstatus = 'MULTIPLE FOUND';
+                      $inserted[$mkindex]['status'] = STATUS_VERIFIED;
+                      $inserted[$mkindex]['name'] = $updated;
+                      $stats['failed']++;
+                    }
+                  }
+                }
+              }
+
+              $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1, false, true);
+            }
+            if (!$db->query('END TRANSACTION')) exit(1);
+
+            printheader($header, $total, $total, $stats, "$total files found on disk, ".$stats['added']." added, ".$stats['refound']." refound, ".$stats['failed']." failed", true);
+            echo "\n";
+            break;
+          case 'h': # hash
+            echo "Hashing files in ".$cwd."\n";
+            $cwd = trim($cwd, "/");
+
+            # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
+            if (strpos($cwd, $root) !== 0) {
+              echo "Cannot find root path in current directory path\n";
+              exit(1);
+            }
+
+            $diff = get_root_cwd_path_difference($root, $cwd);
+            $pathdiff = $diff['path'];
+            $cutoff = $diff['cutoff']; # difference between root and current dir
+
+            # get ignore list for paths not needing hash
+            $sql = "SELECT * FROM ignorelist";
+            $r = $db->query($sql);
+            $ignorepaths = array();
+            while($row = $r->fetchArray()) {
+              $ignorepaths[] = $row['path'];
+            }
+
+            # get paths relative to dbpath
+            $sql = "SELECT * FROM files WHERE name LIKE '".mres($pathdiff)."%' AND (md5 IS NULL OR md5 = '')";
+            foreach ($ignorepaths as $path) {
+              $sql .= " AND name NOT LIKE '".mres($path)."%'";
+            }
+
+            $r = $db->query($sql);
+            if (!sqlite3_num_rows($r)) {
+              echo "No indexed unhashed files in $cwd\n";
+              exit(1);
+            }
+
+            $i = 0;
             $header = false;
             $rehashed = 0;
             $stats = array(
-              'exists' => 0,
-              'missing' => 0,
-              'changed' => 0
+              'hashed' => 0,
+              'failed' => 0,
+              'missing' => 0
             );
-
-            # prepare statement to update status
-            $stmt_update_size = $db->prepare(
+            $total = sqlite3_num_rows($r);
+            $stmt_md5_ok = $db->prepare(
               'UPDATE files
-              SET md5 = :md5, size = :size, status = :status, updated = :updated
+              SET md5 = :md5, status = :status, updated = :updated, hashed = :hashed
               WHERE id = :id');
-            $stmt_update_status = $db->prepare(
+            $stmt_md5_fail = $db->prepare(
               'UPDATE files
               SET status = :status, updated = :updated
               WHERE id = :id');
+            $stmt_bytes_hashed = $db->prepare(
+              "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
 
-            # walk files in db
+            while($row = $r->fetchArray()) {
+              $cfdata = get_controlfile_data();
+              if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+                #if ($itrans > 0) {
+                #  $db->exec("END TRANSACTION");
+                #}
+                echo "\nAborted by control file: $config_controlfile\n";
+                exit(1);
+              }
+
+              $i++;
+              $dbfilename = basename($row['name']);
+              $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff).$dbfilename;
+
+              if (!file_exists($relativepath)) {
+                $currentstatus = 'MISSING';
+                $stats['missing']++;
+              } else {
+                $filesize = filesize($relativepath);
+                $header = printheader($header, $i, $total, $stats, 'Hashing '.$relativepath.' ('.get_si_size($filesize).')', true); # DEBUG true
+
+                $md5 = md5_file($relativepath);
+                if ($md5 !== false) {
+                  if (!stmt_run($stmt_md5_ok, array('md5' => $md5, 'status' => STATUS_VERIFIED, 'hashed' => now(), 'updated' => now(), 'id' => $row['id']))) exit(1);
+                  $currentstatus = 'HASHED';
+                  $stats['hashed']++;
+                } else {
+                  if (!stmt_run($stmt_md5_fail, array('md5' => $md5, 'status' => STATUS_ERROR_HASHING_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
+                  $currentstatus = 'HASHING FAILED';
+                  $stats['failed']++;
+                }
+                if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
+              }
+              $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$relativepath);
+            }
+            printheader($header, $i, $total, $stats, '', true);
+            echo "\n";
+            break;
+          case 's': # size, temporary fix since indexing does it
+            echo "Checking size for files in ".$cwd."\n";
+            $cwd = trim($cwd, "/");
+
+            # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
+            if (strpos($cwd, $root) !== 0) {
+              echo "Cannot find root path in current directory path\n";
+              exit(1);
+            }
+
+            $diff = get_root_cwd_path_difference($root, $cwd);
+            $pathdiff = $diff['path'];
+            $cutoff = $diff['cutoff']; # difference between root and current dir
+
+            $sql = "UPDATE files SET status = '".mres(STATUS_UNVERIFIED)."', updated = '".mresnow()."' WHERE name LIKE '".mres($pathdiff)."%'";
+            if (!$db->query($sql)) exit(1);
+
+            $sql = "SELECT * FROM files WHERE size IS NULL or size = ''";
+
+            $r = $db->query($sql);
+            $total = sqlite3_num_rows($r);
+            if (!$total) {
+              echo "No files found in $cwd\n";
+              exit(1);
+            }
+
+            echo $total." sizeless files\n";
+
+            $i = 0;
+            $stats = array(
+              'ok' => 0,
+              'failed' => 0,
+              'missing' => 0
+            );
+
+            $header = false;
+
+            $stmt_missing = $db->prepare("UPDATE files SET status = :status, updated WHERE id = :id");
+            $stmt_size = $db->prepare("UPDATE files SET size = :size, updated = :updated WHERE id = :id");
+
+            $db->exec("BEGIN TRANSACTION");
+            while ($row = $r->fetchArray()) {
+              $i++;
+              $dbfilename = basename($row['name']);
+              $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
+              $path = $relativepath.$dbfilename;
+
+              if (!file_exists($path)) {
+                if (!stmt_run($stmt_missing, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
+                $currentstatus = 'MISSING';
+                $stats['missing']++;
+              } else {
+                $filesize = filesize($path);
+                $header = printheader($header, $i, $total, $stats, 'Sizing '.$path.' ('.get_si_size($filesize).')');
+                if ($filesize === false) {
+                  $currentstatus = 'FAILED';
+                  $stats['failed']++;
+                } else {
+                  $stats['ok'] ++;
+                  $currentstatus = 'OK';
+                  if (!stmt_run($stmt_size, array('size' => $filesize, 'updated' => now(), 'id' => $row['id']))) exit(1);
+                }
+              }
+              $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path);
+            }
+            $db->exec("END TRANSACTION");
+            printheader($header, $i, $total, $stats, '', true);
+            echo "\n";
+            break;
+          case 'v': # verify indexed files
+
+            $verifytypes = array();
+            $statuses_to_verify = array();
+            if (strpos($subv, 'v') !== false) {
+                $statuses_to_verify[] = STATUS_VERIFIED;
+                $verifytypes[] = "verified";
+            }
+            if (strpos($subv, 'u') !== false || !strlen($subv)) {
+                $statuses_to_verify[] = STATUS_UNVERIFIED;
+                $verifytypes[] = "unverified";
+            }
+            $verifytypes[] = "missing";;
+            $statuses_to_verify[] = STATUS_ERROR_MISSING;
+
+            echo "Verifying files in ".$cwd." with status: ".implode(", ", $verifytypes)."\n";
+            $cwd = trim($cwd, "/");
+
+            # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
+            if (strpos($cwd, $root) !== 0) {
+              echo "Cannot find root path in current directory path\n";
+              exit(1);
+            }
+
+            $diff = get_root_cwd_path_difference($root, $cwd);
+            $pathdiff = $diff['path'];
+            $cutoff = $diff['cutoff']; # difference between root and current dir
+
+            # get ignore list for paths not needing hash
+            $sql = "SELECT * FROM ignorelist";
+            $r = $db->query($sql);
+            $ignorepaths = array();
+            while($row = $r->fetchArray()) {
+              $ignorepaths[] = $row['path'];
+            }
+
+            # $sql = "UPDATE files SET status = '".mres(STATUS_UNVERIFIED)."', updated = '".mresnow()."' WHERE name LIKE '".mres($pathdiff)."%'";
+            # if (!$db->query($sql)) exit(1);
+            $sql = "SELECT * FROM files WHERE status IN (".implode(",", $statuses_to_verify).") AND name LIKE '".mres($pathdiff)."%' ORDER BY size";
+
+            $r = $db->query($sql);
+            $total = sqlite3_num_rows($r);
+            if (!$total) {
+              echo "No files found in $cwd with status: ".implode(", ", $verifytypes)."\n";
+              exit(1);
+            }
+
+            echo $total." unverified files\n";
+
+            $i = 0;
+            $stats = array(
+              'ok' => 0,
+              'ignored' => 0,
+              'unhashed' => 0,
+              'mismatch' => 0,
+              'missing' => 0
+            );
+
+            $header = false;
             $itrans = 0;
-            foreach ($inserted as $k1 => $v1) {
-              # control file management
+
+            $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
+            $stmt_bytes_hashed = $db->prepare(
+              "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
+
+            while ($row = $r->fetchArray()) {
               $cfdata = get_controlfile_data();
               if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
                 if ($itrans > 0) {
@@ -754,888 +1197,461 @@ Options:
                 exit(1);
               }
 
-              $dbfilename = basename($v1['name']);
-              $relativepath = get_file_path_relative_to_cwd($v1['name'], $cutoff).$dbfilename;
+              if ($itrans === 0) {
+                $db->exec("BEGIN TRANSACTION");
+              }
+              $i++;
+              $md5 = $row['md5'];
+              $dbfilename = basename($row['name']);
+              $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
+              $path = $relativepath.$dbfilename;
+              $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
 
-              if (!file_exists($relativepath)) {
+              if (!file_exists($path)) {
                 $currentstatus = 'MISSING';
                 $stats['missing']++;
-                if ($itrans == 0) {
-                  if (!$db->query('BEGIN TRANSACTION')) exit(1);
-                }
-                $updated = now();
-                if (!stmt_run($stmt_update_status, array('status' => STATUS_ERROR_MISSING, 'updated' => $updated, 'id' => $v1['id']))) exit(1);
-                $inserted[$k1]['status'] = STATUS_ERROR_MISSING;
-                $inserted[$k1]['updated'] = $updated;
-                $itrans++;
+              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
               } else {
-                # detect size change and update to unverified
-                $filesize = filesize($relativepath);
-                if ($filesize != $v1['size']) {
-                  if ($itrans == 0) {
-                    if (!$db->query('BEGIN TRANSACTION')) exit(1);
-                  }
-                  $updated = now();
-                  if (!stmt_run($stmt_update_size, array('size' => $filesize,  'status' => STATUS_UNVERIFIED, 'md5' => '', 'updated' => $updated, 'id' => $v1['id']))) exit(1);
-                  $inserted[$k1]['md5'] = "";
-                  $inserted[$k1]['size'] = $filesize;
-                  $inserted[$k1]['status'] = STATUS_UNVERIFIED;
-                  $inserted[$k1]['updated'] = $updated;
-                  $itrans++;
-                  $currentstatus = 'CHANGED';
-                  $stats['changed']++;
+                $filesize = filesize($path);
+                $header = printheader($header, $i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')', $printheader_force);
+                if ($md5 == null || !strlen($md5)) {
+                  $currentstatus = 'UNHASHED';
+                  $stats['unhashed']++;
                 } else {
-                  $currentstatus = 'EXISTS';
-                  $stats['exists']++;
-                }
-              }
-
-              $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1['name'], false, true);
-            }
-            if ($itrans > 0) {
-              if (!$db->query('END TRANSACTION')) exit(1);
-            }
-            printheader($header, $total, $total, $stats, "$total files found in database, ".$stats['exists']." exists, ".$stats['changed']." changed, ".$stats['missing']." missing", true);
-            echo "\n";
-          } # eof if inserted files exist
-
-          # begin indexing
-          echo "Indexing files in ".$cwd."\n";
-
-          # find files
-          $c = 'find . -type f -regextype posix-extended ! -name \''.FILENAME_DB.'\' ! -regex ".*\.(copy|original)\.[0-9]+\.rewrite$" |sort';
-          exec($c, $o, $r);
-          if ($r !== 0) {
-            echo 'Failed: '.$c.": \n".implode("\n", $o)."\n";
-            exit(1);
-          }
-
-          $header = false;
-          $stats = array(
-            'added' => 0,
-            'failed' => 0,
-            'refound' => 0
-          );
-          $total = count($o);
-
-          # prepare statements to run eventually
-          $stmt_update_name = $db->prepare(
-            'UPDATE files
-            SET name = :name, status = :status, updated = :updated
-            WHERE id = :id');
-          $stmt_bytes_hashed = $db->prepare(
-            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
-          $stmt_insert = $db->prepare(
-            'INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
-          $stmt_log_insert = $db->prepare(
-            'INSERT INTO log (ids_files, type, message, created) VALUES(:ids_files, :type, :message, :created)');
-
-          if (!$db->query('BEGIN TRANSACTION')) exit(1);
-
-          # walk files found on disk
-          foreach ($o as $k1 => $v1) {
-            # control file data
-            $cfdata = get_controlfile_data();
-            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
-              $db->exec("END TRANSACTION");
-              echo "\nAborted by control file: $config_controlfile\n";
-              exit(1);
-            }
-
-            $relativepath = $pathdiff.ltrim($v1, './');
-
-            $currentstatus = false;
-            # find exact match by name
-            foreach ($inserted as $ifk => $insertedfile) {
-              if ($insertedfile['name'] === $relativepath) {
-                # missing file is back
-                if ($insertedfile['status'] === STATUS_ERROR_MISSING) {
-                  $updated = now();
-                  if (!stmt_run($stmt_update_status, array('status' => STATUS_UNVERIFIED, 'updated' => $updated, 'id' => $insertedfile['id']))) exit(1);
-                  $inserted[$ifk]['status'] = STATUS_UNVERIFIED;
-                  $inserted[$ifk]['updated'] = $updated;
-                  $currentstatus = 'REFOUND';
-                # any other status
-                } else {
-                  $currentstatus = 'CHECKED';
-                }
-                break;
-              }
-            }
-
-            if (!$currentstatus) {
-              # find missing files with same size in db
-              $filesize = filesize($relativepath);
-              $found = false;
-              foreach ($inserted as $ifk => $insertedfile) {
-                if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize) continue;
-                $found = true;
-                break;
-              }
-
-              # no matches - new file
-              if (!$found) {
-                $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
-                if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
-                $currentstatus = 'ADDED';
-                $inserted[] = $stmt_data;
-                $stats['added']++;
-              # matches on status missing + filesize
-              } else {
-                # hash it
-                $md5 = md5_file($relativepath);
-                if ($md5 === false) {
-                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_HASHING_FAILED, 'size' => $filesize, 'created' => now());
-                  if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
-                  $currentstatus = 'ADDED HASHING FAILED';
-                  $inserted[] = $stmt_data;
-                  $stats['added']++;
-                  $stats['failed']++;
-                }
-                if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
-
-                $matchedkeys = array();
-                foreach ($inserted as $ifk => $insertedfile) {
-                  if ($insertedfile['status'] != STATUS_ERROR_MISSING || $insertedfile['size'] != $filesize || $insertedfile['md5'] != $md5) continue;
-                  $matchedkeys[] = $ifk;
-                }
-
-                # no missing + size + md5 matches, add it
-                if (count($matchedkeys) === 0) {
-                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_UNVERIFIED, 'size' => $filesize, 'created' => now());
-                  if (!stmt_run($stmt_insert, $stmt_data)) exit(1);
-                  $currentstatus = 'ADDED';
-                  $inserted[] = $stmt_data;
-                  $stats['added']++;
-                # matched 1 on missing + size + md5
-                } else if (count($matchedkeys) === 1) {
-                  $updated = now();
-
-                  # write to log
-                  $stmt_data = array(
-                    'ids_files' => $inserted[$matchedkeys[0]]['id'],
-                    'type' => LOG_TYPE_REFOUND,
-                    'created' => $updated,
-                    'message' => json_encode(array(
-                      'name' => array(
-                        'from' => $inserted[$matchedkeys[0]]['name'],
-                        'to' => $relativepath
-                      )
-                    ))
-                  );
-                  if (!stmt_run($stmt_log_insert, $stmt_data)) exit(1);
-
-                  $stmt_data = array('name' => $relativepath, 'status' => STATUS_VERIFIED, 'updated' => $updated, 'id' => $inserted[$matchedkeys[0]]['id']);
-                  if (!stmt_run($stmt_update_name, $stmt_data)) exit(1);
-                  $inserted[$matchedkeys[0]]['name'] = $relativepath;
-                  $inserted[$matchedkeys[0]]['status'] = STATUS_VERIFIED;
-                  $inserted[$matchedkeys[0]]['name'] = $updated;
-                  $stats['refound']++;
-                # matched multiple on missing + size + md5
-                } else {
-                  # mark all as error multiple matches found
-                  foreach ($matchedkeys as $mkindex) {
-                    $updated = now();
-                    $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_MULTIPLE_MATCHES_FOUND, 'updated' => $updated, 'id' => $inserted[$mkindex]['id']);
-                    if (!stmt_run($stmt_update_status, $stmt_data)) exit(1);
-                    $currentstatus = 'MULTIPLE FOUND';
-                    $inserted[$mkindex]['status'] = STATUS_VERIFIED;
-                    $inserted[$mkindex]['name'] = $updated;
-                    $stats['failed']++;
-                  }
-                }
-              }
-            }
-
-            $header = printheader($header, $k1 + 1, $total, $stats, $currentstatus.' '.$v1, false, true);
-          }
-          if (!$db->query('END TRANSACTION')) exit(1);
-
-          printheader($header, $total, $total, $stats, "$total files found on disk, ".$stats['added']." added, ".$stats['refound']." refound, ".$stats['failed']." failed", true);
-          echo "\n";
-          break;
-        case 'h': # hash
-          echo "Hashing files in ".$cwd."\n";
-          $cwd = trim($cwd, "/");
-
-          # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
-          if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find root path in current directory path\n";
-            exit(1);
-          }
-
-          $diff = get_root_cwd_path_difference($root, $cwd);
-          $pathdiff = $diff['path'];
-          $cutoff = $diff['cutoff']; # difference between root and current dir
-
-          # get ignore list for paths not needing hash
-          $sql = "SELECT * FROM ignorelist";
-          $r = $db->query($sql);
-          $ignorepaths = array();
-          while($row = $r->fetchArray()) {
-            $ignorepaths[] = $row['path'];
-          }
-
-          # get paths relative to dbpath
-          $sql = "SELECT * FROM files WHERE name LIKE '".mres($pathdiff)."%' AND (md5 IS NULL OR md5 = '')";
-          foreach ($ignorepaths as $path) {
-            $sql .= " AND name NOT LIKE '".mres($path)."%'";
-          }
-
-          $r = $db->query($sql);
-          if (!sqlite3_num_rows($r)) {
-            echo "No indexed unhashed files in $cwd\n";
-            exit(1);
-          }
-
-          $i = 0;
-          $header = false;
-          $rehashed = 0;
-          $stats = array(
-            'hashed' => 0,
-            'failed' => 0,
-            'missing' => 0
-          );
-          $total = sqlite3_num_rows($r);
-          $stmt_md5_ok = $db->prepare(
-            'UPDATE files
-            SET md5 = :md5, status = :status, updated = :updated, hashed = :hashed
-            WHERE id = :id');
-          $stmt_md5_fail = $db->prepare(
-            'UPDATE files
-            SET status = :status, updated = :updated
-            WHERE id = :id');
-          $stmt_bytes_hashed = $db->prepare(
-            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
-
-          while($row = $r->fetchArray()) {
-            $cfdata = get_controlfile_data();
-            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
-              #if ($itrans > 0) {
-              #  $db->exec("END TRANSACTION");
-              #}
-              echo "\nAborted by control file: $config_controlfile\n";
-              exit(1);
-            }
-
-            $i++;
-            $dbfilename = basename($row['name']);
-            $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff).$dbfilename;
-
-            if (!file_exists($relativepath)) {
-              $currentstatus = 'MISSING';
-              $stats['missing']++;
-            } else {
-              $filesize = filesize($relativepath);
-              $header = printheader($header, $i, $total, $stats, 'Hashing '.$relativepath.' ('.get_si_size($filesize).')', true); # DEBUG true
-
-              $md5 = md5_file($relativepath);
-              if ($md5 !== false) {
-                if (!stmt_run($stmt_md5_ok, array('md5' => $md5, 'status' => STATUS_VERIFIED, 'hashed' => now(), 'updated' => now(), 'id' => $row['id']))) exit(1);
-                $currentstatus = 'HASHED';
-                $stats['hashed']++;
-              } else {
-                if (!stmt_run($stmt_md5_fail, array('md5' => $md5, 'status' => STATUS_ERROR_HASHING_FAILED, 'updated' => now(), 'id' => $row['id']))) exit(1);
-                $currentstatus = 'HASHING FAILED';
-                $stats['failed']++;
-              }
-              if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
-            }
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$relativepath);
-          }
-          printheader($header, $i, $total, $stats, '', true);
-          echo "\n";
-          break;
-        case 's': # size, temporary fix since indexing does it
-          echo "Checking size for files in ".$cwd."\n";
-          $cwd = trim($cwd, "/");
-
-          # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
-          if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find root path in current directory path\n";
-            exit(1);
-          }
-
-          $diff = get_root_cwd_path_difference($root, $cwd);
-          $pathdiff = $diff['path'];
-          $cutoff = $diff['cutoff']; # difference between root and current dir
-
-          $sql = "UPDATE files SET status = '".mres(STATUS_UNVERIFIED)."', updated = '".mresnow()."' WHERE name LIKE '".mres($pathdiff)."%'";
-          if (!$db->query($sql)) exit(1);
-
-          $sql = "SELECT * FROM files WHERE size IS NULL or size = ''";
-
-          $r = $db->query($sql);
-          $total = sqlite3_num_rows($r);
-          if (!$total) {
-            echo "No files found in $cwd\n";
-            exit(1);
-          }
-
-          echo $total." sizeless files\n";
-
-          $i = 0;
-          $stats = array(
-            'ok' => 0,
-            'failed' => 0,
-            'missing' => 0
-          );
-
-          $header = false;
-
-          $stmt_missing = $db->prepare("UPDATE files SET status = :status, updated WHERE id = :id");
-          $stmt_size = $db->prepare("UPDATE files SET size = :size, updated = :updated WHERE id = :id");
-
-          $db->exec("BEGIN TRANSACTION");
-          while ($row = $r->fetchArray()) {
-            $i++;
-            $dbfilename = basename($row['name']);
-            $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
-            $path = $relativepath.$dbfilename;
-
-            if (!file_exists($path)) {
-              if (!stmt_run($stmt_missing, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
-              $currentstatus = 'MISSING';
-              $stats['missing']++;
-            } else {
-              $filesize = filesize($path);
-              $header = printheader($header, $i, $total, $stats, 'Sizing '.$path.' ('.get_si_size($filesize).')');
-              if ($filesize === false) {
-                $currentstatus = 'FAILED';
-                $stats['failed']++;
-              } else {
-                $stats['ok'] ++;
-                $currentstatus = 'OK';
-                if (!stmt_run($stmt_size, array('size' => $filesize, 'updated' => now(), 'id' => $row['id']))) exit(1);
-              }
-            }
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path);
-          }
-          $db->exec("END TRANSACTION");
-          printheader($header, $i, $total, $stats, '', true);
-          echo "\n";
-          break;
-        case 'v': # verify indexed files
-
-          echo "Verifying files in ".$cwd."\n";
-          $cwd = trim($cwd, "/");
-
-          # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
-          if (strpos($cwd, $root) !== 0) {
-            echo "Cannot find root path in current directory path\n";
-            exit(1);
-          }
-
-          $diff = get_root_cwd_path_difference($root, $cwd);
-          $pathdiff = $diff['path'];
-          $cutoff = $diff['cutoff']; # difference between root and current dir
-
-          # get ignore list for paths not needing hash
-          $sql = "SELECT * FROM ignorelist";
-          $r = $db->query($sql);
-          $ignorepaths = array();
-          while($row = $r->fetchArray()) {
-            $ignorepaths[] = $row['path'];
-          }
-
-          # $sql = "UPDATE files SET status = '".mres(STATUS_UNVERIFIED)."', updated = '".mresnow()."' WHERE name LIKE '".mres($pathdiff)."%'";
-          # if (!$db->query($sql)) exit(1);
-
-          $verifytype = "";
-          if ($v === 'v') {
-            $sql = "SELECT * FROM files WHERE status IN ('".mres(STATUS_VERIFIED)."', '".mres(STATUS_ERROR_MISSING)."') AND name LIKE '".mres($pathdiff)."%' ORDER BY size";
-            $verifytype = "verified, unverified or missing";
-          }
-
-          $r = $db->query($sql);
-          $total = sqlite3_num_rows($r);
-          if (!$total) {
-            echo "No $verifytype files found in $cwd\n";
-            exit(1);
-          }
-
-          echo $total." unverified files\n";
-
-          $i = 0;
-          $stats = array(
-            'ok' => 0,
-            'ignored' => 0,
-            'unhashed' => 0,
-            'mismatch' => 0,
-            'missing' => 0
-          );
-
-          $header = false;
-          $itrans = 0;
-
-          $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
-          $stmt_bytes_hashed = $db->prepare(
-            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
-
-          while ($row = $r->fetchArray()) {
-            $cfdata = get_controlfile_data();
-            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
-              if ($itrans > 0) {
-                $db->exec("END TRANSACTION");
-              }
-              echo "\nAborted by control file: $config_controlfile\n";
-              exit(1);
-            }
-
-            if ($itrans === 0) {
-              $db->exec("BEGIN TRANSACTION");
-            }
-            $i++;
-            $md5 = $row['md5'];
-            $dbfilename = basename($row['name']);
-            $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
-            $path = $relativepath.$dbfilename;
-            $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
-
-            if (!file_exists($path)) {
-              $currentstatus = 'MISSING';
-              $stats['missing']++;
-             if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MISSING, 'updated' => now(), 'id' => $row['id']))) exit(1);
-            } else {
-              $filesize = filesize($path);
-              $header = printheader($header, $i, $total, $stats, 'MD5-summing '.$path.' ('.get_si_size($filesize).')', $printheader_force);
-              if ($md5 == null || !strlen($md5)) {
-                $currentstatus = 'UNHASHED';
-                $stats['unhashed']++;
-              } else {
-                $validate_hash = true;
-                if (count($ignorepaths)) {
-                  foreach ($ignorepaths as $ignorepath) {
-                    if ($ignorepath = substr($path, 0, strlen($ignorepath))) {
-                      $stats['ignored']++;
-                      $validate_hash = false;
-                      break;
+                  $validate_hash = true;
+                  if (count($ignorepaths)) {
+                    foreach ($ignorepaths as $ignorepath) {
+                      if ($ignorepath = substr($path, 0, strlen($ignorepath))) {
+                        $stats['ignored']++;
+                        $validate_hash = false;
+                        break;
+                      }
                     }
                   }
-                }
-                if (!$validate_hash || md5_file($path) === $md5) {
-                  $stats['ok'] ++;
-                  $currentstatus = 'OK';
-                  if (!stmt_run($stmt_set_status, array('status' => STATUS_VERIFIED, 'updated' => now(), 'verified' => now(), 'id' => $row['id']))) exit(1);
-                } else {
-                  $stats['mismatch'] ++;
-                  $currentstatus = 'MISMATCH';
-                  if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
-                }
+                  if (!$validate_hash || md5_file($path) === $md5) {
+                    $stats['ok'] ++;
+                    $currentstatus = 'OK';
+                    if (!stmt_run($stmt_set_status, array('status' => STATUS_VERIFIED, 'updated' => now(), 'verified' => now(), 'id' => $row['id']))) exit(1);
+                  } else {
+                    $stats['mismatch'] ++;
+                    $currentstatus = 'MISMATCH';
+                    if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) exit(1);
+                  }
 
-                if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
+                  if (!stmt_run($stmt_bytes_hashed, array('size' => $filesize))) exit(1);
+                }
               }
-            }
 
-            if ($itrans === 999) {
-              $db->exec("END TRANSACTION");
-              $itrans = 0;
-            } else {
-              $itrans++;
-            }
-
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path, $printheader_force);
-          }
-
-          if ($itrans > 0) {
-            $db->exec("END TRANSACTION");
-          }
-
-          printheader($header, $i, $total, $stats, '', true);
-          echo "\n";
-          break;
-        case 'w': # rewrite
-          echo "Rewriting files in ".$cwd."\n";
-          $cwd = trim($cwd, "/");
-
-          # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
-          if (strpos($cwd, $root) !== 0) { # aaa/bbb/ccc/ddd must begin with aaa/bbb
-            echo "Cannot find root path in current directory path\n";
-            exit(1);
-          }
-
-          $diff = get_root_cwd_path_difference($root, $cwd);
-          $pathdiff = $diff['path'];
-          $cutoff = $diff['cutoff']; # difference between root and current dir
-
-          $id_logs = false;
-          $sql = "SELECT * FROM log ORDER BY updated DESC LIMIT 1";
-          $r = $db->query($sql);
-          while ($row = $r->fetchArray()) {
-            if (strtotime($row['updated']) > time() - 86400) {
-              $id_logs = $row['id'];
-            }
-            break;
-          }
-
-          if ($id_logs === false) {
-            $sql = "INSERT INTO log (type, created) VALUES('".mres(LOG_TYPE_REWRITE)."', '".mresnow()."')";
-            if (!$db->query($sql)) exit(1);
-            $id_logs = $db->lastInsertRowID();
-            if (!$id_logs) {
-              echo "Failed creating log row\n";
-              exit(1);
-            }
-          }
-
-          # get paths relative to root path - ccc/ddd/file etc
-          $sql = "SELECT * FROM files WHERE name LIKE '".mres(ltrim($pathdiff, "./"))."%' AND status = '" . STATUS_VERIFIED ."' ORDER BY size";
-          $r = $db->query($sql);
-          if (!sqlite3_num_rows($r)) {
-            echo "No indexed files with verified status found in $cwd\n";
-            exit(1);
-          }
-
-          $currentstatus = '';
-          $header = false;
-          $i = 0;
-          $logmessage_range = array();
-          $stats = array(
-            'rewritten' => 0,
-            'failed' => 0,
-            'missing' => 0
-          );
-
-          $total = sqlite3_num_rows($r);
-          echo "$total files in db and directory with verified status\n";
-
-          $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
-          $stmt_set_rewritten = $db->prepare("UPDATE files SET rewrites = rewrites + 1, rewritten = :rewritten, status = :status, updated = :updated WHERE id = :id");
-          $stmt_bytes_rewritten = $db->prepare(
-            "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_rewritten'");
-          $stmt_set_log = $db->prepare("UPDATE log SET updated = :updated, ids_files = :ids_files WHERE id = :id");
-
-          $itrans = 0;
-          while($row = $r->fetchArray()) {
-
-            $cfdata = get_controlfile_data();
-            if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
-              if ($itrans > 0) {
+              if ($itrans === 999) {
                 $db->exec("END TRANSACTION");
+                $itrans = 0;
+              } else {
+                $itrans++;
               }
-              echo "\nAborted by control file: $config_controlfile\n";
+
+              $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$path, $printheader_force);
+            }
+
+            if ($itrans > 0) {
+              $db->exec("END TRANSACTION");
+            }
+
+            printheader($header, $i, $total, $stats, '', true);
+            echo "\n";
+            break;
+          case 'w': # rewrite
+            echo "Rewriting files in ".$cwd."\n";
+            $cwd = trim($cwd, "/");
+
+            # dbpath: aaa/bbb, cwd: aaa/bbb/ccc
+            if (strpos($cwd, $root) !== 0) { # aaa/bbb/ccc/ddd must begin with aaa/bbb
+              echo "Cannot find root path in current directory path\n";
               exit(1);
             }
 
-            $i++;
+            $diff = get_root_cwd_path_difference($root, $cwd);
+            $pathdiff = $diff['path'];
+            $cutoff = $diff['cutoff']; # difference between root and current dir
 
-            if ($itrans >= 999) {
-              if (!$db->exec("END TRANSACTION")) exit(1);
-              $itrans = 0;
+            $id_logs = false;
+            $sql = "SELECT * FROM log ORDER BY updated DESC LIMIT 1";
+            $r = $db->query($sql);
+            while ($row = $r->fetchArray()) {
+              if (strtotime($row['updated']) > time() - 86400) {
+                $id_logs = $row['id'];
+              }
+              break;
             }
 
-            if ($itrans === 0) {
-              $db->exec("BEGIN TRANSACTION");
+            if ($id_logs === false) {
+              $sql = "INSERT INTO log (type, created) VALUES('".mres(LOG_TYPE_REWRITE)."', '".mresnow()."')";
+              if (!$db->query($sql)) exit(1);
+              $id_logs = $db->lastInsertRowID();
+              if (!$id_logs) {
+                echo "Failed creating log row\n";
+                exit(1);
+              }
             }
 
-            $itrans++;
-
-            # check if already rewritten and no need to redo
-            if ($row['rewritten'] != null && strlen($row['rewritten']) > 0 &&
-              strtotime($row['rewritten']) > (time() - REWRITE_TIME_LIMIT)) {
-              continue;
+            # get paths relative to root path - ccc/ddd/file etc
+            $sql = "SELECT * FROM files WHERE name LIKE '".mres(ltrim($pathdiff, "./"))."%' AND status = '" . STATUS_VERIFIED ."' ORDER BY size";
+            $r = $db->query($sql);
+            if (!sqlite3_num_rows($r)) {
+              echo "No indexed files with verified status found in $cwd\n";
+              exit(1);
             }
 
-            $dbfilename = basename($row['name']); # file
-            $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
+            $currentstatus = '';
+            $header = false;
+            $i = 0;
+            $logmessage_range = array();
+            $stats = array(
+              'rewritten' => 0,
+              'failed' => 0,
+              'missing' => 0
+            );
 
-            $copydir = $config_tmpdir === false ? $relativepath : $config_tmpdir;
+            $total = sqlite3_num_rows($r);
+            echo "$total files in db and directory with verified status\n";
 
-            $j = 0;
-            do {
-              $j++;
-              $tmpfile = $copydir.$dbfilename.'.copy.'.$j.'.rewrite';
-            } while (file_exists($tmpfile));
+            $stmt_set_status = $db->prepare("UPDATE files SET status = :status, updated = :updated WHERE id = :id");
+            $stmt_set_rewritten = $db->prepare("UPDATE files SET rewrites = rewrites + 1, rewritten = :rewritten, status = :status, updated = :updated WHERE id = :id");
+            $stmt_bytes_rewritten = $db->prepare(
+              "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_rewritten'");
+            $stmt_set_log = $db->prepare("UPDATE log SET updated = :updated, ids_files = :ids_files WHERE id = :id");
 
-            $srcfile = $relativepath.$dbfilename;
+            $itrans = 0;
+            while($row = $r->fetchArray()) {
 
-            if (!file_exists($srcfile)) {
-              echo get_line_clear($header);
-              echo "* Not found - $srcfile\n";
-              $currentstatus = 'MISSING';
-              $stats['missing']++;
-              continue;
-            }
+              $cfdata = get_controlfile_data();
+              if ($cfdata === "abort" || $cfdata === "a" || $cfdata === "0") {
+                if ($itrans > 0) {
+                  $db->exec("END TRANSACTION");
+                }
+                echo "\nAborted by control file: $config_controlfile\n";
+                exit(1);
+              }
 
-            $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
+              $i++;
 
-            $filesize = filesize($srcfile);
-            $header = printheader($header, $i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')', $printheader_force);
+              if ($itrans >= 999) {
+                if (!$db->exec("END TRANSACTION")) exit(1);
+                $itrans = 0;
+              }
 
-            if (!is_writable($srcfile)) {
-              echo get_line_clear($header);
-              echo "* Source not writable - $srcfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
+              if ($itrans === 0) {
+                $db->exec("BEGIN TRANSACTION");
+              }
 
-            if (!is_writable($relativepath)) {
-              echo get_line_clear($header);
-              echo "* Temporary file not writable - $tmpfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
+              $itrans++;
 
-            # get file size
-            $size = filesize($srcfile);
-            if ($size === false) {
-              echo get_line_clear($header);
-              echo "* Size check failed - $srcfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SIZE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
+              # check if already rewritten and no need to redo
+              if ($row['rewritten'] != null && strlen($row['rewritten']) > 0 &&
+                strtotime($row['rewritten']) > (time() - REWRITE_TIME_LIMIT)) {
+                continue;
+              }
 
-            # get tmp free space on copy target
-            $freespace = disk_free_space($copydir);
-            if ($freespace === false) {
-              echo get_line_clear($header);
-              echo "*  Disk free space check failed - $copydir\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              end_trans_exit($db); # fatal
-            }
+              $dbfilename = basename($row['name']); # file
+              $relativepath = get_file_path_relative_to_cwd($row['name'], $cutoff);
 
-            # check tmp file size vs free space
-            if ($size > $freespace) {
-              echo get_line_clear($header);
-              echo "* No free space to cp to temporary file, $freespace b free, need $size b - $srcfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
+              $copydir = $config_tmpdir === false ? $relativepath : $config_tmpdir;
 
-            if ($config_backup_original_before_rewrite) {
-              # get free space
-              $freespace = disk_free_space($relativepath);
+              $j = 0;
+              do {
+                $j++;
+                $tmpfile = $copydir.$dbfilename.'.copy.'.$j.'.rewrite';
+              } while (file_exists($tmpfile));
+
+              $srcfile = $relativepath.$dbfilename;
+
+              if (!file_exists($srcfile)) {
+                echo get_line_clear($header);
+                echo "* Not found - $srcfile\n";
+                $currentstatus = 'MISSING';
+                $stats['missing']++;
+                continue;
+              }
+
+              $printheader_force = strpos($cfdata, 'h') === 0 ? (int)substr($cfdata, 1, strlen($cfdata)) : false;
+
+              $filesize = filesize($srcfile);
+              $header = printheader($header, $i, $total, $stats, 'Rewriting '.$srcfile.' ('.get_si_size($filesize).')', $printheader_force);
+
+              if (!is_writable($srcfile)) {
+                echo get_line_clear($header);
+                echo "* Source not writable - $srcfile\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SOURCE_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
+
+              if (!is_writable($relativepath)) {
+                echo get_line_clear($header);
+                echo "* Temporary file not writable - $tmpfile\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_TMP_NOT_WRITABLE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
+
+              # get file size
+              $size = filesize($srcfile);
+              if ($size === false) {
+                echo get_line_clear($header);
+                echo "* Size check failed - $srcfile\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SIZE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
+
+              # get tmp free space on copy target
+              $freespace = disk_free_space($copydir);
               if ($freespace === false) {
                 echo get_line_clear($header);
-                echo "*  Disk free space check failed - $relativepath\n";
+                echo "*  Disk free space check failed - $copydir\n";
                 if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
                 $currentstatus = 'FAILED';
                 $stats['failed']++;
                 end_trans_exit($db); # fatal
               }
 
-              # check file size vs free space
+              # check tmp file size vs free space
               if ($size > $freespace) {
                 echo get_line_clear($header);
-                echo "* No free space to cp, $freespace b free, need $size b - $srcfile\n";
+                echo "* No free space to cp to temporary file, $freespace b free, need $size b - $srcfile\n";
                 if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
                 $currentstatus = 'FAILED';
                 $stats['failed']++;
                 continue;
               }
-            }
 
-            # copy source to tmp
-            $c = 'cp --sparse=always '.escapeshellarg($srcfile).' '.escapeshellarg($tmpfile);
-            unset($o, $r1);
-            exec($c, $o, $r1);
-            if ($r1 !== 0) {
-              echo get_line_clear($header);
-              echo '* cp command '.$c.' failed: '.implode(" ", $o)."\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_CP_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              if ($config_backup_original_before_rewrite) {
+                # get free space
+                $freespace = disk_free_space($relativepath);
+                if ($freespace === false) {
+                  echo get_line_clear($header);
+                  echo "*  Disk free space check failed - $relativepath\n";
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_DISK_FREE_SPACE_CHECK_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                  $currentstatus = 'FAILED';
+                  $stats['failed']++;
+                  end_trans_exit($db); # fatal
+                }
 
-            # check if tmp exists
-            if (!file_exists($tmpfile)) {
-              echo get_line_clear($header);
-              echo "* Copy missing - $tmpfile"."\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_COPY_MISSING, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
+                # check file size vs free space
+                if ($size > $freespace) {
+                  echo get_line_clear($header);
+                  echo "* No free space to cp, $freespace b free, need $size b - $srcfile\n";
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_FILE_LARGER_THAN_DISK_FREE_SPACE, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                  $currentstatus = 'FAILED';
+                  $stats['failed']++;
+                  continue;
+                }
+              }
 
-            # md5 tmp file
-            $md5 = md5_file($tmpfile);
-            if ($md5 === false) {
-              echo get_line_clear($header);
-              echo "* MD5 hash failed, file: $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
-            if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($size)." WHERE property='bytes_hashed'")) end_trans_exit($db);
+              # copy source to tmp
+              $c = 'cp --sparse=always '.escapeshellarg($srcfile).' '.escapeshellarg($tmpfile);
+              unset($o, $r1);
+              exec($c, $o, $r1);
+              if ($r1 !== 0) {
+                echo get_line_clear($header);
+                echo '* cp command '.$c.' failed: '.implode(" ", $o)."\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_CP_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-            # md5 check temporary file
-            if (strlen($row['md5']) && $md5 != $row['md5']) {
-              echo get_line_clear($header);
-              echo "* MD5 mismatches, $md5 vs ".$row['md5'].", file: $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # check if tmp exists
+              if (!file_exists($tmpfile)) {
+                echo get_line_clear($header);
+                echo "* Copy missing - $tmpfile"."\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_COPY_MISSING, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
 
-            # group check and set tmp
-            if (filegroup($srcfile) != filegroup($tmpfile) &&
-              !chgrp($tmpfile, filegroup($srcfile))) {
-              echo get_line_clear($header);
-              echo "* Failed changing group - $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHGRP_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # md5 tmp file
+              $md5 = md5_file($tmpfile);
+              if ($md5 === false) {
+                echo get_line_clear($header);
+                echo "* MD5 hash failed, file: $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
+              if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres($size)." WHERE property='bytes_hashed'")) end_trans_exit($db);
 
-            # permissions check and set tmp
-            if (fileperms($srcfile) != fileperms($tmpfile) &&
-              !chmod($tmpfile, fileperms($srcfile))) {
-              echo get_line_clear($header);
-              echo "* Failed changing permissions - $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHMOD_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # md5 check temporary file
+              if (strlen($row['md5']) && $md5 != $row['md5']) {
+                echo get_line_clear($header);
+                echo "* MD5 mismatches, $md5 vs ".$row['md5'].", file: $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-            # owner check and set tmp
-            if (fileowner($srcfile) != fileowner($tmpfile) &&
-              !chown($tmpfile, fileowner($srcfile))) {
-              echo get_line_clear($header);
-              echo "* Failed changing ownership - $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHOWN_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # group check and set tmp
+              if (filegroup($srcfile) != filegroup($tmpfile) &&
+                !chgrp($tmpfile, filegroup($srcfile))) {
+                echo get_line_clear($header);
+                echo "* Failed changing group - $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHGRP_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-            # modify time check tmp
-            if (filemtime($srcfile) != filemtime($tmpfile) &&
-              !touch($tmpfile, filemtime($srcfile))) {
-              echo get_line_clear($header);
-              echo "* Failed changing modify time - $tmpfile ($srcfile)\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_MODIFY_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # permissions check and set tmp
+              if (fileperms($srcfile) != fileperms($tmpfile) &&
+                !chmod($tmpfile, fileperms($srcfile))) {
+                echo get_line_clear($header);
+                echo "* Failed changing permissions - $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHMOD_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-            # check tmp again if one or more changed above
-            if (
-                filegroup($srcfile) != filegroup($tmpfile) ||
-                filemtime($srcfile) != filemtime($tmpfile) ||
-                fileowner($srcfile) != fileowner($tmpfile) ||
-                fileperms($srcfile) != fileperms($tmpfile) ||
-                filesize($srcfile) != filesize($tmpfile)
-            ) {
-              echo get_line_clear($header);
-              echo "* Metadata mismatches - $tmpfile ($srcfile)\n";
-              echo '  Group    : '.filegroup($srcfile).' vs '.filegroup($tmpfile)."\n";
-              echo '  Owner    : '.fileowner($srcfile).' vs '.fileowner($tmpfile)."\n";
-              echo '  Perms    : '.fileperms($srcfile).' vs '.fileperms($tmpfile)."\n";
-              echo '  Size     : '.filesize($srcfile).' vs '.filesize($tmpfile)."\n";
-              echo '  Modified : '.filemtime($srcfile).' vs '.filemtime($tmpfile)."\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_META_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $stats['failed']++;
-              remove_tmpfile($tmpfile, $header);
-              continue;
-            }
+              # owner check and set tmp
+              if (fileowner($srcfile) != fileowner($tmpfile) &&
+                !chown($tmpfile, fileowner($srcfile))) {
+                echo get_line_clear($header);
+                echo "* Failed changing ownership - $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_CHOWN_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-            # if backup original before rewrite should be used
-            if ($config_backup_original_before_rewrite) {
-              $j = 0;
-              do {
-                $j++;
-                $origfile = $relativepath.$dbfilename.'.original.'.$j.'.rewrite';
-              } while (file_exists($origfile));
+              # modify time check tmp
+              if (filemtime($srcfile) != filemtime($tmpfile) &&
+                !touch($tmpfile, filemtime($srcfile))) {
+                echo get_line_clear($header);
+                echo "* Failed changing modify time - $tmpfile ($srcfile)\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_SET_MODIFY_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
-              # move source to original as a backup
-              $c = 'mv '.escapeshellarg($srcfile).' '.escapeshellarg($origfile);
+              # check tmp again if one or more changed above
+              if (
+                  filegroup($srcfile) != filegroup($tmpfile) ||
+                  filemtime($srcfile) != filemtime($tmpfile) ||
+                  fileowner($srcfile) != fileowner($tmpfile) ||
+                  fileperms($srcfile) != fileperms($tmpfile) ||
+                  filesize($srcfile) != filesize($tmpfile)
+              ) {
+                echo get_line_clear($header);
+                echo "* Metadata mismatches - $tmpfile ($srcfile)\n";
+                echo '  Group    : '.filegroup($srcfile).' vs '.filegroup($tmpfile)."\n";
+                echo '  Owner    : '.fileowner($srcfile).' vs '.fileowner($tmpfile)."\n";
+                echo '  Perms    : '.fileperms($srcfile).' vs '.fileperms($tmpfile)."\n";
+                echo '  Size     : '.filesize($srcfile).' vs '.filesize($tmpfile)."\n";
+                echo '  Modified : '.filemtime($srcfile).' vs '.filemtime($tmpfile)."\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_META_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $stats['failed']++;
+                remove_tmpfile($tmpfile, $header);
+                continue;
+              }
 
+              # if backup original before rewrite should be used
+              if ($config_backup_original_before_rewrite) {
+                $j = 0;
+                do {
+                  $j++;
+                  $origfile = $relativepath.$dbfilename.'.original.'.$j.'.rewrite';
+                } while (file_exists($origfile));
+
+                # move source to original as a backup
+                $c = 'mv '.escapeshellarg($srcfile).' '.escapeshellarg($origfile);
+
+                unset($o, $r1);
+                exec($c, $o, $r1);
+                if ($r1 !== 0) {
+                  echo get_line_clear($header);
+                  echo "* mv command $c failed: ".implode(" ", $o)."\n";
+                  if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_MV_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                  $stats['failed']++;
+                  echo "Temporary file is left at $tmpfile\n";
+                  end_trans_exit($db); # this is fatal
+                }
+              }
+
+              # move tmp to source
+              $c = 'mv '.escapeshellarg($tmpfile).' '.escapeshellarg($srcfile);
               unset($o, $r1);
               exec($c, $o, $r1);
               if ($r1 !== 0) {
                 echo get_line_clear($header);
                 echo "* mv command $c failed: ".implode(" ", $o)."\n";
+                echo "Temporary file is left at $tmpfile\n";
                 if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_MV_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
                 $stats['failed']++;
-                echo "Temporary file is left at $tmpfile\n";
                 end_trans_exit($db); # this is fatal
               }
-            }
 
-            # move tmp to source
-            $c = 'mv '.escapeshellarg($tmpfile).' '.escapeshellarg($srcfile);
-            unset($o, $r1);
-            exec($c, $o, $r1);
-            if ($r1 !== 0) {
-              echo get_line_clear($header);
-              echo "* mv command $c failed: ".implode(" ", $o)."\n";
-              echo "Temporary file is left at $tmpfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_EXEC_MV_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $stats['failed']++;
-              end_trans_exit($db); # this is fatal
-            }
-
-            # md5 new src
-            $md5 = md5_file($srcfile);
-            if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres(filesize($srcfile))." WHERE property='bytes_hashed'")) end_trans_exit($db);
-            if ($md5 === false) {
-              echo get_line_clear($header);
-              echo "* MD5 hash failed after second move, file: $srcfile ($srcfile)\n";
-              if ($config_backup_original_before_rewrite) {
-                echo "  Original file is left at $origfile\n";
+              # md5 new src
+              $md5 = md5_file($srcfile);
+              if (!$db->query("UPDATE properties SET value=CAST(value AS INTEGER)+".mres(filesize($srcfile))." WHERE property='bytes_hashed'")) end_trans_exit($db);
+              if ($md5 === false) {
+                echo get_line_clear($header);
+                echo "* MD5 hash failed after second move, file: $srcfile ($srcfile)\n";
+                if ($config_backup_original_before_rewrite) {
+                  echo "  Original file is left at $origfile\n";
+                }
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                end_trans_exit($db);
               }
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              end_trans_exit($db);
-            }
 
-            # md5 check new src
-            if (strlen($row['md5']) && $md5 != $row['md5']) {
-              echo get_line_clear($header);
-              echo "* MD5 mismatches after second move, $md5 vs ".$row['md5'].", file: $srcfile\n";
-              if ($config_backup_original_before_rewrite) {
-                echo "  Original file is left at $origfile\n";
+              # md5 check new src
+              if (strlen($row['md5']) && $md5 != $row['md5']) {
+                echo get_line_clear($header);
+                echo "* MD5 mismatches after second move, $md5 vs ".$row['md5'].", file: $srcfile\n";
+                if ($config_backup_original_before_rewrite) {
+                  echo "  Original file is left at $origfile\n";
+                }
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                end_trans_exit($db);
               }
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_REWRITE_MD5_MISMATCH, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              end_trans_exit($db);
+
+              if ($config_backup_original_before_rewrite && file_exists($origfile) && !unlink($origfile)) {
+                echo get_line_clear($header);
+                echo "* Failed removing temporary original file: $origfile\n";
+                if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+                $currentstatus = 'FAILED';
+                $stats['failed']++;
+                continue;
+              }
+
+              if (!stmt_run($stmt_set_rewritten, array('status' => STATUS_REWRITTEN, 'rewritten' => now(), 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
+              if (!stmt_run($stmt_bytes_rewritten, array('size' => filesize($srcfile)))) end_trans_exit($db);
+              $currentstatus = 'Rewrote';
+              $stats['rewritten']++;
+              $logmessage_range = get_logmessage_range($logmessage_range, $row['id']);
+              if (!stmt_run($stmt_set_log, array('ids_files' => get_formatted_logmessage_range($logmessage_range), 'updated' => now(), 'id' => $id_logs))) end_trans_exit($db);
+
+              $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile, $printheader_force);
             }
-
-            if ($config_backup_original_before_rewrite && file_exists($origfile) && !unlink($origfile)) {
-              echo get_line_clear($header);
-              echo "* Failed removing temporary original file: $origfile\n";
-              if (!stmt_run($stmt_set_status, array('status' => STATUS_ERROR_UNLINK_ORIGINAL_FILE_FAILED, 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-              $currentstatus = 'FAILED';
-              $stats['failed']++;
-              continue;
-            }
-
-            if (!stmt_run($stmt_set_rewritten, array('status' => STATUS_REWRITTEN, 'rewritten' => now(), 'updated' => now(), 'id' => $row['id']))) end_trans_exit($db);
-            if (!stmt_run($stmt_bytes_rewritten, array('size' => filesize($srcfile)))) end_trans_exit($db);
-            $currentstatus = 'Rewrote';
-            $stats['rewritten']++;
-            $logmessage_range = get_logmessage_range($logmessage_range, $row['id']);
-            if (!stmt_run($stmt_set_log, array('ids_files' => get_formatted_logmessage_range($logmessage_range), 'updated' => now(), 'id' => $id_logs))) end_trans_exit($db);
-
-            $header = printheader($header, $i, $total, $stats, $currentstatus.' '.$srcfile, $printheader_force);
-          }
-          if (!$db->exec("END TRANSACTION")) exit(1);
-          printheader($header, $i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed', true);
-          echo "\n";
-          break;
-      } # re-switch
+            if (!$db->exec("END TRANSACTION")) exit(1);
+            printheader($header, $i, $total, $stats, 'Rewrote '.$stats['rewritten'].' files, '.$stats['missing'].' missing, '.$stats['failed'].' failed', true);
+            echo "\n";
+            break;
+        } # re-switch
+      } # subcase
       break;
     case 's': # stats
       $db = get_db_conn();
