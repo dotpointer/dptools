@@ -6,7 +6,7 @@
 # change log
 # 2024-12-26 21:07:00
 # 2025-11-16 03:27:00 - index finds and updates size and name changes
-# 2025-12-06 12:29:00 - bug fix, import did not add files, add verify options
+# 2025-12-06 12:29:00 - bug fix, import did not add files, add verify options, refind on file extension
 
 if (!extension_loaded('sqlite3')) {
   echo "PHP SQLite3 extension not loaded\n";
@@ -940,15 +940,66 @@ Options:
                     $stats['refound']++;
                   # matched multiple on missing + size + md5
                   } else {
-                    # mark all as error multiple matches found
-                    foreach ($matchedkeys as $mkindex) {
+
+                    $refound = false;
+
+                    # tactic - try finding exact match by extension
+                    $ext = basename($relativepath);
+                    $ext = strpos($ext, ".") != false && strlen(substr($ext, strpos($ext, ".") + 1))  ? strtolower(substr($ext, strpos($ext, ".") + 1)) : false;
+
+                    $matchedkeys_with_same_ext = array();
+                    if ($ext != false) {
+                      foreach ($matchedkeys as $mkindex) {
+                        $matched_ext = basename($inserted[$mkindex]['name']);
+                        $matched_ext = strpos($matched_ext, ".") != false && strlen(substr($matched_ext, strpos($matched_ext, ".") + 1)) ? strtolower(substr($matched_ext, strpos($matched_ext, ".") + 1)) : false;
+                        if ($matched_ext == false || $matched_ext != $ext) continue;
+                        $matchedkeys_with_same_ext[] = $mkindex;
+                      }
+                    }
+
+
+
+                    # if matching exactly 1 on this ext
+                    if (count($matchedkeys_with_same_ext) === 1) {
+
                       $updated = now();
-                      $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_MULTIPLE_MATCHES_FOUND, 'updated' => $updated, 'id' => $inserted[$mkindex]['id']);
-                      if (!stmt_run($stmt_update_status, $stmt_data)) exit(1);
-                      $currentstatus = 'MULTIPLE FOUND';
-                      $inserted[$mkindex]['status'] = STATUS_VERIFIED;
-                      $inserted[$mkindex]['name'] = $updated;
-                      $stats['failed']++;
+
+                      # write to log
+                      $stmt_data = array(
+                        'ids_files' => $inserted[$matchedkeys[0]]['id'],
+                        'type' => LOG_TYPE_REFOUND,
+                        'created' => $updated,
+                        'message' => json_encode(array(
+                          'name' => array(
+                            'from' => $inserted[$matchedkeys[0]]['name'],
+                            'to' => $relativepath,
+                            'match' => 'ext'
+                          )
+                        ))
+                      );
+
+                      if (!stmt_run($stmt_log_insert, $stmt_data)) exit(1);
+
+                      $stmt_data = array('name' => $relativepath, 'status' => STATUS_VERIFIED, 'updated' => $updated, 'id' => $inserted[$matchedkeys[0]]['id']);
+                      if (!stmt_run($stmt_update_name, $stmt_data)) exit(1);
+                      $inserted[$matchedkeys[0]]['name'] = $relativepath;
+                      $inserted[$matchedkeys[0]]['status'] = STATUS_VERIFIED;
+                      $inserted[$matchedkeys[0]]['name'] = $updated;
+                      $stats['refound']++;
+
+                      $refound = true;
+                    }
+                    if (!$refound) {
+                      # mark all as error multiple matches found
+                      foreach ($matchedkeys as $mkindex) {
+                        $updated = now();
+                        $stmt_data = array('name' => $relativepath, 'status' => STATUS_ERROR_MULTIPLE_MATCHES_FOUND, 'updated' => $updated, 'id' => $inserted[$mkindex]['id']);
+                        if (!stmt_run($stmt_update_status, $stmt_data)) exit(1);
+                        $currentstatus = 'MULTIPLE FOUND';
+                        $inserted[$mkindex]['status'] = STATUS_VERIFIED;
+                        $inserted[$mkindex]['name'] = $updated;
+                        $stats['failed']++;
+                      }
                     }
                   }
                 }
