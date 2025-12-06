@@ -17,6 +17,7 @@ define('REWRITE_TIME_LIMIT', 86400 * 365 * 4);
 
 # log message types
 define('LOG_TYPE_REWRITE', 1);
+define('LOG_TYPE_REFOUND', 2);
 
 # status codes
 define('STATUS_ERROR_HASHING_FAILED', -15);
@@ -822,6 +823,8 @@ Options:
             "UPDATE properties SET value=CAST(value AS INTEGER)+:size WHERE property='bytes_hashed'");
           $stmt_insert = $db->prepare(
             'INSERT INTO files (name, size, status, created) VALUES(:name, :size, :status, :created)');
+          $stmt_log_insert = $db->prepare(
+            'INSERT INTO log (ids_files, type, message, created) VALUES(:ids_files, :type, :message, :created)');
 
           if (!$db->query('BEGIN TRANSACTION')) exit(1);
 
@@ -903,6 +906,21 @@ Options:
                 # matched 1 on missing + size + md5
                 } else if (count($matchedkeys) === 1) {
                   $updated = now();
+
+                  # write to log
+                  $stmt_data = array(
+                    'ids_files' => $inserted[$matchedkeys[0]]['id'],
+                    'type' => LOG_TYPE_REFOUND,
+                    'created' => $updated,
+                    'message' => json_encode(array(
+                      'name' => array(
+                        'from' => $inserted[$matchedkeys[0]]['name'],
+                        'to' => $relativepath
+                      )
+                    ))
+                  );
+                  if (!stmt_run($stmt_log_insert, $stmt_data)) exit(1);
+
                   $stmt_data = array('name' => $relativepath, 'status' => STATUS_VERIFIED, 'updated' => $updated, 'id' => $inserted[$matchedkeys[0]]['id']);
                   if (!stmt_run($stmt_update_name, $stmt_data)) exit(1);
                   $inserted[$matchedkeys[0]]['name'] = $relativepath;
