@@ -13,6 +13,7 @@
 # 2019-07-14 04:26:00 - bugfix, file names with spaces were missed
 # 2019-07-14 15:59:00 - adding options, adding error log output
 # 2019-07-16 03:19:00 - bugfix, files missing had paths resolved to empty strings
+# 2025-12-06 11:32:00 - bugfix, no results
 
 $fileerror = false;
 
@@ -34,12 +35,12 @@ function logtext(&$filepointer, $file, $text) {
 }
 
 # get header
-function getheader($i, $linecount, $stats, $text) {
+function getheader($i, $linecount, $stats, $text = "") {
   return '['.
     str_pad($i, strlen($linecount), ' ', STR_PAD_LEFT).'/'.$linecount.' '.
     str_pad(round($i / $linecount *  100), 3, ' ', STR_PAD_LEFT).'% '.
     str_pad($stats['ok'], strlen($linecount), ' ', STR_PAD_LEFT).' OK '.str_pad($stats['mismatch'], strlen($linecount), ' ', STR_PAD_LEFT).' mismatch '.str_pad($stats['missing'], strlen($linecount), ' ', STR_PAD_LEFT).' missing'.
-    '] '.$text;
+    ']'.(strlen($text) ? ' '.$text : '');
 }
 
 $errorlog = false;
@@ -150,13 +151,22 @@ while ($line = fgets($f)) {
   }
   # clear previous line
   echo str_repeat(' ', strlen($header))."\r";
+
   # print result
-  $header = getheader($i, $linecount, $stats, $currentstatus.' '.$path."\n");
+  $header = getheader($i, $linecount, $stats, $currentstatus.' '.$path);
+  echo $header."\r";
 
   if ($currentstatus !== 'OK' && $errorlog !== false) {
-	logtext($fileerror, $errorlog, $header);
+	logtext($fileerror, $errorlog, $header."\n");
   }
 }
+
+# clear previous line
+echo str_repeat(' ', strlen($header))."\r";
+
+# print result
+$header = getheader($i, $linecount, $stats);
+echo $header."\n";
 
 fclose($f);
 if ($fileerror) fclose($fileerror);
